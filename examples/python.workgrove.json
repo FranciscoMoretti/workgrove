@@ -1,0 +1,27 @@
+{
+  "$schema": "../schema/workgrove.schema.json",
+  "version": 1,
+  "slot": {
+    "env": "WORKGROVE_SLOT",
+    "default": 0,
+    "file": ".env.worktree.local"
+  },
+  "range": { "base": 8000, "stride": 10 },
+  "url": "http://localhost:{port}",
+  "apps": {
+    "api": {
+      "offset": 0,
+      "control": {
+        "label": "API",
+        "open": true,
+        "probe": "tcp",
+        "required": true
+      },
+      "start": {
+        "argv": ["uv", "run", "fastapi", "dev"],
+        "env": { "PORT": "{port}" }
+      }
+    }
+  },
+  "control": { "postCreate": { "argv": ["uv", "sync"] } }
+}

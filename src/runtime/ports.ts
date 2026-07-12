@@ -1,0 +1,105 @@
+import { spawnSync } from "node:child_process";
+import { realpathSync } from "node:fs";
+import { isAbsolute, relative } from "node:path";
+
+const LINE_BREAK = /\r?\n/;
+const PORT_AT_END = /:(\d+)(?:\s|$)/;
+
+interface PortSnapshot {
+  pidsByPort: Map<number, Set<number>>;
+}
+
+function runLsof(args: string[]): string {
+  const result = spawnSync("lsof", args, {
+    encoding: "utf8",
+    maxBuffer: 8 * 1024 * 1024,
+  });
+  return result.status === 0 ? (result.stdout ?? "") : "";
+}
+
+function canonical(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
+export function pathInside(path: string, root: string): boolean {
+  const candidate = relative(canonical(root), canonical(path));
+  return (
+    candidate === "" || !(candidate.startsWith("..") || isAbsolute(candidate))
+  );
+}
+
+function processCwd(pid: number): string | null {
+  const output = runLsof(["-a", "-p", String(pid), "-d", "cwd", "-Fn"]);
+  const line = output.split(LINE_BREAK).find((value) => value.startsWith("n"));
+  return line ? line.slice(1) : null;
+}
+
+export function pidOwnedByWorktree(pid: number, worktreePath: string): boolean {
+  const cwd = processCwd(pid);
+  return cwd !== null && pathInside(cwd, worktreePath);
+}
+
+export function inspectListeningPorts(): PortSnapshot {
+  const output = runLsof(["-nP", "-sTCP:LISTEN", "-iTCP", "-Fpn"]);
+  const pidsByPort = new Map<number, Set<number>>();
+  let currentPid: number | null = null;
+
+  for (const line of output.split(LINE_BREAK)) {
+    if (line.startsWith("p")) {
+      const pid = Number(line.slice(1));
+      currentPid = Number.isInteger(pid) && pid > 0 ? pid : null;
+      continue;
+    }
+    if (!line.startsWith("n") || currentPid === null) {
+      continue;
+    }
+    const match = line.match(PORT_AT_END);
+    if (!match) {
+      continue;
+    }
+    const port = Number(match[1]);
+    const pids = pidsByPort.get(port) ?? new Set<number>();
+    pids.add(currentPid);
+    pidsByPort.set(port, pids);
+  }
+  return { pidsByPort };
+}
+
+export function portOwnership(
+  snapshot: PortSnapshot,
+  port: number,
+  worktreePath: string
+): "owned" | "foreign" | "none" {
+  const pids = snapshot.pidsByPort.get(port);
+  if (!pids || pids.size === 0) {
+    return "none";
+  }
+  for (const pid of pids) {
+    const cwd = processCwd(pid);
+    if (cwd && pathInside(cwd, worktreePath)) {
+      return "owned";
+    }
+  }
+  return "foreign";
+}
+
+export function ownedPortPids(
+  snapshot: PortSnapshot,
+  ports: readonly number[],
+  worktreePath: string
+): number[] {
+  const owned = new Set<number>();
+  for (const port of ports) {
+    for (const pid of snapshot.pidsByPort.get(port) ?? []) {
+      const cwd = processCwd(pid);
+      if (cwd && pathInside(cwd, worktreePath)) {
+        owned.add(pid);
+      }
+    }
+  }
+  return [...owned];
+}

@@ -1,0 +1,31 @@
+import { useState } from "react";
+
+import type { WorkspaceSnapshot } from "../controller/workspace-snapshot";
+import { fetchWorkspace } from "./api";
+
+export function useRepositoryOpen(
+  onOpened: (path: string, snapshot: WorkspaceSnapshot) => void | Promise<void>,
+  initialError: Error | null = null
+) {
+  const [error, setError] = useState<Error | null>(initialError);
+  const [pending, setPending] = useState(false);
+
+  async function open(path: string) {
+    try {
+      setPending(true);
+      setError(null);
+      const snapshot = await fetchWorkspace(path);
+      await onOpened(path, snapshot);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught
+          : new Error("Could not open repository")
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return { clearError: () => setError(null), error, open, pending };
+}

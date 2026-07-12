@@ -1,0 +1,40 @@
+{
+  "$schema": "../schema/workgrove.schema.json",
+  "version": 1,
+  "slot": {
+    "env": "WORKGROVE_SLOT",
+    "default": 0,
+    "file": ".env.worktree.local"
+  },
+  "range": { "base": 4000, "stride": 10 },
+  "url": "http://localhost:{port}",
+  "apps": {
+    "web": {
+      "offset": 0,
+      "control": {
+        "label": "Web",
+        "open": true,
+        "probe": "tcp",
+        "required": true
+      },
+      "start": {
+        "argv": ["npm", "run", "dev:web"],
+        "env": { "PORT": "{port}" }
+      }
+    },
+    "api": {
+      "offset": 1,
+      "control": {
+        "label": "API",
+        "open": false,
+        "probe": "tcp",
+        "required": true
+      },
+      "start": {
+        "argv": ["npm", "run", "dev:api"],
+        "env": { "PORT": "{port}" }
+      }
+    }
+  },
+  "control": { "postCreate": { "argv": ["npm", "install"] } }
+}

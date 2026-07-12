@@ -1,0 +1,14 @@
+{
+  "extends": ["ultracite/core", "ultracite/react"],
+  "files": {
+    "includes": ["src/**/*", "*.html", "*.json"]
+  },
+  "css": {
+    "parser": {
+      "cssModules": false
+    },
+    "linter": {
+      "enabled": false
+    }
+  }
+}
