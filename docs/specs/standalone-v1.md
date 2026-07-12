@@ -38,6 +38,8 @@ Native folder selection and URL opening sit behind a host interface. Process
 inspection currently uses `lsof`; another operating system requires a second
 adapter and its own ownership tests.
 
-The initial distribution is source installation plus `bun link`. A compiled
-binary/Homebrew formula is a follow-up because the production UI assets must be
-embedded or installed alongside the executable.
+The initial distribution is the public `workgrove` npm package, installed with
+`bun add --global workgrove`. Its Bun-powered CLI serves the packaged production
+UI. The `workgrove/config` export is the supported seam for Bun-based repository
+tooling to load the config and resolve slots, app ports, URLs, and exports. A
+compiled binary/Homebrew formula remains a follow-up.

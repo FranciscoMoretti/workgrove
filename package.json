@@ -12,6 +12,9 @@
   "bin": {
     "workgrove": "scripts/daemon.ts"
   },
+  "exports": {
+    "./config": "./src/config/public.ts"
+  },
   "files": [
     "dist",
     "schema",
@@ -28,6 +31,9 @@
     "dev-server"
   ],
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "vite build",
     "daemon:start": "bun run build && NODE_ENV=production bun scripts/daemon.ts start",
@@ -35,7 +41,9 @@
     "daemon:stop": "bun scripts/daemon.ts stop",
     "dev": "bun src/server/server.ts",
     "lint": "bunx ultracite@7.4.3 check",
+    "prepack": "bun run build",
     "test": "bun test src/**/*.test.ts",
+    "test:pack": "bun scripts/test-packed-artifact.ts",
     "test:types": "tsc --noEmit"
   },
   "engines": {

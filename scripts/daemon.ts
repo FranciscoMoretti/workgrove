@@ -42,6 +42,9 @@ function appUrl(): string {
 }
 
 function openApp(): void {
+  if (process.env.WORKGROVE_NO_OPEN === "1") {
+    return;
+  }
   currentHost().openUrl(appUrl());
 }
 
@@ -151,7 +154,7 @@ async function start(): Promise<void> {
   const child = spawn(process.execPath, ["run", "src/server/server.ts"], {
     cwd: APP_ROOT,
     detached: true,
-    env: process.env,
+    env: { ...process.env, NODE_ENV: "production" },
     stdio: ["ignore", log, log],
   });
   closeSync(log);

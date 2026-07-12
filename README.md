@@ -4,16 +4,12 @@ Workgrove is a local, macOS-first control center for Git worktrees. It assigns
 stable port slots, starts and stops each worktree's configured apps, detects
 listeners, and keeps managed logs without requiring terminal juggling.
 
-## Install from source
+## Install
 
 Requirements: macOS, Git, Bun 1.3+, and `lsof`.
 
 ```sh
-git clone https://github.com/franciscomoretti/workgrove.git
-cd workgrove
-bun install
-bun run build
-bun link
+bun add --global workgrove
 workgrove start --repo /path/to/your/repository
 ```
 
@@ -75,6 +71,24 @@ Use exactly one launch mode: either `control.start` for an existing aggregate
 orchestration command, or per-app `start` commands. In per-app mode every
 required TCP app needs its own start command. These cross-field rules are
 enforced by Workgrove in addition to the public JSON Schema.
+
+### Repository tooling API
+
+Bun-based repository scripts can share Workgrove's checked-in configuration
+contract instead of maintaining their own port resolver:
+
+```ts
+import {
+  findWorkgroveConfig,
+  loadWorkgroveConfig,
+  resolveWorkgroveRuntime,
+  type WorkgroveConfig,
+} from "workgrove/config";
+```
+
+`workgrove/config` intentionally exposes only the configuration schemas and
+types, config discovery/loading, and runtime app/port resolution. Process,
+trust, command execution, and controller internals are not public APIs.
 
 ## Development
 
