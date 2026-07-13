@@ -316,7 +316,7 @@ export function App() {
     );
   }
   const mainPanel = (
-    <div className="flex h-screen min-w-0 flex-col bg-muted/30">
+    <div className="workspace-shell flex h-screen min-w-0 flex-col bg-muted/30">
       <Toolbar
         activeRepoPath={repoPath}
         isFetching={workspace.isFetching}
@@ -349,7 +349,7 @@ export function App() {
           </AlertDescription>
         </Alert>
       ) : null}
-      <section className="min-h-0 flex-1 overflow-hidden px-5 pb-5">
+      <section className="worktree-region min-h-0 flex-1 overflow-hidden px-5 pb-5">
         {worktreeTable()}
       </section>
     </div>

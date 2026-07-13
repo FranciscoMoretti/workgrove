@@ -168,17 +168,17 @@ export function WorktreeTable({
   ];
   return (
     <ScrollArea
-      className="h-full min-w-0 border bg-card"
+      className="worktree-table h-full min-w-0 border bg-card"
       scrollbars={["vertical", "horizontal"]}
     >
       <Table
-        className="min-w-[900px]"
+        className="min-w-[840px]"
         containerClassName="w-max min-w-full overflow-visible"
       >
         <TableHeader className="sticky top-0 z-10 bg-muted">
           <TableRow>
             <TableHead className="w-[34%]">
-              <span>Repository</span>
+              <span>Worktree</span>
             </TableHead>
             <TableHead className="w-[18%]">Branch</TableHead>
             <TableHead className="w-[22%]">
@@ -219,6 +219,7 @@ export function WorktreeTable({
             const running = appsAreRunning(worktree);
             return (
               <TableRow
+                className="cursor-default focus-visible:outline-1 focus-visible:outline-ring focus-visible:-outline-offset-1"
                 data-state={selectedId === worktree.id ? "selected" : undefined}
                 key={worktree.id}
                 onClick={(event) => {
