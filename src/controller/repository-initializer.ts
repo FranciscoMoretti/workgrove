@@ -199,6 +199,6 @@ export function initializeRepository(
     plan.repoPath,
     plan.config.slot.file ?? ".env.worktree.local"
   );
-  trustRepository(plan.repoPath);
+  trustRepository(plan.repoPath, plan.config);
   return plan;
 }

@@ -1,4 +1,5 @@
 import type { RepositoryCommandProfile } from "../config/workgrove-command";
+import type { WorkgroveConfig } from "../config/workgrove-schema";
 import type { AppHealth, ControlledApp } from "../runtime/app-health";
 
 export type AppEndpointSnapshot = ControlledApp & {
@@ -56,7 +57,9 @@ export function appsCanRestart(
 
 export interface WorkspaceSnapshot {
   commandProfile: RepositoryCommandProfile;
+  config: WorkgroveConfig;
   configPath: string;
+  configRevision: string;
   defaultSlot: number;
   globalProcesses: GlobalProcessSnapshot[];
   globalRunningCount: number;

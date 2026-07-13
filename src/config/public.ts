@@ -6,9 +6,18 @@ export {
 export {
   findWorkgroveConfig,
   loadWorkgroveConfig,
+  loadWorkgroveConfigDocument,
   type ResolvedWorkgroveApp,
   type ResolvedWorkgroveRuntime,
   resolveWorkgroveRuntime,
+  type WorkgroveConfigDocument,
+} from "./workgrove-config";
+export {
+  canonicalizeWorkgroveConfig,
+  type WorkgroveApp,
+  WorkgroveAppIdSchema,
+  WorkgroveAppSchema,
   type WorkgroveConfig,
   WorkgroveConfigSchema,
-} from "./workgrove-config";
+  type WorktreeEnvConfig,
+} from "./workgrove-schema";

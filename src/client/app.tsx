@@ -17,7 +17,7 @@ import { repositoryPathFromSearch, repositoryUrl } from "../repository-context";
 import { CreateWorktreeDialog } from "./components/create-worktree-dialog";
 import { DeleteWorktreeDialog } from "./components/delete-worktree-dialog";
 import { DetailsPanel } from "./components/details-panel";
-import { RepositoryCommandsDialog } from "./components/repository-commands-dialog";
+import { RepositoryConfigDialog } from "./components/repository-config-dialog";
 import { RepositoryDialog } from "./components/repository-dialog";
 import { RepositoryTrustDialog } from "./components/repository-trust-dialog";
 import { SlotDialog } from "./components/slot-dialog";
@@ -218,7 +218,7 @@ export function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [repositoryOpen, setRepositoryOpen] = useState(false);
-  const [repositoryCommandsOpen, setRepositoryCommandsOpen] = useState(false);
+  const [repositoryConfigOpen, setRepositoryConfigOpen] = useState(false);
   const [slotChoice, setSlotChoice] = useState<{
     option: SlotOption;
     worktree: WorktreeSnapshot;
@@ -321,7 +321,7 @@ export function App() {
         activeRepoPath={repoPath}
         isFetching={workspace.isFetching}
         mainWorktreePath={data.mainWorktreePath}
-        onConfigureCommands={() => setRepositoryCommandsOpen(true)}
+        onConfigure={() => setRepositoryConfigOpen(true)}
         onCreate={() => setCreateOpen(true)}
         onOpenRepository={() => setRepositoryOpen(true)}
         onRefresh={() =>
@@ -417,20 +417,26 @@ export function App() {
         }}
         open={repositoryOpen}
       />
-      <RepositoryCommandsDialog
+      <RepositoryConfigDialog
+        config={data.config}
         configPath={data.configPath}
-        error={commands.updateRepositoryCommands.error}
-        key={repositoryCommandsOpen ? "commands-open" : "commands-closed"}
-        onClose={() => setRepositoryCommandsOpen(false)}
-        onSave={(value) =>
-          commands.updateRepositoryCommands.mutate(
-            { repoPath, ...value },
-            { onSuccess: () => setRepositoryCommandsOpen(false) }
-          )
+        error={commands.updateRepositoryConfig.error}
+        key={
+          repositoryConfigOpen
+            ? `config-${data.configRevision}`
+            : "config-closed"
         }
-        open={repositoryCommandsOpen}
-        pending={commands.updateRepositoryCommands.isPending}
-        profile={data.commandProfile}
+        onClose={() => setRepositoryConfigOpen(false)}
+        onSave={async (config) => {
+          await commands.updateRepositoryConfig.mutateAsync({
+            config,
+            repoPath,
+            revision: data.configRevision,
+          });
+          setRepositoryConfigOpen(false);
+        }}
+        open={repositoryConfigOpen}
+        pending={commands.updateRepositoryConfig.isPending}
       />
       <SlotDialog
         key={

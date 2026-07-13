@@ -30,7 +30,7 @@ export function Toolbar({
   isFetching,
   mainWorktreePath,
   onCreate,
-  onConfigureCommands,
+  onConfigure,
   onOpenRepository,
   onRefresh,
   onSelectRepository,
@@ -42,7 +42,7 @@ export function Toolbar({
   isFetching: boolean;
   mainWorktreePath: string;
   onCreate: () => void;
-  onConfigureCommands: () => void;
+  onConfigure: () => void;
   onOpenRepository: () => void;
   onRefresh: () => void;
   onSelectRepository: (path: string) => void;
@@ -100,9 +100,9 @@ export function Toolbar({
                 ))}
               </DropdownMenuRadioGroup>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={onConfigureCommands}>
+              <DropdownMenuItem onClick={onConfigure}>
                 <Settings2Icon />
-                Repository commands…
+                Repository configuration…
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onOpenRepository}>
                 <FolderOpenIcon />

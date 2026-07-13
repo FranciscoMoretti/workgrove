@@ -2,13 +2,18 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { repositoryRequiresTrust } from "./repository-trust";
 import {
+  repositoryCommandFingerprint,
+  repositoryRequiresTrust,
+} from "./repository-trust";
+import {
+  loadWorkgroveConfigDocument,
   repositoryCommandProfile,
   resolveSetupCommand,
   resolveStartCommands,
   resolveWorkgroveRuntime,
   updateRepositoryCommandProfile,
+  updateWorkgroveConfig,
   type WorkgroveConfig,
 } from "./workgrove-config";
 
@@ -85,6 +90,57 @@ describe("generic Workgrove configuration", () => {
         ),
       })
     ).toBe(false);
+  });
+
+  it("binds repository trust to the exact configured commands", () => {
+    const fingerprint = repositoryCommandFingerprint(config);
+    const apiArgv = config.apps.api.start?.argv;
+    if (!apiArgv) {
+      throw new Error("Test config requires an API start command");
+    }
+    expect(
+      repositoryCommandFingerprint({
+        ...config,
+        apps: {
+          ...config.apps,
+          api: {
+            ...config.apps.api,
+            start: {
+              argv: apiArgv,
+              env: { B: "two", A: "one" },
+            },
+          },
+        },
+      })
+    ).not.toBe(fingerprint);
+    const orderedEnvironment = {
+      ...config,
+      apps: {
+        ...config.apps,
+        api: {
+          ...config.apps.api,
+          start: {
+            argv: apiArgv,
+            env: { B: "two", A: "one" },
+          },
+        },
+      },
+    };
+    expect(repositoryCommandFingerprint(orderedEnvironment)).toBe(
+      repositoryCommandFingerprint({
+        ...orderedEnvironment,
+        apps: {
+          ...orderedEnvironment.apps,
+          api: {
+            ...orderedEnvironment.apps.api,
+            start: {
+              argv: apiArgv,
+              env: { A: "one", B: "two" },
+            },
+          },
+        },
+      })
+    );
   });
 
   it("rejects incomplete or ambiguous per-app command modes", () => {
@@ -190,6 +246,27 @@ describe("generic Workgrove configuration", () => {
         startMode: "per-app",
       });
       expect(saved.apps.web.start?.argv).toEqual(["npm", "run", "dev"]);
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects stale visual-editor saves without overwriting newer changes", () => {
+    const directory = mkdtempSync(join(tmpdir(), "workgrove-config-"));
+    const path = join(directory, ".workgrove.json");
+    writeFileSync(path, `${JSON.stringify(config)}\n`);
+    try {
+      const firstRead = loadWorkgroveConfigDocument(path);
+      writeFileSync(
+        path,
+        `${JSON.stringify({ ...config, url: "http://127.0.0.1:{port}" })}\n`
+      );
+      expect(() =>
+        updateWorkgroveConfig(path, config, firstRead.revision)
+      ).toThrow("configuration changed on disk");
+      expect(loadWorkgroveConfigDocument(path).config.url).toBe(
+        "http://127.0.0.1:{port}"
+      );
     } finally {
       rmSync(directory, { force: true, recursive: true });
     }

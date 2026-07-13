@@ -9,7 +9,7 @@ export function trustRepository(
 ): CommandReceipt {
   const repoPath = requiredString(input.repoPath, "Repository path");
   const workspace = controller.inspect(repoPath);
-  saveRepositoryTrust(workspace.repoPath);
+  saveRepositoryTrust(workspace.repoPath, workspace.config);
   return {
     command: "trust-repository",
     message: "Trusted repository commands",

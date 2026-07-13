@@ -17,6 +17,7 @@ import { stopAllApps } from "../commands/stop-all-apps";
 import { stopApps } from "../commands/stop-apps";
 import { trustRepository } from "../commands/trust-repository";
 import { updateRepositoryCommands } from "../commands/update-repository-commands";
+import { updateRepositoryConfig } from "../commands/update-repository-config";
 import {
   repositoryIsTrusted,
   repositoryRequiresTrust,
@@ -26,9 +27,12 @@ import {
   configuredSetupCommand,
   findWorkgroveConfig,
   loadWorkgroveConfig,
+  loadWorkgroveConfigDocument,
   repositoryCommandProfile,
+  updateWorkgroveConfig,
   type WorktreeEnvConfig,
 } from "../config/workgrove-config";
+import type { WorkgroveConfig } from "../config/workgrove-schema";
 import { parseWorktreeList } from "../git/discover-worktrees";
 import { appHealth, resolveControlledApps } from "../runtime/app-health";
 import { commandEnvironment } from "../runtime/command-environment";
@@ -77,6 +81,7 @@ const COMMAND_HANDLERS: Record<WorkgroveCommandName, CommandHandler> = {
   "stop-apps": stopApps,
   "trust-repository": trustRepository,
   "update-repository-commands": updateRepositoryCommands,
+  "update-repository-config": updateRepositoryConfig,
 };
 
 export class MissingWorktreeConfigError extends Error {
@@ -180,7 +185,8 @@ export class WorkspaceController {
         join(selectedRoot, ".workgrove.json")
       );
     }
-    const config = loadWorkgroveConfig(configPath);
+    const configDocument = loadWorkgroveConfigDocument(configPath);
+    const config = configDocument.config;
     const setupCommand = configuredSetupCommand(config);
     const discovered = parseWorktreeList(
       git(selectedRoot, ["worktree", "list", "--porcelain"])
@@ -281,7 +287,9 @@ export class WorkspaceController {
     const globalProcesses = listManagedProcesses();
     return {
       commandProfile: repositoryCommandProfile(config),
+      config,
       configPath,
+      configRevision: configDocument.revision,
       globalProcesses,
       globalRunningCount: globalProcesses.length,
       defaultSlot: config.slot.default,
@@ -317,6 +325,37 @@ export class WorkspaceController {
       throw new MissingWorktreeConfigError(join(root, ".workgrove.json"));
     }
     return loadWorkgroveConfig(path);
+  }
+
+  updateConfiguration(
+    repoPath: string,
+    config: WorkgroveConfig,
+    revision: string
+  ): void {
+    const workspace = this.inspect(repoPath);
+    const topology = (value: WorkgroveConfig) => ({
+      apps: Object.fromEntries(
+        Object.entries(value.apps).map(([id, app]) => [id, app.offset])
+      ),
+      range: value.range,
+      slot: value.slot,
+      url: value.url,
+    });
+    const topologyChanged =
+      JSON.stringify(topology(workspace.config)) !==
+      JSON.stringify(topology(config));
+    const hasRunningProcesses = workspace.worktrees.some(
+      (worktree) =>
+        worktree.processRunning ||
+        worktree.health !== "not-running" ||
+        worktree.setupState === "running"
+    );
+    if (topologyChanged && hasRunningProcesses) {
+      throw new Error(
+        "Stop repository apps and setup processes before changing app ports, slots, or URLs."
+      );
+    }
+    updateWorkgroveConfig(workspace.configPath, config, revision);
   }
 
   environment(repoPath: string, slot: number): Record<string, string> {
