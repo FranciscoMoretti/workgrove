@@ -23,12 +23,9 @@ describe("repository initialization", () => {
       );
       const preview = planRepositoryInitialization(root);
       expect(preview.detectedRuntime).toBe("Node.js · bun");
-      expect(preview.detectedStartCommand).toBe("bun run dev");
-      expect(preview.config.apps.app.start?.argv).toEqual([
-        "bun",
-        "run",
-        "dev",
-      ]);
+      expect(preview.detectedStartCommand).toBe("bun dev");
+      expect(preview.config.control?.start?.argv).toEqual(["bun", "dev"]);
+      expect(preview.config.control?.setup?.argv).toEqual(["bun", "install"]);
       expect(preview.config.range.base).toBeGreaterThanOrEqual(10_000);
       expect(() => readFileSync(preview.configPath)).toThrow();
 
@@ -52,7 +49,7 @@ describe("repository initialization", () => {
       writeFileSync(join(root, "manage.py"), "");
       const preview = planRepositoryInitialization(root);
       expect(preview.detectedRuntime).toBe("Python · Django");
-      expect(preview.config.apps.app.start?.argv).toEqual([
+      expect(preview.config.control?.start?.argv).toEqual([
         "python",
         "manage.py",
         "runserver",
@@ -74,7 +71,7 @@ describe("repository initialization", () => {
       );
       const preview = planRepositoryInitialization(root);
       expect(preview.detectedRuntime).toBe("Docker Compose");
-      expect(preview.config.apps.app.start?.argv).toEqual([
+      expect(preview.config.control?.start?.argv).toEqual([
         "docker",
         "compose",
         "up",

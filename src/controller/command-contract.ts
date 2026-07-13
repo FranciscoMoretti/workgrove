@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { WorkgroveCommandSchema } from "../config/workgrove-command";
 
 const RepositoryPathSchema = z.object({
   repoPath: z.string().min(1),
@@ -49,8 +50,10 @@ const INPUT_SCHEMAS = {
   "start-apps": StartStopSchema,
   "stop-all-apps": VisibleBulkSchema,
   "stop-apps": StartStopSchema,
-  "trust-repository": RepositoryPathSchema.extend({
-    fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  "trust-repository": RepositoryPathSchema,
+  "update-repository-commands": RepositoryPathSchema.extend({
+    setup: WorkgroveCommandSchema.nullable(),
+    start: WorkgroveCommandSchema.nullable().optional(),
   }),
 } as const;
 
@@ -70,6 +73,7 @@ const RESULT_SCHEMAS = {
   "stop-all-apps": CommandReceiptSchema,
   "stop-apps": CommandReceiptSchema,
   "trust-repository": CommandReceiptSchema,
+  "update-repository-commands": CommandReceiptSchema,
 } as const;
 
 export type WorkgroveCommandName = keyof typeof INPUT_SCHEMAS;

@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
-import { resolvePostCreateCommand } from "../config/workgrove-config";
+import { resolveSetupCommand } from "../config/workgrove-config";
 import type { WorkspaceController } from "../controller/workspace-controller";
 import type { CommandReceipt } from "../controller/workspace-snapshot";
 import {
@@ -81,7 +81,7 @@ export function createWorktree(
   }
   setSlot(controller, { repoPath: target, slot, worktreeId: created.id });
   const config = controller.config(target);
-  const setup = resolvePostCreateCommand(config, slot);
+  const setup = resolveSetupCommand(config, slot);
   if (setup) {
     appendManagedLog(
       created.id,

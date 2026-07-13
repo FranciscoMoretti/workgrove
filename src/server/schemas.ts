@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { WorkgroveCommandSchema } from "../config/workgrove-command";
 
 export const WorkspaceQuerySchema = z.object({ repoPath: z.string().min(1) });
 export const LogsQuerySchema = WorkspaceQuerySchema.extend({
@@ -18,6 +19,11 @@ const AppEndpointSchema = z.object({
 });
 
 export const WorkspaceSnapshotSchema = z.object({
+  commandProfile: z.object({
+    setup: WorkgroveCommandSchema.nullable(),
+    start: WorkgroveCommandSchema.nullable(),
+    startMode: z.enum(["aggregate", "none", "per-app"]),
+  }),
   configPath: z.string(),
   globalProcesses: z.array(
     z.object({
@@ -44,7 +50,6 @@ export const WorkspaceSnapshotSchema = z.object({
       slot: z.number().int().nonnegative(),
     })
   ),
-  trustFingerprint: z.string(),
   trustCommands: z.array(z.string()),
   trustRequired: z.boolean(),
   trusted: z.boolean(),

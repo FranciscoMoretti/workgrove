@@ -36,5 +36,5 @@
       }
     }
   },
-  "control": { "postCreate": { "argv": ["npm", "install"] } }
+  "control": { "setup": { "argv": ["bun", "install"] } }
 }

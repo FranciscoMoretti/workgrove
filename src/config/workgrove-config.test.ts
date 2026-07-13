@@ -1,12 +1,14 @@
 import { describe, expect, it } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { repositoryRequiresTrust } from "./repository-trust";
 import {
-  repositoryFingerprint,
-  repositoryRequiresTrust,
-} from "./repository-trust";
-import {
-  resolvePostCreateCommand,
+  repositoryCommandProfile,
+  resolveSetupCommand,
   resolveStartCommands,
   resolveWorkgroveRuntime,
+  updateRepositoryCommandProfile,
   type WorkgroveConfig,
 } from "./workgrove-config";
 
@@ -70,29 +72,19 @@ describe("generic Workgrove configuration", () => {
     ]);
   });
 
-  it("changes trust identity when executable commands change", () => {
+  it("requires trust when executable commands are configured", () => {
     expect(repositoryRequiresTrust(config)).toBe(true);
-    expect(repositoryFingerprint(config)).not.toBe(
-      repositoryFingerprint({
+    expect(
+      repositoryRequiresTrust({
         ...config,
-        apps: {
-          ...config.apps,
-          web: { ...config.apps.web, start: { argv: ["npm", "run", "other"] } },
-        },
+        apps: Object.fromEntries(
+          Object.entries(config.apps).map(([id, app]) => [
+            id,
+            { ...app, start: undefined },
+          ])
+        ),
       })
-    );
-    expect(repositoryFingerprint(config)).not.toBe(
-      repositoryFingerprint({
-        ...config,
-        apps: {
-          ...config.apps,
-          web: {
-            ...config.apps.web,
-            exports: { NODE_OPTIONS: "--require hook" },
-          },
-        },
-      })
-    );
+    ).toBe(false);
   });
 
   it("rejects incomplete or ambiguous per-app command modes", () => {
@@ -116,13 +108,13 @@ describe("generic Workgrove configuration", () => {
     ).toThrow("either per-app start commands or control.start");
   });
 
-  it("resolves post-create cwd, argv, and environment templates", () => {
+  it("resolves setup cwd, argv, and environment templates", () => {
     expect(
-      resolvePostCreateCommand(
+      resolveSetupCommand(
         {
           ...config,
           control: {
-            postCreate: {
+            setup: {
               argv: ["tool", "--port", "{apps.web.port}"],
               cwd: "packages/{slot}",
               env: { TARGET: "{url}" },
@@ -137,5 +129,69 @@ describe("generic Workgrove configuration", () => {
       cwd: "packages/2",
       env: { TARGET: "http://localhost:4021", WORKGROVE_SLOT: "2" },
     });
+  });
+
+  it("keeps legacy postCreate configuration readable as setup", () => {
+    expect(
+      resolveSetupCommand(
+        {
+          ...config,
+          control: { postCreate: { argv: ["bun", "install"] } },
+        },
+        0
+      )?.argv
+    ).toEqual(["bun", "install"]);
+  });
+
+  it("atomically saves aggregate repository commands and canonicalizes setup", () => {
+    const directory = mkdtempSync(join(tmpdir(), "workgrove-commands-"));
+    const path = join(directory, ".workgrove.json");
+    const aggregateConfig: WorkgroveConfig = {
+      ...config,
+      apps: Object.fromEntries(
+        Object.entries(config.apps).map(([id, app]) => [
+          id,
+          { ...app, start: undefined },
+        ])
+      ),
+      control: {
+        postCreate: { argv: ["npm", "install"] },
+        start: { argv: ["npm", "run", "dev"] },
+      },
+    };
+    writeFileSync(path, `${JSON.stringify(aggregateConfig)}\n`);
+    try {
+      const saved = updateRepositoryCommandProfile(path, {
+        setup: { argv: ["bun", "install"] },
+        start: { argv: ["bun", "dev"] },
+      });
+      expect(repositoryCommandProfile(saved)).toEqual({
+        setup: { argv: ["bun", "install"] },
+        start: { argv: ["bun", "dev"] },
+        startMode: "aggregate",
+      });
+      expect(readFileSync(path, "utf8")).not.toContain("postCreate");
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("preserves per-app start commands when only setup is edited", () => {
+    const directory = mkdtempSync(join(tmpdir(), "workgrove-commands-"));
+    const path = join(directory, ".workgrove.json");
+    writeFileSync(path, `${JSON.stringify(config)}\n`);
+    try {
+      const saved = updateRepositoryCommandProfile(path, {
+        setup: { argv: ["bun", "install"] },
+      });
+      expect(repositoryCommandProfile(saved)).toEqual({
+        setup: { argv: ["bun", "install"] },
+        start: null,
+        startMode: "per-app",
+      });
+      expect(saved.apps.web.start?.argv).toEqual(["npm", "run", "dev"]);
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
   });
 });

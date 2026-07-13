@@ -42,22 +42,23 @@ app's environment itself.
         "probe": "tcp",
         "required": true
       },
-      "exports": { "PORT": "{port}" },
-      "start": {
-        "argv": ["npm", "run", "dev"],
-        "env": { "PORT": "{port}" }
-      }
+      "exports": { "PORT": "{port}" }
     }
   },
   "control": {
-    "postCreate": { "argv": ["npm", "install"] }
+    "setup": { "argv": ["bun", "install"] },
+    "start": {
+      "argv": ["bun", "dev"],
+      "env": { "PORT": "{port}" }
+    }
   }
 }
 ```
 
 Workgrove asks you to review and trust executable commands the first time a
-repository is opened and whenever those commands change. Older
-`.worktree-env.json` files remain readable for migration.
+repository is opened. Trust is saved for that repository and does not need to
+be repeated when its commands change. Older `.worktree-env.json` files remain
+readable for migration.
 
 When a repository has no configuration, the initialization dialog can prepare
 conservative starters for Node.js, Django, FastAPI, Rust, Go, and Docker
@@ -67,10 +68,16 @@ unknown layouts receive an editable config without an executable command.
 Command `argv`, `cwd`, and `env` strings support `{slot}`, `{port}`, `{url}`,
 and cross-app templates such as `{apps.api.port}`.
 
-Use exactly one launch mode: either `control.start` for an existing aggregate
-orchestration command, or per-app `start` commands. In per-app mode every
-required TCP app needs its own start command. These cross-field rules are
-enforced by Workgrove in addition to the public JSON Schema.
+Use exactly one launch mode: either the repository-level `control.start`, or
+per-app `start` commands when apps need separate processes. In per-app mode
+every required TCP app needs its own start command. These cross-field rules are
+enforced by Workgrove in addition to the public JSON Schema. The localhost UI
+provides repository command fields with `bun install` and `bun dev` placeholders.
+
+`control.setup` is a finite preparation command and can run whether apps are
+started or stopped. Stop terminates only the process Workgrove launched for
+Start; Restart waits for Stop and then performs Start again. The legacy
+`control.postCreate` key remains readable as an alias for `control.setup`.
 
 ### Repository tooling API
 

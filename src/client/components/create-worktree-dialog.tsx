@@ -6,17 +6,28 @@ import type {
   CommandReceipt,
   SlotOption,
 } from "../../controller/workspace-snapshot";
+import type { RequestRepositoryTrust } from "../use-repository-trust";
 import { Modal } from "./modal";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "./ui/field";
 import { Input } from "./ui/input";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
+
+type CreateWorktreeInput = Record<string, unknown> & { repoPath: string };
 
 export function CreateWorktreeDialog({
   mutation,
@@ -24,6 +35,7 @@ export function CreateWorktreeDialog({
   open,
   repoName,
   repoPath,
+  requestRepositoryTrust,
   slots,
 }: {
   mutation: UseMutationResult<
@@ -35,6 +47,7 @@ export function CreateWorktreeDialog({
   open: boolean;
   repoName: string;
   repoPath: string;
+  requestRepositoryTrust: RequestRepositoryTrust;
   slots: SlotOption[];
 }) {
   const available = useMemo(
@@ -56,21 +69,10 @@ export function CreateWorktreeDialog({
     }
   }, [available, open]);
   const selected = available.find((option) => option.slot === slot) ?? null;
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (slot === null || branch.trim() === "") {
-      setError("Branch and an available slot are required.");
-      return;
-    }
+  async function createWorktree(input: CreateWorktreeInput) {
     try {
       setError(null);
-      await mutation.mutateAsync({
-        branch: branch.trim(),
-        createBranch,
-        folderName: folderName.trim() || undefined,
-        repoPath,
-        slot,
-      });
+      await mutation.mutateAsync(input);
       onClose();
     } catch (caught) {
       setError(
@@ -78,16 +80,33 @@ export function CreateWorktreeDialog({
       );
     }
   }
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (slot === null || branch.trim() === "") {
+      setError("Branch and an available slot are required.");
+      return;
+    }
+    const input = {
+      branch: branch.trim(),
+      createBranch,
+      folderName: folderName.trim() || undefined,
+      repoPath,
+      slot,
+    };
+    requestRepositoryTrust("Create this worktree and run setup", () =>
+      createWorktree(input)
+    );
+  }
   return (
     <Modal onClose={onClose} open={open} title="New worktree">
       <form onSubmit={submit}>
-        <div className="modal-copy fields">
-          <p>
+        <FieldGroup>
+          <FieldDescription>
             Create a linked worktree, assign a free slot, then run the
             repository's configured setup command.
-          </p>
-          <label htmlFor="new-worktree-branch">
-            <span>Branch</span>
+          </FieldDescription>
+          <Field>
+            <FieldLabel htmlFor="new-worktree-branch">Branch</FieldLabel>
             <Input
               autoFocus
               disabled={mutation.isPending}
@@ -96,22 +115,20 @@ export function CreateWorktreeDialog({
               placeholder="feature/my-branch"
               value={branch}
             />
-          </label>
-          <div className="checkbox">
+          </Field>
+          <Field orientation="horizontal">
             <Checkbox
               checked={createBranch}
               disabled={mutation.isPending}
               id="new-worktree-create-branch"
               onCheckedChange={(checked) => setCreateBranch(checked === true)}
             />
-            <label htmlFor="new-worktree-create-branch">
+            <FieldLabel htmlFor="new-worktree-create-branch">
               Create a new branch
-            </label>
-          </div>
-          <label htmlFor="new-worktree-folder">
-            <span>
-              Folder name <small>optional</small>
-            </span>
+            </FieldLabel>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="new-worktree-folder">Folder name</FieldLabel>
             <Input
               disabled={mutation.isPending}
               id="new-worktree-folder"
@@ -121,9 +138,10 @@ export function CreateWorktreeDialog({
               }
               value={folderName}
             />
-          </label>
-          <label htmlFor="new-worktree-slot">
-            <span>App slot</span>
+            <FieldDescription>Optional</FieldDescription>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="new-worktree-slot">App slot</FieldLabel>
             <Select
               disabled={mutation.isPending}
               onValueChange={(value) => setSlot(Number(value))}
@@ -138,28 +156,26 @@ export function CreateWorktreeDialog({
                 </SelectValue>
               </SelectTrigger>
               <SelectContent className="slot-select-content">
-                {available.map((option) => (
-                  <SelectItem
-                    className="slot-select-item"
-                    key={option.slot}
-                    value={String(option.slot)}
-                  >
-                    <span className="slot-select-row">
-                      <span className="slot-select-identity">
-                        <b>App {option.slot}</b>
-                        <small>Available</small>
+                <SelectGroup>
+                  {available.map((option) => (
+                    <SelectItem key={option.slot} value={String(option.slot)}>
+                      <span className="slot-select-row">
+                        <span className="slot-select-identity">
+                          <b>App {option.slot}</b>
+                          <small>Available</small>
+                        </span>
+                        <span className="slot-select-ports">
+                          {option.apps
+                            .map((app) => `${app.label} ${app.port}`)
+                            .join(" · ")}
+                        </span>
                       </span>
-                      <span className="slot-select-ports">
-                        {option.apps
-                          .map((app) => `${app.label} ${app.port}`)
-                          .join(" · ")}
-                      </span>
-                    </span>
-                  </SelectItem>
-                ))}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
               </SelectContent>
             </Select>
-          </label>
+          </Field>
           {selected ? (
             <div className="port-preview">
               {selected.apps.map((app) => (
@@ -170,8 +186,8 @@ export function CreateWorktreeDialog({
               ))}
             </div>
           ) : null}
-          {error ? <p className="field-error">{error}</p> : null}
-        </div>
+          {error ? <FieldError>{error}</FieldError> : null}
+        </FieldGroup>
         <div className="modal-actions">
           <Button
             disabled={mutation.isPending}

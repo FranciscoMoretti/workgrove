@@ -9,10 +9,9 @@ Git worktrees and the development applications running in them.
 - Use a checked-in, versioned `.workgrove.json` and an ignored
   `.env.worktree.local` slot assignment.
 - Resolve and inject each configured app's environment inside Workgrove.
-- Support per-app commands by default and a legacy aggregate command when a
-  repository already owns orchestration.
-- Require explicit trust for repository-supplied commands and invalidate trust
-  whenever those commands change.
+- Support repository-level Setup and Start commands, with optional per-app Start
+  commands when applications need separate processes.
+- Require explicit trust for repository-supplied commands once per repository.
 - Track managed processes globally across repositories and reject foreign port
   collisions before spawning.
 - Keep loopback transport and UI concerns outside the controller interface.

@@ -23,5 +23,5 @@
       }
     }
   },
-  "control": { "postCreate": { "argv": ["uv", "sync"] } }
+  "control": { "setup": { "argv": ["uv", "sync"] } }
 }

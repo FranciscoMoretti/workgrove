@@ -1,13 +1,13 @@
 import {
   ChevronRightIcon,
   GitBranchIcon,
-  LoaderCircleIcon,
   MoreHorizontalIcon,
   PlayIcon,
   RotateCwIcon,
   Settings2Icon,
   SquareIcon,
 } from "lucide-react";
+import { Fragment } from "react";
 
 import type {
   SlotOption,
@@ -18,15 +18,36 @@ import {
   appsAreStopped,
   appsCanRestart,
 } from "../../controller/workspace-snapshot";
+import type { WorktreeCommandActions } from "../worktree-command-menu";
+import { type CommandMenuItem, CommandMenuItems } from "./command-menu-items";
+import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
+import { ButtonGroup } from "./ui/button-group";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuGroup,
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import { Select, SelectContent, SelectItem, SelectTrigger } from "./ui/select";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
+import { ScrollArea } from "./ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+} from "./ui/select";
+import { Spinner } from "./ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "./ui/table";
 import { WorktreeActionsMenu } from "./worktree-actions-menu";
 
 function statusText(
@@ -44,16 +65,22 @@ function statusText(
 
 function indicatorClass(app: WorktreeSnapshot["apps"][number]): string {
   if (app.listening) {
-    return "mini-dot on";
+    return "size-1.5 rounded-full bg-foreground";
   }
-  return app.ownership === "foreign" ? "mini-dot conflict" : "mini-dot";
+  return app.ownership === "foreign"
+    ? "size-1.5 rounded-full bg-destructive"
+    : "size-1.5 rounded-full bg-muted-foreground/60";
 }
 
 function appActionIndicator(pending: boolean, running: boolean) {
   if (pending) {
-    return <LoaderCircleIcon className="spin" />;
+    return <Spinner />;
   }
-  return running ? <SquareIcon /> : <span className="health-dot" />;
+  return running ? (
+    <SquareIcon data-icon="inline-start" />
+  ) : (
+    <span className="size-2 rounded-full bg-muted-foreground" />
+  );
 }
 
 function slotStateText(state: WorktreeSnapshot["slotState"]): string {
@@ -73,10 +100,10 @@ function slotAvailability(
 
 export function WorktreeTable({
   actionPending,
+  commandActions,
   defaultSlot,
   onDelete,
   onInspect,
-  onRestartApps,
   onSetSlot,
   onToggleApps,
   selectedId,
@@ -85,10 +112,10 @@ export function WorktreeTable({
   worktrees,
 }: {
   actionPending: (worktreeId: string) => boolean;
+  commandActions: WorktreeCommandActions;
   defaultSlot: number;
   onDelete: (worktree: WorktreeSnapshot) => void;
   onInspect: (worktreeId: string) => void;
-  onRestartApps: (worktree: WorktreeSnapshot) => void;
   onSetSlot: (worktree: WorktreeSnapshot, slot: SlotOption) => void;
   onToggleApps: (worktree: WorktreeSnapshot) => void;
   selectedId: string | null;
@@ -103,86 +130,96 @@ export function WorktreeTable({
   };
   worktrees: WorktreeSnapshot[];
 }) {
-  const canSetupVisible =
-    visibleActions.setupAvailable &&
-    worktrees.some((worktree) => appsAreStopped(worktree));
+  const canSetupVisible = visibleActions.setupAvailable && worktrees.length > 0;
   const canStartVisible = worktrees.some(
     (worktree) => worktree.slotState === "assigned" && appsAreStopped(worktree)
   );
   const canStopVisible = worktrees.some(appsAreRunning);
   const canRestartVisible = worktrees.some(appsCanRestart);
+  const visibleCommandItems: CommandMenuItem[] = [
+    {
+      disabled: !canSetupVisible || visibleActions.pending,
+      icon: Settings2Icon,
+      id: "setup-all",
+      label: "Setup all",
+      onSelect: visibleActions.onSetup,
+    },
+    {
+      disabled: !canStartVisible || visibleActions.pending,
+      icon: PlayIcon,
+      id: "start-all",
+      label: "Start all",
+      onSelect: visibleActions.onStart,
+    },
+    {
+      disabled: !canRestartVisible || visibleActions.pending,
+      icon: RotateCwIcon,
+      id: "restart-running",
+      label: "Restart running",
+      onSelect: visibleActions.onRestart,
+    },
+    {
+      disabled: !canStopVisible || visibleActions.pending,
+      icon: SquareIcon,
+      id: "stop-all",
+      label: "Stop all",
+      onSelect: visibleActions.onStop,
+    },
+  ];
   return (
-    <div className="table-shell">
-      <table>
-        <thead>
-          <tr>
-            <th>
+    <ScrollArea
+      className="h-full min-w-0 border bg-card"
+      scrollbars={["vertical", "horizontal"]}
+    >
+      <Table
+        className="min-w-[900px]"
+        containerClassName="w-max min-w-full overflow-visible"
+      >
+        <TableHeader className="sticky top-0 z-10 bg-muted">
+          <TableRow>
+            <TableHead className="w-[34%]">
               <span>Repository</span>
-            </th>
-            <th>Branch</th>
-            <th>
-              <div className="table-heading apps-heading">
+            </TableHead>
+            <TableHead className="w-[18%]">Branch</TableHead>
+            <TableHead className="w-[22%]">
+              <div className="flex items-center gap-1">
                 <span>Apps</span>
                 <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      aria-label="Visible worktree app actions"
-                      className="menu-trigger compact-menu-trigger"
-                      size="icon"
-                      variant="ghost"
-                    >
-                      <MoreHorizontalIcon />
-                    </Button>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button
+                        aria-label="Visible worktree app actions"
+                        size="icon"
+                        variant="ghost"
+                      />
+                    }
+                  >
+                    <MoreHorizontalIcon />
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="bulk-menu">
-                    <DropdownMenuLabel>Visible worktrees</DropdownMenuLabel>
-                    <DropdownMenuItem
-                      disabled={!canSetupVisible || visibleActions.pending}
-                      onSelect={visibleActions.onSetup}
-                    >
-                      <Settings2Icon />
-                      Setup all
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={!canStartVisible || visibleActions.pending}
-                      onSelect={visibleActions.onStart}
-                    >
-                      <PlayIcon />
-                      Start all
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={!canRestartVisible || visibleActions.pending}
-                      onSelect={visibleActions.onRestart}
-                    >
-                      <RotateCwIcon />
-                      Restart running
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={!canStopVisible || visibleActions.pending}
-                      onSelect={visibleActions.onStop}
-                    >
-                      <SquareIcon />
-                      Stop all
-                    </DropdownMenuItem>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel>Visible worktrees</DropdownMenuLabel>
+                      <CommandMenuItems items={visibleCommandItems} />
+                    </DropdownMenuGroup>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
-            </th>
-            <th>Ports</th>
-            <th>
+            </TableHead>
+            <TableHead className="w-[16%]">Ports</TableHead>
+            <TableHead>
               <span className="sr-only">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {worktrees.map((worktree) => {
             const pending = actionPending(worktree.id);
             const appSlot = worktree.slot ?? defaultSlot;
-            const appName = worktree.appLabel;
+            const slotLabel = `Slot ${appSlot}`;
             const running = appsAreRunning(worktree);
             return (
-              <tr
-                className={selectedId === worktree.id ? "selected" : ""}
+              <TableRow
+                data-state={selectedId === worktree.id ? "selected" : undefined}
                 key={worktree.id}
                 onClick={(event) => {
                   if (
@@ -203,51 +240,57 @@ export function WorktreeTable({
                 }}
                 tabIndex={0}
               >
-                <td>
-                  <div className="repo-cell">
-                    <div>
-                      <strong>{worktree.name}</strong>
+                <TableCell className="h-18">
+                  <div className="grid gap-1">
+                    <div className="flex items-center gap-1.5">
+                      <strong className="truncate font-medium text-sm">
+                        {worktree.name}
+                      </strong>
                       {worktree.isMain ? (
-                        <em className="main-badge">Main</em>
+                        <Badge variant="secondary">Main</Badge>
                       ) : null}
-                      <ChevronRightIcon />
+                      <ChevronRightIcon className="text-muted-foreground" />
                     </div>
-                    <span>{worktree.path}</span>
+                    <span className="truncate font-mono text-muted-foreground">
+                      {worktree.path}
+                    </span>
                     {worktree.slotState === "invalid" ||
                     worktree.slotState === "conflicting" ? (
-                      <em className={`slot-state ${worktree.slotState}`}>
+                      <Badge variant="destructive">
                         {slotStateText(worktree.slotState)}
-                      </em>
+                      </Badge>
                     ) : null}
                     {worktree.setupState === "failed" ? (
-                      <em className="setup-state failed">
+                      <Badge variant="destructive">
                         Setup failed · retry from Apps menu
-                      </em>
+                      </Badge>
                     ) : null}
                   </div>
-                </td>
-                <td>
-                  <div className="branch-cell">
-                    <GitBranchIcon />
-                    <span>{worktree.branch}</span>
+                </TableCell>
+                <TableCell>
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <GitBranchIcon className="text-muted-foreground" />
+                    <span className="truncate font-mono text-muted-foreground">
+                      {worktree.branch}
+                    </span>
                   </div>
-                </td>
-                <td>
-                  <div className="split-control">
+                </TableCell>
+                <TableCell>
+                  <ButtonGroup>
                     <Button
-                      aria-label={`${running ? "Stop" : "Start"} ${appName}`}
-                      className="apps-button"
+                      aria-label={`${running ? "Stop" : "Start"} apps in ${slotLabel} for ${worktree.name}`}
+                      className="min-w-24 justify-start"
                       data-health={worktree.health}
                       disabled={
                         pending ||
                         (!running && worktree.slotState !== "assigned")
                       }
                       onClick={() => onToggleApps(worktree)}
-                      title={`${statusText(worktree.health, running)} · slot ${appSlot}`}
-                      variant="secondary"
+                      title={`${statusText(worktree.health, running)} · ${slotLabel}`}
+                      variant="outline"
                     >
                       {appActionIndicator(pending, running)}
-                      <b>{appName}</b>
+                      <b>{slotLabel}</b>
                     </Button>
                     <Select
                       onValueChange={(value) => {
@@ -264,82 +307,95 @@ export function WorktreeTable({
                     >
                       <SelectTrigger
                         aria-label={`Choose slot for ${worktree.name}`}
-                        className="slot-trigger"
+                        className="w-8 [&_[data-slot=select-value]]:hidden"
                       />
-                      <SelectContent className="slot-select-content">
-                        {slots.map((option) => {
-                          const occupiedByOther =
-                            option.occupiedBy !== null &&
-                            option.slot !== worktree.slot;
-                          return (
-                            <SelectItem
-                              className="slot-select-item"
-                              disabled={occupiedByOther || pending}
-                              key={option.slot}
-                              value={String(option.slot)}
-                            >
-                              <span className="slot-select-row">
-                                <span className="slot-select-identity">
-                                  <b>Slot {option.slot}</b>
-                                  <small>
-                                    {slotAvailability(
-                                      occupiedByOther,
-                                      option.occupiedBy,
-                                      option.slot === worktree.slot
-                                    )}
-                                  </small>
+                      <SelectContent className="min-w-80">
+                        <SelectGroup>
+                          {slots.map((option) => {
+                            const occupiedByOther =
+                              option.occupiedBy !== null &&
+                              option.slot !== worktree.slot;
+                            return (
+                              <SelectItem
+                                disabled={occupiedByOther || pending}
+                                key={option.slot}
+                                value={String(option.slot)}
+                              >
+                                <span className="flex w-full items-center justify-between gap-6">
+                                  <span className="grid gap-0.5">
+                                    <b>Slot {option.slot}</b>
+                                    <small className="text-muted-foreground">
+                                      {slotAvailability(
+                                        occupiedByOther,
+                                        option.occupiedBy,
+                                        option.slot === worktree.slot
+                                      )}
+                                    </small>
+                                  </span>
+                                  <span className="font-mono text-muted-foreground">
+                                    {option.apps
+                                      .map((app) => `${app.label} ${app.port}`)
+                                      .join(" · ")}
+                                  </span>
                                 </span>
-                                <span className="slot-select-ports">
-                                  {option.apps
-                                    .map((app) => `${app.label} ${app.port}`)
-                                    .join(" · ")}
-                                </span>
-                              </span>
-                            </SelectItem>
-                          );
-                        })}
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectGroup>
                       </SelectContent>
                     </Select>
-                  </div>
-                </td>
-                <td>
-                  <div className="ports-cell">
+                  </ButtonGroup>
+                </TableCell>
+                <TableCell>
+                  <div className="grid grid-cols-[8px_max-content_max-content] items-center justify-start gap-x-2 gap-y-0.5">
                     {worktree.apps.map((app) => (
-                      <div className="port-row" key={app.id}>
+                      <Fragment key={app.id}>
                         <span className={indicatorClass(app)} />
                         <span>{app.label}</span>
                         {app.open && app.listening ? (
-                          <a href={app.url} rel="noreferrer" target="_blank">
+                          <a
+                            className="text-right underline underline-offset-3"
+                            href={app.url}
+                            rel="noreferrer"
+                            target="_blank"
+                          >
                             {app.port}
                           </a>
                         ) : (
-                          <code>{app.port}</code>
+                          <code className="text-right">{app.port}</code>
                         )}
-                      </div>
+                      </Fragment>
                     ))}
                   </div>
-                </td>
-                <td>
+                </TableCell>
+                <TableCell>
                   <WorktreeActionsMenu
+                    commandActions={commandActions}
                     onDelete={() => onDelete(worktree)}
                     onInspect={() => onInspect(worktree.id)}
-                    onRestart={() => onRestartApps(worktree)}
                     pending={pending}
                     worktree={worktree}
                   />
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             );
           })}
           {worktrees.length === 0 ? (
-            <tr>
-              <td className="empty-table" colSpan={5}>
-                No Git worktrees found.
-              </td>
-            </tr>
+            <TableRow>
+              <TableCell className="h-48" colSpan={5}>
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyTitle>No Git worktrees found</EmptyTitle>
+                    <EmptyDescription>
+                      Add a worktree to this repository to manage it here.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              </TableCell>
+            </TableRow>
           ) : null}
-        </tbody>
-      </table>
-    </div>
+        </TableBody>
+      </Table>
+    </ScrollArea>
   );
 }

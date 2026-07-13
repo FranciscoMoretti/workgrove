@@ -1,5 +1,5 @@
 import { FileWarningIcon } from "lucide-react";
-
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "./ui/alert";
 import { Button } from "./ui/button";
 
 export function RepositorySetupNotice({
@@ -10,21 +10,20 @@ export function RepositorySetupNotice({
   onInitialize?: () => void;
 }) {
   return (
-    <div className="setup-needed" role="status">
+    <Alert>
       <FileWarningIcon />
-      <div>
-        <strong>This repository needs Workgrove setup</strong>
-        <p>
-          Review a detected starter configuration before Workgrove creates it,
-          or add the file manually at this path.
-        </p>
-        <code>{configPath}</code>
-        {onInitialize ? (
+      <AlertTitle>This repository needs Workgrove setup</AlertTitle>
+      <AlertDescription>
+        Review a detected starter configuration before Workgrove creates it, or
+        add the file manually at <code>{configPath}</code>.
+      </AlertDescription>
+      {onInitialize ? (
+        <AlertAction>
           <Button className="setup-button" onClick={onInitialize} size="sm">
             Review starter config
           </Button>
-        ) : null}
-      </div>
-    </div>
+        </AlertAction>
+      ) : null}
+    </Alert>
   );
 }

@@ -1,72 +1,75 @@
-import { MoreHorizontalIcon, RotateCwIcon, Trash2Icon } from "lucide-react";
+import { MoreHorizontalIcon, Trash2Icon } from "lucide-react";
 
 import type { WorktreeSnapshot } from "../../controller/workspace-snapshot";
+import { appsAreRunning } from "../../controller/workspace-snapshot";
 import {
-  appsAreRunning,
-  appsCanRestart,
-} from "../../controller/workspace-snapshot";
+  type WorktreeCommandActions,
+  worktreeCommandMenuItems,
+} from "../worktree-command-menu";
+import { type CommandMenuItem, CommandMenuItems } from "./command-menu-items";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
+  DropdownMenuGroup,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 
 export function WorktreeActionsMenu({
   bordered = false,
+  commandActions,
   onDelete,
   onInspect,
-  onRestart,
   pending,
   worktree,
 }: {
   bordered?: boolean;
+  commandActions: WorktreeCommandActions;
   onDelete: () => void;
   onInspect: () => void;
-  onRestart: () => void;
   pending: boolean;
   worktree: WorktreeSnapshot;
 }) {
   const running = appsAreRunning(worktree);
-  const canRestart = appsCanRestart(worktree);
+  const items: CommandMenuItem[] = [
+    {
+      id: "inspect",
+      label: "View details",
+      onSelect: onInspect,
+    },
+    ...worktreeCommandMenuItems({ actions: commandActions, pending, worktree }),
+    ...(worktree.isMain
+      ? []
+      : [
+          {
+            disabled: pending || running,
+            icon: Trash2Icon,
+            id: "delete",
+            label: "Delete worktree",
+            onSelect: onDelete,
+            separatorBefore: true,
+            variant: "destructive" as const,
+          },
+        ]),
+  ];
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          aria-label={`Actions for ${worktree.name}`}
-          className={
-            bordered ? "bordered-menu-trigger menu-trigger" : "menu-trigger"
-          }
-          size="icon"
-          variant="ghost"
-        >
-          <MoreHorizontalIcon />
-        </Button>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            aria-label={`Actions for ${worktree.name}`}
+            size="icon"
+            variant={bordered ? "outline" : "ghost"}
+          />
+        }
+      >
+        <MoreHorizontalIcon />
       </DropdownMenuTrigger>
       <DropdownMenuContent>
-        <DropdownMenuItem onSelect={onInspect}>View details</DropdownMenuItem>
-        {canRestart ? (
-          <DropdownMenuItem disabled={pending} onSelect={onRestart}>
-            <RotateCwIcon />
-            Restart apps
-          </DropdownMenuItem>
-        ) : null}
-        {worktree.isMain ? null : (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              destructive
-              disabled={pending || running}
-              onSelect={onDelete}
-            >
-              <Trash2Icon />
-              Delete worktree
-            </DropdownMenuItem>
-          </>
-        )}
+        <DropdownMenuGroup>
+          <CommandMenuItems items={items} />
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );

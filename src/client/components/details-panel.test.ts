@@ -26,6 +26,13 @@ describe("details panel", () => {
       createElement(DetailsPanel, {
         actionPending: false,
         clearPending: false,
+        commandActions: {
+          onRestart: () => undefined,
+          onSetup: () => undefined,
+          onStart: () => undefined,
+          onStop: () => undefined,
+          setupAvailable: true,
+        },
         error: new Error("Failed to fetch"),
         loading: false,
         logs: [],
@@ -33,7 +40,6 @@ describe("details panel", () => {
         onClose: () => undefined,
         onDelete: () => undefined,
         onInspect: () => undefined,
-        onRestart: () => undefined,
         onRetryLogs: () => undefined,
         onToggleApps: () => undefined,
         worktree,

@@ -4,7 +4,6 @@ import { inspectListeningPorts, ownedPortPids } from "../runtime/ports";
 import {
   appendManagedLog,
   appProcessId,
-  setupProcessId,
   stopManagedProcess,
 } from "../runtime/process-supervisor";
 import { requiredString } from "./command";
@@ -20,7 +19,6 @@ export function stopApps(
   const config = controller.config(repoPath);
   for (const id of [
     worktreeId,
-    setupProcessId(worktreeId),
     ...Object.keys(config.apps).map((appId) => appProcessId(worktreeId, appId)),
   ]) {
     const managed = stopManagedProcess(id, worktree.path);

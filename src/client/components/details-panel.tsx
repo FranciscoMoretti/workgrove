@@ -10,14 +10,26 @@ import { useEffect, useRef, useState } from "react";
 
 import type { WorktreeSnapshot } from "../../controller/workspace-snapshot";
 import { appsAreRunning } from "../../controller/workspace-snapshot";
+import type { WorktreeCommandActions } from "../worktree-command-menu";
+import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "./ui/card";
+import { Spinner } from "./ui/spinner";
 import { WorktreeActionsMenu } from "./worktree-actions-menu";
 
 function indicatorClass(app: WorktreeSnapshot["apps"][number]): string {
   if (app.listening) {
-    return "mini-dot on";
+    return "size-1.5 rounded-full bg-foreground";
   }
-  return app.ownership === "foreign" ? "mini-dot conflict" : "mini-dot";
+  return app.ownership === "foreign"
+    ? "size-1.5 rounded-full bg-destructive"
+    : "size-1.5 rounded-full bg-muted-foreground/60";
 }
 
 function endpointStatus(app: WorktreeSnapshot["apps"][number]): string {
@@ -44,7 +56,11 @@ function terminalContent({
   onRetry: () => void;
 }) {
   if (loading) {
-    return <p>Connecting to managed logs…</p>;
+    return (
+      <p className="flex items-center gap-2">
+        <Spinner /> Connecting to managed logs…
+      </p>
+    );
   }
   if (error) {
     return (
@@ -80,6 +96,7 @@ function terminalContent({
 export function DetailsPanel({
   actionPending,
   clearPending,
+  commandActions,
   error,
   loading,
   logs,
@@ -87,13 +104,13 @@ export function DetailsPanel({
   onClose,
   onDelete,
   onInspect,
-  onRestart,
   onRetryLogs,
   onToggleApps,
   worktree,
 }: {
   actionPending: boolean;
   clearPending: boolean;
+  commandActions: WorktreeCommandActions;
   error: Error | null;
   loading: boolean;
   logs: string[];
@@ -101,7 +118,6 @@ export function DetailsPanel({
   onClose: () => void;
   onDelete: () => void;
   onInspect: () => void;
-  onRestart: () => void;
   onRetryLogs: () => void;
   onToggleApps: () => void;
   worktree: WorktreeSnapshot;
@@ -116,21 +132,21 @@ export function DetailsPanel({
     window.setTimeout(() => setCopied(false), 1500);
   }
   return (
-    <aside className="details-panel">
+    <aside className="details-panel flex h-full min-w-0 flex-col overflow-hidden bg-background">
       <header>
         <div>
           <h2>{worktree.name}</h2>
           <p>{worktree.path}</p>
-          <div className="detail-meta">
-            <span>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="outline">
               <GitBranchIcon />
               {worktree.branch}
-            </span>
-            <span>
+            </Badge>
+            <Badge variant="outline">
               {worktree.slot === null
                 ? "Unassigned"
                 : `App slot ${worktree.slot}`}
-            </span>
+            </Badge>
           </div>
         </div>
         <Button
@@ -144,22 +160,31 @@ export function DetailsPanel({
       </header>
       <section>
         <h3>Configured apps</h3>
-        <div className="endpoint-grid">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-2">
           {worktree.apps.map((app) => (
-            <div className="endpoint-card" key={app.id}>
-              <div>
-                <span className={indicatorClass(app)} />
-                <strong>{app.label}</strong>
-              </div>
-              {app.open && app.listening ? (
-                <a href={app.url} rel="noreferrer" target="_blank">
-                  {app.port}
-                </a>
-              ) : (
-                <code>{app.port}</code>
-              )}
-              <small>{endpointStatus(app)}</small>
-            </div>
+            <Card key={app.id} size="sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <span className={indicatorClass(app)} />
+                  {app.label}
+                </CardTitle>
+                <CardDescription>{endpointStatus(app)}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {app.open && app.listening ? (
+                  <a
+                    className="underline underline-offset-3"
+                    href={app.url}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    {app.port}
+                  </a>
+                ) : (
+                  <code>{app.port}</code>
+                )}
+              </CardContent>
+            </Card>
           ))}
         </div>
       </section>
@@ -176,9 +201,9 @@ export function DetailsPanel({
         </Button>
         <WorktreeActionsMenu
           bordered
+          commandActions={commandActions}
           onDelete={onDelete}
           onInspect={onInspect}
-          onRestart={onRestart}
           pending={actionPending}
           worktree={worktree}
         />

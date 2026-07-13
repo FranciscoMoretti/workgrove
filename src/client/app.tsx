@@ -1,37 +1,73 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { FolderGit2Icon, FolderOpenIcon, TreesIcon } from "lucide-react";
+import {
+  AlertCircleIcon,
+  FolderGit2Icon,
+  FolderOpenIcon,
+  TreesIcon,
+} from "lucide-react";
 import type { FormEvent } from "react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import type {
   SlotOption,
   WorkspaceSnapshot,
   WorktreeSnapshot,
 } from "../controller/workspace-snapshot";
-import { appsAreStopped } from "../controller/workspace-snapshot";
 import { repositoryPathFromSearch, repositoryUrl } from "../repository-context";
 import { CreateWorktreeDialog } from "./components/create-worktree-dialog";
 import { DeleteWorktreeDialog } from "./components/delete-worktree-dialog";
 import { DetailsPanel } from "./components/details-panel";
+import { RepositoryCommandsDialog } from "./components/repository-commands-dialog";
 import { RepositoryDialog } from "./components/repository-dialog";
+import { RepositoryTrustDialog } from "./components/repository-trust-dialog";
 import { SlotDialog } from "./components/slot-dialog";
 import { Toolbar } from "./components/toolbar";
+import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
 import { Button } from "./components/ui/button";
-import { Input } from "./components/ui/input";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "./components/ui/card";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "./components/ui/empty";
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "./components/ui/field";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "./components/ui/input-group";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "./components/ui/resizable";
+import { Spinner } from "./components/ui/spinner";
 import { WorktreeTable } from "./components/worktree-table";
-import { useCommands } from "./mutations";
 import { useLogs, useWorkspace } from "./queries";
 import { useRepositoryOpen } from "./use-repository-open";
 import { useRepositoryPicker } from "./use-repository-picker";
 import { useRepositorySetup } from "./use-repository-setup";
+import { useRepositoryTrust } from "./use-repository-trust";
+import { useWorktreeCommandActions } from "./use-worktree-command-actions";
 
 const REPO_STORAGE_KEY = "workgrove:repo-path";
 const RECENTS_STORAGE_KEY = "workgrove:recent-repos";
+const DETAILS_PANEL_IDS = ["worktrees", "details"];
+const EMPTY_WORKTREES: WorktreeSnapshot[] = [];
 
 function recentRepositories(): string[] {
   try {
@@ -84,101 +120,87 @@ function Onboarding({
       return setup.notice();
     }
     const message = opener.error?.message ?? picker.error;
-    return message ? <p className="field-error">{message}</p> : null;
+    return message ? <FieldError>{message}</FieldError> : null;
   }
   return (
-    <main className="onboarding">
-      <div className="onboarding-card">
-        <span className="hero-mark">
-          <TreesIcon />
-        </span>
-        <p className="eyebrow">Local worktree control</p>
-        <h1>Keep every branch in its lane.</h1>
-        <p className="lede">
-          Choose a Git repository. Workgrove will discover its worktrees from an
-          existing <code>.workgrove.json</code>, or help you create a safe
-          starter configuration.
-        </p>
-        <form onSubmit={submit}>
-          <div className="repo-field">
-            <label htmlFor="onboarding-repo-path">Repository path</label>
-            <div className="repository-path-control">
-              <div className="path-input">
-                <FolderGit2Icon />
-                <Input
-                  autoFocus
-                  disabled={opener.pending || picker.pending}
-                  id="onboarding-repo-path"
-                  onChange={(event) => changeDraft(event.target.value)}
-                  placeholder="/Users/you/code/project"
-                  value={repoDraft}
-                />
-              </div>
+    <main className="grid min-h-screen place-items-center bg-muted p-6">
+      <Card className="w-full max-w-xl">
+        <CardHeader>
+          <EmptyMedia variant="icon">
+            <TreesIcon />
+          </EmptyMedia>
+          <CardTitle>Keep every branch in its lane.</CardTitle>
+          <CardDescription>
+            Choose a Git repository. Workgrove will discover its worktrees from
+            an existing <code>.workgrove.json</code>, or help you create a safe
+            starter configuration.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={submit}>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="onboarding-repo-path">
+                  Repository path
+                </FieldLabel>
+                <div className="flex items-center gap-2 max-sm:flex-col max-sm:items-stretch">
+                  <InputGroup>
+                    <InputGroupAddon>
+                      <FolderGit2Icon />
+                    </InputGroupAddon>
+                    <InputGroupInput
+                      autoFocus
+                      disabled={opener.pending || picker.pending}
+                      id="onboarding-repo-path"
+                      onChange={(event) => changeDraft(event.target.value)}
+                      placeholder="/Users/you/code/project"
+                      value={repoDraft}
+                    />
+                  </InputGroup>
+                  <Button
+                    aria-label="Choose repository folder"
+                    disabled={opener.pending || picker.pending}
+                    onClick={picker.browse}
+                    variant="outline"
+                  >
+                    <FolderOpenIcon data-icon="inline-start" />
+                    {picker.pending ? "Opening…" : "Browse"}
+                  </Button>
+                </div>
+              </Field>
+              {feedback()}
               <Button
-                aria-label="Choose repository folder"
-                className="browse-button"
-                disabled={opener.pending || picker.pending}
-                onClick={picker.browse}
-                variant="secondary"
+                className="w-full"
+                disabled={
+                  repoDraft.trim() === "" || opener.pending || picker.pending
+                }
+                type="submit"
               >
-                <FolderOpenIcon />
-                {picker.pending ? "Opening…" : "Browse"}
+                {opener.pending ? "Inspecting…" : "Open repository"}
               </Button>
-            </div>
-          </div>
-          {feedback()}
-          <Button
-            className="wide"
-            disabled={
-              repoDraft.trim() === "" || opener.pending || picker.pending
-            }
-            type="submit"
-          >
-            {opener.pending ? "Inspecting…" : "Open repository"}
-          </Button>
-        </form>
+            </FieldGroup>
+          </form>
+        </CardContent>
         {recents.length > 0 ? (
-          <div className="recent-repos">
-            <span>Recent repositories</span>
+          <CardFooter className="flex-col items-stretch gap-1">
+            <FieldLabel>Recent repositories</FieldLabel>
             {recents.map((path) => (
               <Button
-                className="recent-repository"
+                className="w-full justify-start truncate"
                 disabled={opener.pending || picker.pending}
                 key={path}
                 onClick={() => changeDraft(path)}
                 variant="ghost"
               >
-                <FolderGit2Icon />
+                <FolderGit2Icon data-icon="inline-start" />
                 {path}
               </Button>
             ))}
-          </div>
+          </CardFooter>
         ) : null}
-      </div>
+      </Card>
       {setup.dialog}
     </main>
-  );
-}
-
-function RepositoryTrustNotice({
-  commands,
-  onTrust,
-  pending,
-}: {
-  commands: string[];
-  onTrust: () => void;
-  pending: boolean;
-}) {
-  return (
-    <div className="trust-banner">
-      <div>
-        <strong>Trust repository commands?</strong>
-        <span>{commands.join(" · ")}</span>
-      </div>
-      <Button disabled={pending} onClick={onTrust} size="sm">
-        {pending ? "Trusting…" : "Trust commands"}
-      </Button>
-    </div>
   );
 }
 
@@ -196,6 +218,7 @@ export function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [repositoryOpen, setRepositoryOpen] = useState(false);
+  const [repositoryCommandsOpen, setRepositoryCommandsOpen] = useState(false);
   const [slotChoice, setSlotChoice] = useState<{
     option: SlotOption;
     worktree: WorktreeSnapshot;
@@ -205,32 +228,26 @@ export function App() {
   );
   const workspace = useWorkspace(repoPath);
   const queryClient = useQueryClient();
-  const commands = useCommands(repoPath);
   const logs = useLogs(repoPath, selectedId);
   const quickRepository = useRepositoryOpen(openRepository);
   const selected =
     workspace.data?.worktrees.find((worktree) => worktree.id === selectedId) ??
     null;
-  const visibleWorktrees = workspace.data?.worktrees ?? [];
-  const pendingIds = useMemo(
-    () =>
-      new Set(
-        [
-          commands.startApps.variables?.worktreeId,
-          commands.stopApps.variables?.worktreeId,
-          commands.restartApps.variables?.worktreeId,
-          commands.setSlot.variables?.worktreeId,
-          commands.deleteWorktree.variables?.worktreeId,
-        ].filter((id): id is string => typeof id === "string")
-      ),
-    [
-      commands.deleteWorktree.variables,
-      commands.setSlot.variables,
-      commands.restartApps.variables,
-      commands.startApps.variables,
-      commands.stopApps.variables,
-    ]
-  );
+  const visibleWorktrees = workspace.data?.worktrees ?? EMPTY_WORKTREES;
+  const repositoryTrust = useRepositoryTrust({
+    repoPath,
+    required: workspace.data?.trustRequired ?? false,
+    trusted: workspace.data?.trusted ?? true,
+  });
+  const worktreeActions = useWorktreeCommandActions({
+    onSelectWorktree: setSelectedId,
+    repoPath,
+    requestRepositoryTrust: repositoryTrust.requestTrust,
+    setupAvailable: workspace.data?.setupAvailable ?? false,
+    worktrees: visibleWorktrees,
+  });
+  const { commandActions, commands, pendingIds, toggleApps, visibleActions } =
+    worktreeActions;
 
   function selectRepository(path: string) {
     const nextRecents = [
@@ -265,68 +282,46 @@ export function App() {
   }
   if (!workspace.data) {
     return (
-      <main className="loading-screen">
-        <TreesIcon className="pulse" />
-        <p>Inspecting worktrees…</p>
+      <main className="grid min-h-screen place-items-center">
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Spinner />
+            </EmptyMedia>
+            <EmptyTitle>Inspecting worktrees</EmptyTitle>
+            <EmptyDescription>
+              Reading repository configuration and active processes.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       </main>
     );
   }
   const data = workspace.data;
-  const visibleIds = visibleWorktrees.map((worktree) => worktree.id);
-  const bulkPending =
-    commands.restartRunningApps.isPending ||
-    commands.setupAllApps.isPending ||
-    commands.startAllApps.isPending ||
-    commands.stopAllApps.isPending;
-  function toggleApps(worktree: WorktreeSnapshot) {
-    const mutation = appsAreStopped(worktree)
-      ? commands.startApps
-      : commands.stopApps;
-    mutation.mutate({ repoPath, worktreeId: worktree.id });
-    setSelectedId(worktree.id);
-  }
-  function restartApps(worktree: WorktreeSnapshot) {
-    commands.restartApps.mutate({ repoPath, worktreeId: worktree.id });
-    setSelectedId(worktree.id);
-  }
   function worktreeTable() {
     return (
       <WorktreeTable
         actionPending={(id) => pendingIds.has(id)}
+        commandActions={commandActions}
         defaultSlot={data.defaultSlot}
         onDelete={setDeleteTarget}
         onInspect={setSelectedId}
-        onRestartApps={restartApps}
         onSetSlot={(worktree, option) => setSlotChoice({ option, worktree })}
         onToggleApps={toggleApps}
         selectedId={selectedId}
         slots={data.slotOptions}
-        visibleActions={{
-          onRestart: () =>
-            commands.restartRunningApps.mutate({
-              repoPath,
-              worktreeIds: visibleIds,
-            }),
-          onSetup: () =>
-            commands.setupAllApps.mutate({ repoPath, worktreeIds: visibleIds }),
-          onStart: () =>
-            commands.startAllApps.mutate({ repoPath, worktreeIds: visibleIds }),
-          onStop: () =>
-            commands.stopAllApps.mutate({ repoPath, worktreeIds: visibleIds }),
-          pending: bulkPending,
-          setupAvailable: data.setupAvailable,
-        }}
+        visibleActions={visibleActions}
         worktrees={visibleWorktrees}
       />
     );
   }
   const mainPanel = (
-    <div className="main-panel">
+    <div className="flex h-screen min-w-0 flex-col bg-muted/30">
       <Toolbar
         activeRepoPath={repoPath}
-        globalProcesses={data.globalProcesses}
         isFetching={workspace.isFetching}
         mainWorktreePath={data.mainWorktreePath}
+        onConfigureCommands={() => setRepositoryCommandsOpen(true)}
         onCreate={() => setCreateOpen(true)}
         onOpenRepository={() => setRepositoryOpen(true)}
         onRefresh={() =>
@@ -346,41 +341,42 @@ export function App() {
         updatedAt={workspace.dataUpdatedAt}
       />
       {commands.error || quickRepository.error ? (
-        <div className="error-banner">
-          {(commands.error ?? quickRepository.error)?.message}
-        </div>
+        <Alert className="mx-5 mb-3 w-auto shrink-0" variant="destructive">
+          <AlertCircleIcon />
+          <AlertTitle>Command failed</AlertTitle>
+          <AlertDescription>
+            {(commands.error ?? quickRepository.error)?.message}
+          </AlertDescription>
+        </Alert>
       ) : null}
-      {data.trustRequired && !data.trusted ? (
-        <RepositoryTrustNotice
-          commands={data.trustCommands}
-          onTrust={() =>
-            commands.trustRepository.mutate({
-              fingerprint: data.trustFingerprint,
-              repoPath,
-            })
-          }
-          pending={commands.trustRepository.isPending}
-        />
-      ) : null}
-      <section className="workspace-main">{worktreeTable()}</section>
+      <section className="min-h-0 flex-1 overflow-hidden px-5 pb-5">
+        {worktreeTable()}
+      </section>
     </div>
   );
   return (
-    <main className="app-shell">
+    <main className="h-screen overflow-hidden">
       {selected ? (
         <ResizablePanelGroup
-          autoSaveId="workgrove:details-layout"
-          className="app-layout"
+          autoSaveId="workgrove:details-layout:v2"
+          className="h-full"
           direction="horizontal"
+          panelIds={DETAILS_PANEL_IDS}
         >
-          <ResizablePanel defaultSize={58} minSize={38}>
+          <ResizablePanel defaultSize="50%" id="worktrees" minSize="30%">
             {mainPanel}
           </ResizablePanel>
           <ResizableHandle withHandle />
-          <ResizablePanel defaultSize={42} maxSize={62} minSize={32}>
+          <ResizablePanel
+            defaultSize="50%"
+            id="details"
+            maxSize="70%"
+            minSize="30%"
+          >
             <DetailsPanel
               actionPending={pendingIds.has(selected.id)}
               clearPending={commands.clearLogs.isPending}
+              commandActions={commandActions}
               error={logs.error}
               loading={logs.isLoading}
               logs={logs.data ?? []}
@@ -393,7 +389,6 @@ export function App() {
               onClose={() => setSelectedId(null)}
               onDelete={() => setDeleteTarget(selected)}
               onInspect={() => setSelectedId(selected.id)}
-              onRestart={() => restartApps(selected)}
               onRetryLogs={() => logs.refetch().then(() => undefined)}
               onToggleApps={() => toggleApps(selected)}
               worktree={selected}
@@ -409,6 +404,7 @@ export function App() {
         open={createOpen}
         repoName={data.repoName}
         repoPath={repoPath}
+        requestRepositoryTrust={repositoryTrust.requestTrust}
         slots={data.slotOptions}
       />
       <RepositoryDialog
@@ -420,6 +416,21 @@ export function App() {
           setSelectedId(null);
         }}
         open={repositoryOpen}
+      />
+      <RepositoryCommandsDialog
+        configPath={data.configPath}
+        error={commands.updateRepositoryCommands.error}
+        key={repositoryCommandsOpen ? "commands-open" : "commands-closed"}
+        onClose={() => setRepositoryCommandsOpen(false)}
+        onSave={(value) =>
+          commands.updateRepositoryCommands.mutate(
+            { repoPath, ...value },
+            { onSuccess: () => setRepositoryCommandsOpen(false) }
+          )
+        }
+        open={repositoryCommandsOpen}
+        pending={commands.updateRepositoryCommands.isPending}
+        profile={data.commandProfile}
       />
       <SlotDialog
         key={
@@ -441,6 +452,22 @@ export function App() {
         open={deleteTarget !== null}
         repoPath={repoPath}
         worktree={deleteTarget}
+      />
+      <RepositoryTrustDialog
+        actionLabel={repositoryTrust.actionLabel}
+        commands={data.trustCommands}
+        error={commands.trustRepository.error}
+        onClose={repositoryTrust.dismiss}
+        onTrust={() =>
+          repositoryTrust.approve(() =>
+            commands.trustRepository.mutateAsync({
+              repoPath,
+            })
+          )
+        }
+        open={repositoryTrust.open}
+        pending={commands.trustRepository.isPending}
+        repoPath={repoPath}
       />
     </main>
   );

@@ -16,15 +16,17 @@ import { startApps } from "../commands/start-apps";
 import { stopAllApps } from "../commands/stop-all-apps";
 import { stopApps } from "../commands/stop-apps";
 import { trustRepository } from "../commands/trust-repository";
+import { updateRepositoryCommands } from "../commands/update-repository-commands";
 import {
-  repositoryFingerprint,
   repositoryIsTrusted,
   repositoryRequiresTrust,
 } from "../config/repository-trust";
+import type { WorkgroveCommand } from "../config/workgrove-command";
 import {
+  configuredSetupCommand,
   findWorkgroveConfig,
   loadWorkgroveConfig,
-  type WorkgroveCommand,
+  repositoryCommandProfile,
   type WorktreeEnvConfig,
 } from "../config/workgrove-config";
 import { parseWorktreeList } from "../git/discover-worktrees";
@@ -74,6 +76,7 @@ const COMMAND_HANDLERS: Record<WorkgroveCommandName, CommandHandler> = {
   "stop-all-apps": stopAllApps,
   "stop-apps": stopApps,
   "trust-repository": trustRepository,
+  "update-repository-commands": updateRepositoryCommands,
 };
 
 export class MissingWorktreeConfigError extends Error {
@@ -178,6 +181,7 @@ export class WorkspaceController {
       );
     }
     const config = loadWorkgroveConfig(configPath);
+    const setupCommand = configuredSetupCommand(config);
     const discovered = parseWorktreeList(
       git(selectedRoot, ["worktree", "list", "--porcelain"])
     ).filter((item) => !item.prunable && existsSync(item.path));
@@ -240,14 +244,9 @@ export class WorkspaceController {
         path,
         processRunning: [
           id,
-          setupProcessId(id),
           ...Object.keys(config.apps).map((appId) => appProcessId(id, appId)),
         ].some((processId) => managedPid(processId, path) !== null),
-        setupState: worktreeSetupState(
-          id,
-          path,
-          Boolean(config.control?.postCreate)
-        ),
+        setupState: worktreeSetupState(id, path, setupCommand !== null),
         slot,
         slotState: slotState(parsedSlots[index], slot, slotOwners),
       };
@@ -281,6 +280,7 @@ export class WorkspaceController {
       }));
     const globalProcesses = listManagedProcesses();
     return {
+      commandProfile: repositoryCommandProfile(config),
       configPath,
       globalProcesses,
       globalRunningCount: globalProcesses.length,
@@ -288,15 +288,12 @@ export class WorkspaceController {
       mainWorktreePath: worktrees[0].path,
       repoName: basename(worktrees[0].path),
       repoPath: selectedRoot,
-      setupAvailable: Boolean(config.control?.postCreate?.argv.length),
+      setupAvailable: setupCommand !== null,
       slotEnv: config.slot.env,
       slotFile,
       slotOptions,
-      trustFingerprint: repositoryFingerprint(config),
       trustCommands: [
-        config.control?.postCreate
-          ? commandSummary("Setup", config.control.postCreate)
-          : null,
+        setupCommand ? commandSummary("Setup", setupCommand) : null,
         config.control?.start
           ? commandSummary("Apps", config.control.start)
           : null,

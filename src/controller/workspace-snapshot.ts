@@ -1,3 +1,4 @@
+import type { RepositoryCommandProfile } from "../config/workgrove-command";
 import type { AppHealth, ControlledApp } from "../runtime/app-health";
 
 export type AppEndpointSnapshot = ControlledApp & {
@@ -54,6 +55,7 @@ export function appsCanRestart(
 }
 
 export interface WorkspaceSnapshot {
+  commandProfile: RepositoryCommandProfile;
   configPath: string;
   defaultSlot: number;
   globalProcesses: GlobalProcessSnapshot[];
@@ -67,7 +69,6 @@ export interface WorkspaceSnapshot {
   slotOptions: SlotOption[];
   trustCommands: string[];
   trusted: boolean;
-  trustFingerprint: string;
   trustRequired: boolean;
   updatedAt: string;
   worktrees: WorktreeSnapshot[];

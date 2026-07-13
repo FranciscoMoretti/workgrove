@@ -3,11 +3,11 @@ import {
   FolderOpenIcon,
   FolderPlusIcon,
   RefreshCwIcon,
+  Settings2Icon,
   TreesIcon,
 } from "lucide-react";
 import type { CSSProperties } from "react";
 
-import type { GlobalProcessSnapshot } from "../../controller/workspace-snapshot";
 import { REFRESH_INTERVAL } from "../queries";
 import { Button } from "./ui/button";
 import {
@@ -27,10 +27,10 @@ function repositoryName(path: string): string {
 
 export function Toolbar({
   activeRepoPath,
-  globalProcesses,
   isFetching,
   mainWorktreePath,
   onCreate,
+  onConfigureCommands,
   onOpenRepository,
   onRefresh,
   onSelectRepository,
@@ -39,10 +39,10 @@ export function Toolbar({
   updatedAt,
 }: {
   activeRepoPath: string;
-  globalProcesses: GlobalProcessSnapshot[];
   isFetching: boolean;
   mainWorktreePath: string;
   onCreate: () => void;
+  onConfigureCommands: () => void;
   onOpenRepository: () => void;
   onRefresh: () => void;
   onSelectRepository: (path: string) => void;
@@ -58,38 +58,51 @@ export function Toolbar({
     ...recentRepositories.filter((path) => path !== activeRepoPath),
   ];
   return (
-    <header className="toolbar">
-      <div className="brand">
-        <span className="brand-mark">
+    <header className="flex min-h-20 shrink-0 items-center justify-between gap-6 bg-background p-4 max-md:flex-col max-md:items-stretch">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="grid size-11 shrink-0 place-items-center bg-primary text-primary-foreground">
           <TreesIcon />
         </span>
-        <div className="brand-copy">
-          <h1>Workgrove</h1>
+        <div className="flex min-w-0 flex-col items-start gap-0.5">
+          <h1 className="font-heading font-medium text-xl">Workgrove</h1>
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button className="repository-switcher" variant="ghost">
-                <strong>{repoName}</strong>
-                <span>· {mainWorktreePath}</span>
-                <ChevronDownIcon />
-              </Button>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  className="h-6 max-w-[52vw] justify-start px-0"
+                  variant="ghost"
+                />
+              }
+            >
+              <strong>{repoName}</strong>
+              <span className="truncate text-muted-foreground">
+                · {mainWorktreePath}
+              </span>
+              <ChevronDownIcon data-icon="inline-end" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="repository-menu">
-              <DropdownMenuLabel>Recent repositories</DropdownMenuLabel>
+            <DropdownMenuContent align="start" className="w-90">
               <DropdownMenuRadioGroup
                 onValueChange={onSelectRepository}
                 value={activeRepoPath}
               >
+                <DropdownMenuLabel>Recent repositories</DropdownMenuLabel>
                 {repositories.map((path) => (
                   <DropdownMenuRadioItem key={path} value={path}>
-                    <span className="repository-option">
+                    <span className="grid min-w-0 gap-0.5">
                       <strong>{repositoryName(path)}</strong>
-                      <small>{path}</small>
+                      <small className="truncate text-muted-foreground">
+                        {path}
+                      </small>
                     </span>
                   </DropdownMenuRadioItem>
                 ))}
               </DropdownMenuRadioGroup>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={onOpenRepository}>
+              <DropdownMenuItem onClick={onConfigureCommands}>
+                <Settings2Icon />
+                Repository commands…
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onOpenRepository}>
                 <FolderOpenIcon />
                 Open another repository…
               </DropdownMenuItem>
@@ -97,44 +110,28 @@ export function Toolbar({
           </DropdownMenu>
         </div>
       </div>
-      <div className="toolbar-actions">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button className="global-process-count" variant="ghost">
-              {globalProcesses.length} running globally
-              <ChevronDownIcon />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="global-process-menu">
-            <DropdownMenuLabel>Managed processes</DropdownMenuLabel>
-            {globalProcesses.length === 0 ? (
-              <p className="global-process-empty">No apps are running.</p>
-            ) : (
-              globalProcesses.map((process) => (
-                <div className="global-process-item" key={process.pid}>
-                  <strong>{process.label}</strong>
-                  <span>PID {process.pid}</span>
-                  <code>{process.argv.join(" ")}</code>
-                  <small>{process.cwd}</small>
-                </div>
-              ))
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+      <div className="flex shrink-0 items-center gap-2">
         <Button onClick={onCreate} variant="secondary">
-          <FolderPlusIcon />
+          <FolderPlusIcon data-icon="inline-start" />
           New worktree
         </Button>
         <Button
           aria-busy={isFetching}
-          className="refresh-button"
+          className="relative w-28 overflow-hidden"
           disabled={isFetching}
           onClick={onRefresh}
           variant="secondary"
         >
-          <span className="refresh-progress" key={updatedAt} style={style} />
-          <span className="button-content">
-            <RefreshCwIcon className={isFetching ? "spin" : ""} />
+          <span
+            className="refresh-progress bg-foreground/10"
+            key={updatedAt}
+            style={style}
+          />
+          <span className="relative inline-flex items-center gap-1.5">
+            <RefreshCwIcon
+              className={isFetching ? "animate-spin" : undefined}
+              data-icon="inline-start"
+            />
             {isFetching ? "Refreshing" : "Refresh"}
           </span>
         </Button>

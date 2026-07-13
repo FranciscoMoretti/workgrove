@@ -1,8 +1,6 @@
-import { XIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { Button } from "./ui/button";
-import { Dialog, DialogClose, DialogContent, DialogTitle } from "./ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 
 export function Modal({
   children,
@@ -24,15 +22,13 @@ export function Modal({
       }}
       open={open}
     >
-      <DialogContent aria-describedby={undefined}>
-        <div className="modal-heading">
+      <DialogContent
+        aria-describedby={undefined}
+        className="max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-xl overflow-auto"
+      >
+        <DialogHeader className="pr-8">
           <DialogTitle>{title}</DialogTitle>
-          <DialogClose asChild>
-            <Button aria-label="Close dialog" size="icon" variant="ghost">
-              <XIcon />
-            </Button>
-          </DialogClose>
-        </div>
+        </DialogHeader>
         {children}
       </DialogContent>
     </Dialog>

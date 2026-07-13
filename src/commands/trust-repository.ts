@@ -1,7 +1,4 @@
-import {
-  repositoryFingerprint,
-  trustRepositoryConfig,
-} from "../config/repository-trust";
+import { trustRepository as saveRepositoryTrust } from "../config/repository-trust";
 import type { WorkspaceController } from "../controller/workspace-controller";
 import type { CommandReceipt } from "../controller/workspace-snapshot";
 import { requiredString } from "./command";
@@ -12,15 +9,7 @@ export function trustRepository(
 ): CommandReceipt {
   const repoPath = requiredString(input.repoPath, "Repository path");
   const workspace = controller.inspect(repoPath);
-  const config = controller.config(repoPath);
-  const expected = requiredString(
-    input.fingerprint,
-    "Configuration fingerprint"
-  );
-  if (repositoryFingerprint(config) !== expected) {
-    throw new Error("Repository commands changed; review them again");
-  }
-  trustRepositoryConfig(workspace.repoPath, config);
+  saveRepositoryTrust(workspace.repoPath);
   return {
     command: "trust-repository",
     message: "Trusted repository commands",

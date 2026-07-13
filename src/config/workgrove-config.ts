@@ -1,19 +1,24 @@
-import { existsSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 import { z } from "zod";
+import {
+  type RepositoryCommandProfile,
+  type WorkgroveCommand,
+  WorkgroveCommandSchema,
+} from "./workgrove-command";
 
 const SLOT_PATTERN = /^\d+$/;
 const TEMPLATE_PATTERN = /\{([^}]+)\}/g;
 const APP_TEMPLATE_PATTERN = /^apps\.([a-zA-Z0-9_-]+)\.(port|url)$/;
 const MIN_PORT = 1024;
 const MAX_PORT = 65_535;
-
-export const WorkgroveCommandSchema = z.object({
-  argv: z.array(z.string().min(1)).min(1),
-  cwd: z.string().min(1).optional(),
-  env: z.record(z.string(), z.string()).optional(),
-});
 
 const WorkgroveAppSchema = z.object({
   control: z
@@ -29,16 +34,21 @@ const WorkgroveAppSchema = z.object({
   start: WorkgroveCommandSchema.optional(),
 });
 
+const WorkgroveControlSchema = z
+  .object({
+    postCreate: WorkgroveCommandSchema.optional(),
+    setup: WorkgroveCommandSchema.optional(),
+    start: WorkgroveCommandSchema.optional(),
+  })
+  .refine((control) => !(control.setup && control.postCreate), {
+    message: "Configure control.setup or legacy control.postCreate, not both",
+  });
+
 export const WorkgroveConfigSchema = z.object({
   $schema: z.string().optional(),
   version: z.literal(1),
   apps: z.record(z.string().regex(/^[A-Za-z0-9_-]+$/), WorkgroveAppSchema),
-  control: z
-    .object({
-      postCreate: WorkgroveCommandSchema.optional(),
-      start: WorkgroveCommandSchema.optional(),
-    })
-    .optional(),
+  control: WorkgroveControlSchema.optional(),
   range: z.object({
     base: z.number().int().min(MIN_PORT).max(MAX_PORT),
     stride: z.number().int().positive().max(MAX_PORT),
@@ -51,7 +61,6 @@ export const WorkgroveConfigSchema = z.object({
   url: z.string().min(1),
 });
 
-export type WorkgroveCommand = z.infer<typeof WorkgroveCommandSchema>;
 export type WorkgroveConfig = z.infer<typeof WorkgroveConfigSchema>;
 export type WorktreeEnvConfig = WorkgroveConfig;
 
@@ -218,6 +227,74 @@ export function loadWorkgroveConfig(path: string): WorkgroveConfig {
 
 export const resolveWorktreeRuntime = resolveWorkgroveRuntime;
 
+export function configuredSetupCommand(
+  config: WorkgroveConfig
+): WorkgroveCommand | null {
+  return config.control?.setup ?? config.control?.postCreate ?? null;
+}
+
+export function repositoryCommandProfile(
+  config: WorkgroveConfig
+): RepositoryCommandProfile {
+  const hasPerAppStart = Object.values(config.apps).some(
+    (app) => app.start !== undefined
+  );
+  let startMode: RepositoryCommandProfile["startMode"] = "none";
+  if (hasPerAppStart) {
+    startMode = "per-app";
+  } else if (config.control?.start) {
+    startMode = "aggregate";
+  }
+  return {
+    setup: configuredSetupCommand(config),
+    start: hasPerAppStart ? null : (config.control?.start ?? null),
+    startMode,
+  };
+}
+
+export function updateRepositoryCommandProfile(
+  configPath: string,
+  update: {
+    setup: WorkgroveCommand | null;
+    start?: WorkgroveCommand | null;
+  }
+): WorkgroveConfig {
+  const current = loadWorkgroveConfig(configPath);
+  const next = structuredClone(current);
+  next.control ??= {};
+  next.control.postCreate = undefined;
+  if (update.setup) {
+    next.control.setup = update.setup;
+  } else {
+    next.control.setup = undefined;
+  }
+  if (update.start !== undefined) {
+    if (Object.values(next.apps).some((app) => app.start !== undefined)) {
+      throw new Error(
+        "Start is configured per app; edit the app start commands in .workgrove.json"
+      );
+    }
+    if (update.start) {
+      next.control.start = update.start;
+    } else {
+      next.control.start = undefined;
+    }
+  }
+  const validated = WorkgroveConfigSchema.parse(next);
+  resolveWorkgroveRuntime(validated, {});
+  const temporaryPath = `${configPath}.tmp-${process.pid}`;
+  writeFileSync(temporaryPath, `${JSON.stringify(validated, null, 2)}\n`, {
+    flag: "wx",
+  });
+  try {
+    renameSync(temporaryPath, configPath);
+  } catch (error) {
+    rmSync(temporaryPath, { force: true });
+    throw error;
+  }
+  return validated;
+}
+
 export function resolveStartCommands(
   config: WorkgroveConfig,
   slot: number
@@ -307,11 +384,11 @@ export function resolveStartCommands(
   ];
 }
 
-export function resolvePostCreateCommand(
+export function resolveSetupCommand(
   config: WorkgroveConfig,
   slot: number
 ): ResolvedWorkgroveCommand | null {
-  const command = config.control?.postCreate;
+  const command = configuredSetupCommand(config);
   if (!command) {
     return null;
   }
@@ -353,3 +430,5 @@ export function resolvePostCreateCommand(
     },
   };
 }
+
+export const resolvePostCreateCommand = resolveSetupCommand;

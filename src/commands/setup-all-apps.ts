@@ -1,6 +1,11 @@
+import { resolve } from "node:path";
+
+import {
+  configuredSetupCommand,
+  resolveSetupCommand,
+} from "../config/workgrove-config";
 import type { WorkspaceController } from "../controller/workspace-controller";
 import type { CommandReceipt } from "../controller/workspace-snapshot";
-import { appsAreStopped } from "../controller/workspace-snapshot";
 import {
   appendManagedLog,
   setupProcessId,
@@ -16,16 +21,16 @@ export function setupAllApps(
   controller.assertTrusted(repoPath);
   const workspace = controller.inspect(repoPath);
   const config = controller.config(repoPath);
-  if (!config.control?.postCreate) {
-    throw new Error("Missing control.postCreate argv in .workgrove.json");
+  if (!configuredSetupCommand(config)) {
+    throw new Error("Missing control.setup argv in .workgrove.json");
   }
   const targets = selectRequestedWorktrees(
     workspace.worktrees,
     input.worktreeIds
-  ).filter(appsAreStopped);
+  );
   for (const worktree of targets) {
     const slot = worktree.slot ?? config.slot.default;
-    const setup = resolvePostCreateCommand(config, slot);
+    const setup = resolveSetupCommand(config, slot);
     if (!setup) {
       continue;
     }
@@ -51,7 +56,3 @@ export function setupAllApps(
     ok: true,
   };
 }
-
-import { resolve } from "node:path";
-
-import { resolvePostCreateCommand } from "../config/workgrove-config";

@@ -7,6 +7,13 @@ import { useRepositoryPicker } from "../use-repository-picker";
 import { useRepositorySetup } from "../use-repository-setup";
 import { Modal } from "./modal";
 import { Button } from "./ui/button";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "./ui/field";
 import { Input } from "./ui/input";
 
 export function RepositoryDialog({
@@ -49,19 +56,21 @@ export function RepositoryDialog({
       return setup.notice();
     }
     const message = opener.error?.message ?? picker.error;
-    return message ? <p className="field-error">{message}</p> : null;
+    return message ? <FieldError>{message}</FieldError> : null;
   }
 
   return (
     <>
       <Modal onClose={onClose} open={open} title="Change repository">
-        <div className="modal-copy fields">
-          <p>
+        <FieldGroup>
+          <FieldDescription>
             The current repository stays open until the replacement has been
             verified.
-          </p>
-          <div className="repo-field">
-            <label htmlFor="change-repository-path">Repository path</label>
+          </FieldDescription>
+          <Field>
+            <FieldLabel htmlFor="change-repository-path">
+              Repository path
+            </FieldLabel>
             <div className="repository-path-control">
               <Input
                 disabled={opener.pending || picker.pending}
@@ -71,18 +80,17 @@ export function RepositoryDialog({
               />
               <Button
                 aria-label="Choose repository folder"
-                className="browse-button"
                 disabled={opener.pending || picker.pending}
                 onClick={picker.browse}
-                variant="secondary"
+                variant="outline"
               >
-                <FolderOpenIcon />
+                <FolderOpenIcon data-icon="inline-start" />
                 Browse
               </Button>
             </div>
-          </div>
+          </Field>
           {feedback()}
-        </div>
+        </FieldGroup>
         <div className="modal-actions">
           <Button
             disabled={opener.pending}

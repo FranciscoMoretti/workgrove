@@ -7,14 +7,13 @@ import {
   writeFileSync,
 } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
-import { trustRepositoryConfig } from "../config/repository-trust";
+import { trustRepository } from "../config/repository-trust";
+import type { WorkgroveCommand } from "../config/workgrove-command";
 import {
   resolveWorktreeRuntime,
-  type WorkgroveCommand,
   type WorktreeEnvConfig,
 } from "../config/workgrove-config";
 
-const PACKAGE_MANAGERS = ["bun", "pnpm", "yarn", "npm"] as const;
 const LINE_BREAK = /\r?\n/;
 const FASTAPI_DEPENDENCY = /\bfastapi\b/i;
 const COMPOSE_FILES = [
@@ -23,7 +22,6 @@ const COMPOSE_FILES = [
   "docker-compose.yaml",
   "docker-compose.yml",
 ] as const;
-type PackageManager = (typeof PACKAGE_MANAGERS)[number];
 
 export interface RepositoryInitializationPlan {
   config: WorktreeEnvConfig;
@@ -35,7 +33,7 @@ export interface RepositoryInitializationPlan {
 
 interface ProjectDefaults {
   label: string;
-  postCreate?: WorkgroveCommand;
+  setup?: WorkgroveCommand;
   start?: WorkgroveCommand;
 }
 
@@ -74,46 +72,7 @@ function excludeLocalSlotFile(root: string, slotFile: string): void {
   }
 }
 
-function packageMetadata(root: string): {
-  packageManager: PackageManager;
-  hasDevScript: boolean;
-} {
-  const packagePath = join(root, "package.json");
-  let declaredManager = "";
-  let hasDevScript = false;
-  if (existsSync(packagePath)) {
-    const value = JSON.parse(readFileSync(packagePath, "utf8")) as {
-      packageManager?: unknown;
-      scripts?: Record<string, unknown>;
-    };
-    declaredManager =
-      typeof value.packageManager === "string"
-        ? value.packageManager.split("@")[0]
-        : "";
-    hasDevScript = typeof value.scripts?.dev === "string";
-  }
-  const declared = PACKAGE_MANAGERS.find(
-    (manager) => manager === declaredManager
-  );
-  if (declared) {
-    return { hasDevScript, packageManager: declared };
-  }
-  const detected = [
-    ["bun.lock", "bun"],
-    ["bun.lockb", "bun"],
-    ["pnpm-lock.yaml", "pnpm"],
-    ["yarn.lock", "yarn"],
-    ["package-lock.json", "npm"],
-  ] as const;
-  return {
-    hasDevScript,
-    packageManager:
-      detected.find(([file]) => existsSync(join(root, file)))?.[1] ?? "npm",
-  };
-}
-
 function projectDefaults(root: string): ProjectDefaults {
-  const metadata = packageMetadata(root);
   if (COMPOSE_FILES.some((file) => existsSync(join(root, file)))) {
     return {
       label: "Docker Compose",
@@ -125,13 +84,9 @@ function projectDefaults(root: string): ProjectDefaults {
   }
   if (existsSync(join(root, "package.json"))) {
     return {
-      label: `Node.js · ${metadata.packageManager}`,
-      ...(metadata.hasDevScript
-        ? {
-            postCreate: { argv: [metadata.packageManager, "install"] },
-            start: { argv: [metadata.packageManager, "run", "dev"] },
-          }
-        : {}),
+      label: "Node.js · bun",
+      setup: { argv: ["bun", "install"] },
+      start: { argv: ["bun", "dev"] },
     };
   }
   if (existsSync(join(root, "manage.py"))) {
@@ -148,7 +103,7 @@ function projectDefaults(root: string): ProjectDefaults {
       const usesUv = existsSync(join(root, "uv.lock"));
       return {
         label: "Python · FastAPI",
-        ...(usesUv ? { postCreate: { argv: ["uv", "sync"] } } : {}),
+        ...(usesUv ? { setup: { argv: ["uv", "sync"] } } : {}),
         start: {
           argv: [
             ...(usesUv ? ["uv", "run"] : []),
@@ -165,7 +120,7 @@ function projectDefaults(root: string): ProjectDefaults {
   if (existsSync(join(root, "Cargo.toml"))) {
     return {
       label: "Rust · Cargo",
-      postCreate: { argv: ["cargo", "fetch"] },
+      setup: { argv: ["cargo", "fetch"] },
       start: { argv: ["cargo", "run"], env: { PORT: "{port}" } },
     };
   }
@@ -211,15 +166,17 @@ export function planRepositoryInitialization(
         },
         exports: { PORT: "{port}" },
         offset: 0,
-        ...(defaults.start ? { start: defaults.start } : {}),
       },
     },
     range: { base: stableBasePort(root), stride: 10 },
     slot: { default: 0, env: "WORKGROVE_SLOT", file: ".env.worktree.local" },
     url: "http://localhost:{port}",
   };
-  if (defaults.postCreate) {
-    config.control = { postCreate: defaults.postCreate };
+  if (defaults.setup || defaults.start) {
+    config.control = {
+      ...(defaults.setup ? { setup: defaults.setup } : {}),
+      ...(defaults.start ? { start: defaults.start } : {}),
+    };
   }
   resolveWorktreeRuntime(config, {});
   return {
@@ -242,6 +199,6 @@ export function initializeRepository(
     plan.repoPath,
     plan.config.slot.file ?? ".env.worktree.local"
   );
-  trustRepositoryConfig(plan.repoPath, plan.config);
+  trustRepository(plan.repoPath);
   return plan;
 }

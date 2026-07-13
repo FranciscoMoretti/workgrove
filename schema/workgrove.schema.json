@@ -60,8 +60,10 @@
     "control": {
       "type": "object",
       "additionalProperties": false,
+      "not": { "required": ["setup", "postCreate"] },
       "properties": {
         "start": { "$ref": "#/$defs/command" },
+        "setup": { "$ref": "#/$defs/command" },
         "postCreate": { "$ref": "#/$defs/command" }
       }
     }
