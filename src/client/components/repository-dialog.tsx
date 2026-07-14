@@ -5,15 +5,16 @@ import type { WorkspaceSnapshot } from "../../controller/workspace-snapshot";
 import { useRepositoryOpen } from "../use-repository-open";
 import { useRepositoryPicker } from "../use-repository-picker";
 import { useRepositorySetup } from "../use-repository-setup";
-import { Modal } from "./modal";
 import { Button } from "./ui/button";
 import {
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-} from "./ui/field";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog";
+import { Field, FieldError, FieldGroup, FieldLabel } from "./ui/field";
 import { Input } from "./ui/input";
 
 export function RepositoryDialog({
@@ -61,57 +62,69 @@ export function RepositoryDialog({
 
   return (
     <>
-      <Modal onClose={onClose} open={open} title="Change repository">
-        <FieldGroup>
-          <FieldDescription>
-            The current repository stays open until the replacement has been
-            verified.
-          </FieldDescription>
-          <Field>
-            <FieldLabel htmlFor="change-repository-path">
-              Repository path
-            </FieldLabel>
-            <div className="repository-path-control">
-              <Input
-                disabled={opener.pending || picker.pending}
-                id="change-repository-path"
-                onChange={(event) => changeDraft(event.target.value)}
-                value={draft}
-              />
-              <Button
-                aria-label="Choose repository folder"
-                disabled={opener.pending || picker.pending}
-                onClick={picker.browse}
-                variant="outline"
-              >
-                <FolderOpenIcon data-icon="inline-start" />
-                Browse
-              </Button>
-            </div>
-          </Field>
-          {feedback()}
-        </FieldGroup>
-        <div className="modal-actions">
-          <Button
-            disabled={opener.pending}
-            onClick={onClose}
-            variant="secondary"
-          >
-            Cancel
-          </Button>
-          <Button
-            disabled={
-              opener.pending ||
-              picker.pending ||
-              draft.trim() === "" ||
-              draft === currentPath
-            }
-            onClick={confirm}
-          >
-            {opener.pending ? "Checking…" : "Open repository"}
-          </Button>
-        </div>
-      </Modal>
+      <Dialog
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            onClose();
+          }
+        }}
+        open={open}
+      >
+        <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-xl overflow-auto">
+          <DialogHeader className="pr-8">
+            <DialogTitle>Change repository</DialogTitle>
+            <DialogDescription>
+              The current repository stays open until the replacement has been
+              verified.
+            </DialogDescription>
+          </DialogHeader>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="change-repository-path">
+                Repository path
+              </FieldLabel>
+              <div className="repository-path-control">
+                <Input
+                  disabled={opener.pending || picker.pending}
+                  id="change-repository-path"
+                  onChange={(event) => changeDraft(event.target.value)}
+                  value={draft}
+                />
+                <Button
+                  aria-label="Choose repository folder"
+                  disabled={opener.pending || picker.pending}
+                  onClick={picker.browse}
+                  variant="outline"
+                >
+                  <FolderOpenIcon data-icon="inline-start" />
+                  Browse
+                </Button>
+              </div>
+            </Field>
+            {feedback()}
+          </FieldGroup>
+          <DialogFooter>
+            <Button
+              disabled={opener.pending}
+              onClick={onClose}
+              variant="outline"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={
+                opener.pending ||
+                picker.pending ||
+                draft.trim() === "" ||
+                draft === currentPath
+              }
+              onClick={confirm}
+            >
+              {opener.pending ? "Checking…" : "Open repository"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {setup.dialog}
     </>
   );

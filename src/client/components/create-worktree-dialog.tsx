@@ -7,9 +7,16 @@ import type {
   SlotOption,
 } from "../../controller/workspace-snapshot";
 import type { RequestRepositoryTrust } from "../use-repository-trust";
-import { Modal } from "./modal";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog";
 import {
   Field,
   FieldDescription,
@@ -98,114 +105,127 @@ export function CreateWorktreeDialog({
     );
   }
   return (
-    <Modal onClose={onClose} open={open} title="New worktree">
-      <form onSubmit={submit}>
-        <FieldGroup>
-          <FieldDescription>
+    <Dialog
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          onClose();
+        }
+      }}
+      open={open}
+    >
+      <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-xl overflow-auto">
+        <DialogHeader className="pr-8">
+          <DialogTitle>New worktree</DialogTitle>
+          <DialogDescription>
             Create a linked worktree, assign a free slot, then run the
-            repository's configured setup command.
-          </FieldDescription>
-          <Field>
-            <FieldLabel htmlFor="new-worktree-branch">Branch</FieldLabel>
-            <Input
-              autoFocus
-              disabled={mutation.isPending}
-              id="new-worktree-branch"
-              onChange={(event) => setBranch(event.target.value)}
-              placeholder="feature/my-branch"
-              value={branch}
-            />
-          </Field>
-          <Field orientation="horizontal">
-            <Checkbox
-              checked={createBranch}
-              disabled={mutation.isPending}
-              id="new-worktree-create-branch"
-              onCheckedChange={(checked) => setCreateBranch(checked === true)}
-            />
-            <FieldLabel htmlFor="new-worktree-create-branch">
-              Create a new branch
-            </FieldLabel>
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="new-worktree-folder">Folder name</FieldLabel>
-            <Input
-              disabled={mutation.isPending}
-              id="new-worktree-folder"
-              onChange={(event) => setFolderName(event.target.value)}
-              placeholder={
-                slot === null ? `${repoName}-N` : `${repoName}-${slot}`
-              }
-              value={folderName}
-            />
-            <FieldDescription>Optional</FieldDescription>
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="new-worktree-slot">App slot</FieldLabel>
-            <Select
-              disabled={mutation.isPending}
-              onValueChange={(value) => setSlot(Number(value))}
-              value={slot === null ? undefined : String(slot)}
-            >
-              <SelectTrigger
-                className="form-select-trigger"
-                id="new-worktree-slot"
+            repository&apos;s configured setup command.
+          </DialogDescription>
+        </DialogHeader>
+        <form className="flex flex-col gap-4" onSubmit={submit}>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="new-worktree-branch">Branch</FieldLabel>
+              <Input
+                autoFocus
+                disabled={mutation.isPending}
+                id="new-worktree-branch"
+                onChange={(event) => setBranch(event.target.value)}
+                placeholder="feature/my-branch"
+                value={branch}
+              />
+            </Field>
+            <Field orientation="horizontal">
+              <Checkbox
+                checked={createBranch}
+                disabled={mutation.isPending}
+                id="new-worktree-create-branch"
+                onCheckedChange={(checked) => setCreateBranch(checked === true)}
+              />
+              <FieldLabel htmlFor="new-worktree-create-branch">
+                Create a new branch
+              </FieldLabel>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="new-worktree-folder">Folder name</FieldLabel>
+              <Input
+                disabled={mutation.isPending}
+                id="new-worktree-folder"
+                onChange={(event) => setFolderName(event.target.value)}
+                placeholder={
+                  slot === null ? `${repoName}-N` : `${repoName}-${slot}`
+                }
+                value={folderName}
+              />
+              <FieldDescription>Optional</FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="new-worktree-slot">App slot</FieldLabel>
+              <Select
+                disabled={mutation.isPending}
+                onValueChange={(value) => setSlot(Number(value))}
+                value={slot === null ? undefined : String(slot)}
               >
-                <SelectValue placeholder="Choose an app slot">
-                  {selected ? `App ${selected.slot}` : undefined}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent className="slot-select-content">
-                <SelectGroup>
-                  {available.map((option) => (
-                    <SelectItem key={option.slot} value={String(option.slot)}>
-                      <span className="slot-select-row">
-                        <span className="slot-select-identity">
-                          <b>App {option.slot}</b>
-                          <small>Available</small>
+                <SelectTrigger
+                  className="form-select-trigger"
+                  id="new-worktree-slot"
+                >
+                  <SelectValue placeholder="Choose an app slot">
+                    {selected ? `App ${selected.slot}` : undefined}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent className="slot-select-content">
+                  <SelectGroup>
+                    {available.map((option) => (
+                      <SelectItem key={option.slot} value={String(option.slot)}>
+                        <span className="slot-select-row">
+                          <span className="slot-select-identity">
+                            <b>App {option.slot}</b>
+                            <small>Available</small>
+                          </span>
+                          <span className="slot-select-ports">
+                            {option.apps
+                              .map((app) => `${app.label} ${app.port}`)
+                              .join(" · ")}
+                          </span>
                         </span>
-                        <span className="slot-select-ports">
-                          {option.apps
-                            .map((app) => `${app.label} ${app.port}`)
-                            .join(" · ")}
-                        </span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
-          {selected ? (
-            <div className="port-preview">
-              {selected.apps.map((app) => (
-                <span key={`${app.label}:${app.port}`}>
-                  <b>{app.label}</b>
-                  <code>{app.port}</code>
-                </span>
-              ))}
-            </div>
-          ) : null}
-          {error ? <FieldError>{error}</FieldError> : null}
-        </FieldGroup>
-        <div className="modal-actions">
-          <Button
-            disabled={mutation.isPending}
-            onClick={onClose}
-            variant="secondary"
-          >
-            Cancel
-          </Button>
-          <Button
-            disabled={
-              mutation.isPending || branch.trim() === "" || slot === null
-            }
-            type="submit"
-          >
-            {mutation.isPending ? "Creating…" : "Create worktree"}
-          </Button>
-        </div>
-      </form>
-    </Modal>
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+            {selected ? (
+              <div className="port-preview">
+                {selected.apps.map((app) => (
+                  <span key={`${app.label}:${app.port}`}>
+                    <b>{app.label}</b>
+                    <code>{app.port}</code>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            {error ? <FieldError>{error}</FieldError> : null}
+          </FieldGroup>
+          <DialogFooter>
+            <Button
+              disabled={mutation.isPending}
+              onClick={onClose}
+              type="button"
+              variant="outline"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={
+                mutation.isPending || branch.trim() === "" || slot === null
+              }
+              type="submit"
+            >
+              {mutation.isPending ? "Creating…" : "Create worktree"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
