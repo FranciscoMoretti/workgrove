@@ -13,7 +13,7 @@ import {
   TerminalSquareIcon,
   Trash2Icon,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
 import type { WorkgroveCommand } from "../../config/workgrove-command";
@@ -35,7 +35,22 @@ import {
   type WorkgroveConfig,
   WorkgroveConfigSchema,
 } from "../../config/workgrove-schema";
+import {
+  clearConfigDraft,
+  loadConfigDraft,
+  saveConfigDraft,
+} from "../config-draft";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "./ui/alert-dialog";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import {
@@ -711,22 +726,75 @@ export function RepositoryConfigDialog({
   open: boolean;
   pending: boolean;
 }) {
+  const [sourceConfig] = useState(() => canonicalizeWorkgroveConfig(config));
+  const [restoredDraft] = useState(() =>
+    loadConfigDraft(configPath, sourceConfig)
+  );
+  const [draftHydrated, setDraftHydrated] = useState(restoredDraft === null);
   const form = useForm<WorkgroveConfig>({
-    defaultValues: canonicalizeWorkgroveConfig(config),
+    defaultValues: sourceConfig,
     mode: "onChange",
     resolver: zodResolver(WorkgroveConfigSchema),
   });
   const [section, setSection] = useState<BuilderSection>("overview");
+  const [discardConfirmationOpen, setDiscardConfirmationOpen] = useState(false);
   const [selectedAppId, setSelectedAppId] = useState(
     () => Object.keys(config.apps)[0] ?? ""
   );
   const apps = useWatch({ control: form.control, name: "apps" }) ?? {};
+  const draft = useWatch({ control: form.control });
   const appEntries = Object.entries(apps);
   const errors = form.formState.errors;
   const launchMode = workgroveLaunchMode({
     apps,
     control: form.getValues("control"),
   });
+  const isDirty = JSON.stringify(draft) !== JSON.stringify(sourceConfig);
+
+  useEffect(() => {
+    if (restoredDraft) {
+      form.reset(restoredDraft, { keepDefaultValues: true });
+    }
+    setDraftHydrated(true);
+  }, [form, restoredDraft]);
+
+  useEffect(() => {
+    if (!(open && isDirty)) {
+      return;
+    }
+    const preventUnsavedNavigation = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", preventUnsavedNavigation);
+    return () =>
+      window.removeEventListener("beforeunload", preventUnsavedNavigation);
+  }, [isDirty, open]);
+
+  useEffect(() => {
+    if (!(open && draftHydrated)) {
+      return;
+    }
+    if (isDirty) {
+      saveConfigDraft(configPath, sourceConfig, draft);
+    } else {
+      clearConfigDraft(configPath);
+    }
+  }, [configPath, draft, draftHydrated, isDirty, open, sourceConfig]);
+
+  function requestClose(): void {
+    if (isDirty) {
+      setDiscardConfirmationOpen(true);
+      return;
+    }
+    onClose();
+  }
+
+  function discardAndClose(): void {
+    clearConfigDraft(configPath);
+    setDiscardConfirmationOpen(false);
+    onClose();
+  }
 
   function changeLaunchMode(mode: WorkgroveLaunchMode): void {
     const next = withWorkgroveLaunchMode(
@@ -826,7 +894,6 @@ export function RepositoryConfigDialog({
     return undefined;
   }
 
-  const draft = useWatch({ control: form.control });
   const validation = WorkgroveConfigSchema.safeParse(draft);
   const validationIssues = validation.success ? [] : validation.error.issues;
   const selectedApp = apps[selectedAppId] ?? appEntries[0]?.[1];
@@ -856,7 +923,8 @@ export function RepositoryConfigDialog({
   }
 
   function resetChanges(): void {
-    form.reset(canonicalizeWorkgroveConfig(config));
+    clearConfigDraft(configPath);
+    form.reset(sourceConfig);
     setSelectedAppId(Object.keys(config.apps)[0] ?? "");
     setSection("overview");
   }
@@ -1285,7 +1353,7 @@ export function RepositoryConfigDialog({
     <Dialog
       onOpenChange={(nextOpen) => {
         if (!nextOpen) {
-          onClose();
+          requestClose();
         }
       }}
       open={open}
@@ -1293,9 +1361,10 @@ export function RepositoryConfigDialog({
       <DialogContent className="h-[calc(100vh-1rem)] max-w-[calc(100%-1rem)] gap-0 p-0 sm:max-w-[calc(100%-1rem)]">
         <form
           className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)_auto]"
-          onSubmit={form.handleSubmit((value) =>
-            onSave(canonicalizeWorkgroveConfig(value))
-          )}
+          onSubmit={form.handleSubmit(async (value) => {
+            await onSave(canonicalizeWorkgroveConfig(value));
+            clearConfigDraft(configPath);
+          })}
         >
           <header className="flex items-center justify-between gap-4 border-b px-5 py-3 pr-12 max-sm:flex-col max-sm:items-stretch max-sm:gap-3 max-md:items-start">
             <DialogHeader className="min-w-0">
@@ -1308,7 +1377,7 @@ export function RepositoryConfigDialog({
             </DialogHeader>
             <div className="flex shrink-0 items-center gap-2 max-sm:grid max-sm:grid-cols-2">
               <Button
-                disabled={pending || !form.formState.isDirty}
+                disabled={pending || !isDirty}
                 onClick={resetChanges}
                 type="button"
                 variant="outline"
@@ -1316,9 +1385,7 @@ export function RepositoryConfigDialog({
                 Discard changes
               </Button>
               <Button
-                disabled={
-                  pending || !form.formState.isDirty || !validation.success
-                }
+                disabled={pending || !isDirty || !validation.success}
                 type="submit"
               >
                 {pending ? "Saving…" : "Save configuration"}
@@ -1471,6 +1538,26 @@ export function RepositoryConfigDialog({
           </footer>
         </form>
       </DialogContent>
+      <AlertDialog
+        onOpenChange={setDiscardConfirmationOpen}
+        open={discardConfirmationOpen}
+      >
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Your configuration draft has not been saved to .workgrove.json.
+              Closing the builder will discard it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep editing</AlertDialogCancel>
+            <AlertDialogAction onClick={discardAndClose} variant="destructive">
+              Discard and close
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }
