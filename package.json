@@ -5,10 +5,10 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/franciscomoretti/workgrove.git"
+    "url": "git+https://github.com/FranciscoMoretti/workgrove.git"
   },
-  "homepage": "https://github.com/franciscomoretti/workgrove",
-  "bugs": "https://github.com/franciscomoretti/workgrove/issues",
+  "homepage": "https://github.com/FranciscoMoretti/workgrove",
+  "bugs": "https://github.com/FranciscoMoretti/workgrove/issues",
   "bin": {
     "workgrove": "scripts/daemon.ts"
   },
