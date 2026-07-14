@@ -16,26 +16,23 @@ const config: WorkgroveConfig = {
     api: { port: { base: 8000 } },
     web: {
       exports: { API_URL: "{apps.api.url}" },
-      port: { offset: 1 },
+      port: { base: 3000 },
       start: { argv: ["bun", "dev", "--api={apps.api.port}"] },
     },
   },
   control: {
     setup: { argv: ["echo", "{apps.api.url}"] },
   },
-  ports: { base: 4000, slotStride: 10 },
+  ports: { slotStride: 10 },
   slot: { default: 0, env: "WORKGROVE_SLOT" },
   url: "http://localhost:{port}",
 };
 
 describe("configuration builder domain operations", () => {
-  it("allocates a lane that cannot collide with a custom base", () => {
+  it("allocates the next available explicit base", () => {
     expect(
-      nextAvailableWorkgroveAppPort(
-        { api: { port: { base: 8000 } } },
-        config.ports
-      )
-    ).toEqual({ offset: 1 });
+      nextAvailableWorkgroveAppPort({ api: { port: { base: 8000 } } })
+    ).toEqual({ base: 3000 });
   });
 
   it("renames an app and every template reference to it", () => {
@@ -60,7 +57,7 @@ describe("configuration builder domain operations", () => {
   it("uses the executable's shared endpoint resolver for previews", () => {
     expect(resolveWorkgroveAppEndpoints(config, 2)).toEqual({
       api: { port: 8020, url: "http://localhost:8020" },
-      web: { port: 4021, url: "http://localhost:4021" },
+      web: { port: 3020, url: "http://localhost:3020" },
     });
   });
 });

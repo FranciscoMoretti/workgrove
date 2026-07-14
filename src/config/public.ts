@@ -24,4 +24,5 @@ export {
   type WorkgroveConfig,
   WorkgroveConfigSchema,
   type WorktreeEnvConfig,
+  workgroveSlotsHavePortCollision,
 } from "./workgrove-schema";

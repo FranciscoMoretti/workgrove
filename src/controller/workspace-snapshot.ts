@@ -9,7 +9,7 @@ export type AppEndpointSnapshot = ControlledApp & {
 
 export interface SlotOption {
   apps: Array<{ label: string; port: number }>;
-  occupiedBy: string | null;
+  collisionOwners: Array<{ id: string; name: string }>;
   slot: number;
 }
 

@@ -46,11 +46,17 @@ export function createWorktree(
     throw new Error("Branch contains unsupported characters");
   }
   const workspace = controller.inspect(repoPath);
-  const occupied = workspace.worktrees.find(
-    (worktree) => worktree.slot === slot
+  const slotOption = workspace.slotOptions.find(
+    (option) => option.slot === slot
   );
-  if (occupied) {
-    throw new Error(`Slot ${slot} is already assigned to ${occupied.name}`);
+  if (!slotOption) {
+    throw new Error(`Slot ${slot} is outside the supported range`);
+  }
+  const collisionOwner = slotOption.collisionOwners[0];
+  if (collisionOwner) {
+    throw new Error(
+      `Slot ${slot} has a port collision with ${collisionOwner.name}`
+    );
   }
   const folderName =
     typeof input.folderName === "string" && input.folderName.trim()

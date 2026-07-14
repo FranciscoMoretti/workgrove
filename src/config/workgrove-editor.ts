@@ -1,6 +1,7 @@
 import type { WorkgroveCommand } from "./workgrove-command";
 import {
   MAX_WORKGROVE_PORT,
+  MIN_WORKGROVE_PORT,
   resolveWorkgroveAppPort,
   type WorkgroveApp,
   type WorkgroveAppPort,
@@ -64,34 +65,21 @@ export function withWorkgroveLaunchMode(
   };
 }
 
-function portLane(port: number, stride: number): number {
-  return ((port % stride) + stride) % stride;
-}
-
 export function nextAvailableWorkgroveAppPort(
-  apps: Record<string, WorkgroveApp>,
-  ports: WorkgroveConfig["ports"]
+  apps: Record<string, WorkgroveApp>
 ): WorkgroveAppPort {
-  const usedLanes = new Set(
-    Object.values(apps).map((app) =>
-      portLane(resolveWorkgroveAppPort({ ports }, app, 0), ports.slotStride)
-    )
-  );
-  for (let offset = 0; offset < ports.slotStride; offset += 1) {
-    if (!usedLanes.has(portLane(ports.base + offset, ports.slotStride))) {
-      return { offset };
-    }
-  }
-  for (
-    let base = ports.base + ports.slotStride;
-    base <= MAX_WORKGROVE_PORT;
-    base += 1
-  ) {
-    if (!usedLanes.has(portLane(base, ports.slotStride))) {
+  const usedPorts = new Set(Object.values(apps).map((app) => app.port.base));
+  for (let base = 3000; base <= MAX_WORKGROVE_PORT; base += 1) {
+    if (!usedPorts.has(base)) {
       return { base };
     }
   }
-  throw new Error("No collision-free app port lane is available");
+  for (let base = MIN_WORKGROVE_PORT; base < 3000; base += 1) {
+    if (!usedPorts.has(base)) {
+      return { base };
+    }
+  }
+  throw new Error("No app base port is available");
 }
 
 function mapCommandTemplates(

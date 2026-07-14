@@ -6,7 +6,7 @@
     "default": 0,
     "file": ".env.worktree.local"
   },
-  "ports": { "base": 4000, "slotStride": 10 },
+  "ports": { "slotStride": 10 },
   "url": "http://localhost:{port}",
   "apps": {
     "api": {

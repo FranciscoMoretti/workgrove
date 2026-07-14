@@ -6,11 +6,11 @@
     "default": 0,
     "file": ".env.worktree.local"
   },
-  "ports": { "base": 4000, "slotStride": 10 },
+  "ports": { "slotStride": 10 },
   "url": "http://localhost:{port}",
   "apps": {
     "web": {
-      "port": { "offset": 1 },
+      "port": { "base": 3000 },
       "control": {
         "label": "Web",
         "open": true,

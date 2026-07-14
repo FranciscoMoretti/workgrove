@@ -14,14 +14,9 @@ const ENVIRONMENT_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 export const WorkgroveAppIdSchema = z.string().regex(APP_ID_PATTERN);
 
-export const WorkgroveAppPortSchema = z.union([
-  z.strictObject({
-    offset: z.number().int().nonnegative(),
-  }),
-  z.strictObject({
-    base: z.number().int().min(MIN_WORKGROVE_PORT).max(MAX_WORKGROVE_PORT),
-  }),
-]);
+export const WorkgroveAppPortSchema = z.strictObject({
+  base: z.number().int().min(MIN_WORKGROVE_PORT).max(MAX_WORKGROVE_PORT),
+});
 
 export type WorkgroveAppPort = z.infer<typeof WorkgroveAppPortSchema>;
 
@@ -57,8 +52,7 @@ const WorkgroveConfigObjectSchema = z.object({
   version: z.literal(1),
   apps: z.record(WorkgroveAppIdSchema, WorkgroveAppSchema),
   control: WorkgroveControlSchema.optional(),
-  ports: z.object({
-    base: z.number().int().min(MIN_WORKGROVE_PORT).max(MAX_WORKGROVE_PORT),
+  ports: z.strictObject({
     slotStride: z.number().int().positive().max(MAX_WORKGROVE_PORT),
   }),
   slot: z.object({
@@ -127,26 +121,17 @@ function validateWorkgrovePorts(
   config: WorkgroveConfigShape,
   context: z.RefinementCtx
 ): void {
-  const portLanes = new Map<number, string>();
+  const slotZeroPorts = new Map<number, string>();
   for (const [id, app] of Object.entries(config.apps)) {
-    if ("offset" in app.port && app.port.offset >= config.ports.slotStride) {
-      context.addIssue({
-        code: "custom",
-        message: "Offset must be below the slot stride",
-        path: ["apps", id, "port", "offset"],
-      });
-    }
-    const slotZeroPort = resolveWorkgroveAppPort(config, app, 0);
-    const lane = workgrovePortLane(slotZeroPort, config.ports.slotStride);
-    const existing = portLanes.get(lane);
+    const existing = slotZeroPorts.get(app.port.base);
     if (existing) {
       context.addIssue({
         code: "custom",
-        message: `Port lane collides with ${existing} in another worktree slot`,
-        path: ["apps", id, "port"],
+        message: `Slot-zero port is already assigned to ${existing}`,
+        path: ["apps", id, "port", "base"],
       });
     } else {
-      portLanes.set(lane, id);
+      slotZeroPorts.set(app.port.base, id);
     }
     const port = resolveWorkgroveAppPort(config, app, config.slot.default);
     if (port > MAX_WORKGROVE_PORT) {
@@ -200,19 +185,6 @@ function workgroveTemplateTokenError(
 export type WorkgroveConfig = z.infer<typeof WorkgroveConfigSchema>;
 export type WorktreeEnvConfig = WorkgroveConfig;
 
-function workgroveAppSlotZeroPort(
-  ports: WorkgroveConfig["ports"],
-  allocation: WorkgroveAppPort
-): number {
-  return "base" in allocation
-    ? allocation.base
-    : ports.base + allocation.offset;
-}
-
-function workgrovePortLane(port: number, stride: number): number {
-  return ((port % stride) + stride) % stride;
-}
-
 function workgroveTemplateValues(
   config: WorkgroveConfigShape
 ): Array<{ path: (number | string)[]; value: string }> {
@@ -262,10 +234,7 @@ export function resolveWorkgroveAppPort(
   app: Pick<WorkgroveApp, "port">,
   slot: number
 ): number {
-  return (
-    workgroveAppSlotZeroPort(config.ports, app.port) +
-    slot * config.ports.slotStride
-  );
+  return app.port.base + slot * config.ports.slotStride;
 }
 
 export function maximumWorkgroveSlot(
@@ -273,12 +242,23 @@ export function maximumWorkgroveSlot(
 ): number {
   return Math.min(
     ...Object.values(config.apps).map((app) =>
-      Math.floor(
-        (MAX_WORKGROVE_PORT -
-          workgroveAppSlotZeroPort(config.ports, app.port)) /
-          config.ports.slotStride
-      )
+      Math.floor((MAX_WORKGROVE_PORT - app.port.base) / config.ports.slotStride)
     )
+  );
+}
+
+export function workgroveSlotsHavePortCollision(
+  config: Pick<WorkgroveConfig, "apps" | "ports">,
+  leftSlot: number,
+  rightSlot: number
+): boolean {
+  const leftPorts = new Set(
+    Object.values(config.apps).map((app) =>
+      resolveWorkgroveAppPort(config, app, leftSlot)
+    )
+  );
+  return Object.values(config.apps).some((app) =>
+    leftPorts.has(resolveWorkgroveAppPort(config, app, rightSlot))
   );
 }
 

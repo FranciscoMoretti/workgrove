@@ -48,32 +48,16 @@
             }
           },
           "port": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "offset": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 9007199254740991
-                  }
-                },
-                "required": ["offset"],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "base": {
-                    "type": "integer",
-                    "minimum": 1024,
-                    "maximum": 65535
-                  }
-                },
-                "required": ["base"],
-                "additionalProperties": false
+            "type": "object",
+            "properties": {
+              "base": {
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 65535
               }
-            ]
+            },
+            "required": ["base"],
+            "additionalProperties": false
           },
           "start": {
             "type": "object",
@@ -201,18 +185,13 @@
     "ports": {
       "type": "object",
       "properties": {
-        "base": {
-          "type": "integer",
-          "minimum": 1024,
-          "maximum": 65535
-        },
         "slotStride": {
           "type": "integer",
           "exclusiveMinimum": 0,
           "maximum": 65535
         }
       },
-      "required": ["base", "slotStride"],
+      "required": ["slotStride"],
       "additionalProperties": false
     },
     "slot": {
@@ -244,5 +223,5 @@
   "additionalProperties": false,
   "$id": "https://raw.githubusercontent.com/franciscomoretti/workgrove/main/schema/workgrove.schema.json",
   "title": "Workgrove configuration",
-  "description": "Choose one start mode: either control.start for aggregate orchestration, or per-app start commands. Workgrove enforces cross-field app, offset, and port rules with the shared Zod schema."
+  "description": "Choose one start mode: either control.start for aggregate orchestration, or per-app start commands. Each app declares its slot-zero base port, and Workgrove applies the shared slot stride."
 }

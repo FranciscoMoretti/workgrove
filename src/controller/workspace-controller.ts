@@ -60,6 +60,10 @@ import {
   type WorkgroveCommandName,
   type WorkgroveCommandResult,
 } from "./command-contract";
+import {
+  conflictingWorkgroveSlotIndexes,
+  workgroveSlotCollisionOwners,
+} from "./slot-collisions";
 import type { WorkspaceSnapshot } from "./workspace-snapshot";
 
 type CommandHandler = (
@@ -140,7 +144,8 @@ function commandSummary(
 function slotState(
   parsed: ParsedSlot,
   slot: number | null,
-  slotOwners: ReadonlyMap<number, number[]>
+  index: number,
+  conflictingIndexes: ReadonlySet<number>
 ): "assigned" | "conflicting" | "invalid" | "unassigned" {
   if (parsed.kind === "invalid") {
     return "invalid";
@@ -148,7 +153,7 @@ function slotState(
   if (slot === null) {
     return "unassigned";
   }
-  return (slotOwners.get(slot)?.length ?? 0) > 1 ? "conflicting" : "assigned";
+  return conflictingIndexes.has(index) ? "conflicting" : "assigned";
 }
 
 function worktreeSetupState(
@@ -209,15 +214,10 @@ export class WorkspaceController {
     const rawSlots = parsedSlots.map((parsed) =>
       parsed.kind === "value" ? parsed.slot : null
     );
-    const slotOwners = new Map<number, number[]>();
-    rawSlots.forEach((slot, index) => {
-      if (slot === null) {
-        return;
-      }
-      const owners = slotOwners.get(slot) ?? [];
-      owners.push(index);
-      slotOwners.set(slot, owners);
-    });
+    const conflictingSlotIndexes = conflictingWorkgroveSlotIndexes(
+      config,
+      rawSlots
+    );
     const ports = inspectListeningPorts();
     const appLabel = resolveControlledApps(config, config.slot.default)
       .filter((app) => app.probe === "tcp" && app.required)
@@ -252,7 +252,12 @@ export class WorkspaceController {
         ].some((processId) => managedPid(processId, path) !== null),
         setupState: worktreeSetupState(id, path, setupCommand !== null),
         slot,
-        slotState: slotState(parsedSlots[index], slot, slotOwners),
+        slotState: slotState(
+          parsedSlots[index],
+          slot,
+          index,
+          conflictingSlotIndexes
+        ),
       };
     });
     const occupied = new Map<number, string>();
@@ -273,15 +278,30 @@ export class WorkspaceController {
     ) {
       visibleSlots.add(slot);
     }
+    const assignedSlots = worktrees.flatMap((worktree) =>
+      worktree.slot === null
+        ? []
+        : [{ id: worktree.id, name: worktree.name, slot: worktree.slot }]
+    );
     const slotOptions = [...visibleSlots]
       .sort((left, right) => left - right)
-      .map((slot) => ({
-        apps: resolveControlledApps(config, slot)
-          .filter((app) => app.probe === "tcp")
-          .map((app) => ({ label: app.label, port: app.port })),
-        occupiedBy: occupied.get(slot) ?? null,
-        slot,
-      }));
+      .map((slot) => {
+        const collisionOwners = workgroveSlotCollisionOwners(
+          config,
+          slot,
+          assignedSlots
+        );
+        return {
+          apps: resolveControlledApps(config, slot)
+            .filter((app) => app.probe === "tcp")
+            .map((app) => ({ label: app.label, port: app.port })),
+          collisionOwners: collisionOwners.map(({ id, name }) => ({
+            id,
+            name,
+          })),
+          slot,
+        };
+      });
     const globalProcesses = listManagedProcesses();
     return {
       commandProfile: repositoryCommandProfile(config),

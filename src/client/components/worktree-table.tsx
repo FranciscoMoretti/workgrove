@@ -313,9 +313,10 @@ export function WorktreeTable({
                       <SelectContent className="min-w-80">
                         <SelectGroup>
                           {slots.map((option) => {
-                            const occupiedByOther =
-                              option.occupiedBy !== null &&
-                              option.slot !== worktree.slot;
+                            const collisionOwner = option.collisionOwners.find(
+                              (owner) => owner.id !== worktree.id
+                            );
+                            const occupiedByOther = Boolean(collisionOwner);
                             return (
                               <SelectItem
                                 disabled={occupiedByOther || pending}
@@ -328,7 +329,7 @@ export function WorktreeTable({
                                     <small className="text-muted-foreground">
                                       {slotAvailability(
                                         occupiedByOther,
-                                        option.occupiedBy,
+                                        collisionOwner?.name ?? null,
                                         option.slot === worktree.slot
                                       )}
                                     </small>

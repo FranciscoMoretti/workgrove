@@ -32,11 +32,11 @@ const config: WorkgroveConfig = {
     web: {
       control: { label: "Web", open: true, probe: "tcp", required: true },
       exports: { PORT: "{port}", API_URL: "{apps.api.url}" },
-      port: { offset: 1 },
+      port: { base: 3000 },
       start: { argv: ["npm", "run", "dev"], env: { PORT: "{port}" } },
     },
   },
-  ports: { base: 4000, slotStride: 10 },
+  ports: { slotStride: 10 },
   slot: { default: 0, env: "WORKGROVE_SLOT", file: ".env.worktree.local" },
   url: "http://localhost:{port}",
 };
@@ -52,9 +52,9 @@ describe("generic Workgrove configuration", () => {
         url: "http://localhost:8030",
       },
       web: {
-        env: { API_URL: "http://localhost:8030", PORT: "4031" },
-        port: 4031,
-        url: "http://localhost:4031",
+        env: { API_URL: "http://localhost:8030", PORT: "3030" },
+        port: 3030,
+        url: "http://localhost:3030",
       },
     });
     expect(resolveStartCommands(config, 3)).toEqual([
@@ -70,7 +70,7 @@ describe("generic Workgrove configuration", () => {
         cwd: null,
         env: {
           API_URL: "http://localhost:8030",
-          PORT: "4031",
+          PORT: "3030",
           WORKGROVE_SLOT: "3",
         },
       },
@@ -181,7 +181,7 @@ describe("generic Workgrove configuration", () => {
       )
     ).toEqual({
       appId: null,
-      argv: ["tool", "--port", "4021"],
+      argv: ["tool", "--port", "3020"],
       cwd: "packages/2",
       env: { TARGET: "http://localhost:8020", WORKGROVE_SLOT: "2" },
     });

@@ -72,7 +72,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
-import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 
 function errorMessage(error: unknown): string | undefined {
   if (!error || typeof error !== "object") {
@@ -386,60 +385,35 @@ function PortAllocationEditor({
   ports: WorkgroveConfig["ports"];
   value: WorkgroveAppPort;
 }) {
-  const mode = "base" in value ? "base" : "offset";
-  const numericValue = "base" in value ? value.base : value.offset;
-  const slotZeroPort =
-    mode === "base" ? numericValue : ports.base + numericValue;
+  const numericValue = value.base;
   return (
-    <FieldSet className="md:col-span-2">
-      <FieldLegend variant="label">Port allocation</FieldLegend>
+    <Field className="md:col-span-2" data-invalid={Boolean(error)}>
+      <FieldLabel htmlFor={`${id}-port`}>Slot 0 port</FieldLabel>
       <FieldDescription>
-        Use the repository range for related apps, or give this app a
-        conventional slot-zero port such as 8000.
+        Use this app&apos;s conventional development port, such as 3000 for a
+        web app or 8000 for FastAPI.
       </FieldDescription>
-      <ToggleGroup
-        aria-label="Port allocation strategy"
-        onValueChange={(values) => {
-          const nextMode = values[0];
-          if (nextMode === "offset") {
-            onChange({ offset: 0 });
-          } else if (nextMode === "base") {
-            onChange({ base: slotZeroPort });
-          }
-        }}
-        value={[mode]}
-        variant="outline"
-      >
-        <ToggleGroupItem value="offset">Repository range</ToggleGroupItem>
-        <ToggleGroupItem value="base">Custom base port</ToggleGroupItem>
-      </ToggleGroup>
-      <Field data-invalid={Boolean(error)}>
-        <FieldLabel htmlFor={`${id}-port`}>
-          {mode === "base" ? "Slot 0 port" : "Port offset"}
-        </FieldLabel>
-        <Input
-          aria-invalid={Boolean(error)}
-          id={`${id}-port`}
-          max={mode === "base" ? 65_535 : ports.slotStride - 1}
-          min={mode === "base" ? 1024 : 0}
-          onChange={(event) =>
-            onChange({
-              [mode]:
-                event.target.value === ""
-                  ? Number.NaN
-                  : Number(event.target.value),
-            } as WorkgroveAppPort)
-          }
-          type="number"
-          value={Number.isNaN(numericValue) ? "" : numericValue}
-        />
-        <FieldDescription>
-          Slot 0 resolves to {slotZeroPort}; each next slot adds{" "}
-          {ports.slotStride}.
-        </FieldDescription>
-        <FieldError>{errorMessage(error)}</FieldError>
-      </Field>
-    </FieldSet>
+      <Input
+        aria-invalid={Boolean(error)}
+        id={`${id}-port`}
+        max={65_535}
+        min={1024}
+        onChange={(event) =>
+          onChange({
+            base:
+              event.target.value === ""
+                ? Number.NaN
+                : Number(event.target.value),
+          })
+        }
+        type="number"
+        value={Number.isNaN(numericValue) ? "" : numericValue}
+      />
+      <FieldDescription>
+        Slot 0 uses {numericValue}; every next slot adds {ports.slotStride}.
+      </FieldDescription>
+      <FieldError>{errorMessage(error)}</FieldError>
+    </Field>
   );
 }
 
@@ -762,7 +736,7 @@ export function RepositoryConfigDialog({
       id = `app${suffix}`;
       suffix += 1;
     }
-    const port = nextAvailableWorkgroveAppPort(apps, form.getValues("ports"));
+    const port = nextAvailableWorkgroveAppPort(apps);
     form.setValue(
       "apps",
       { ...apps, [id]: { port } },
@@ -812,7 +786,7 @@ export function RepositoryConfigDialog({
       nextId = `${id}Copy${suffix}`;
       suffix += 1;
     }
-    const port = nextAvailableWorkgroveAppPort(apps, form.getValues("ports"));
+    const port = nextAvailableWorkgroveAppPort(apps);
     form.setValue(
       "apps",
       {
@@ -845,13 +819,12 @@ export function RepositoryConfigDialog({
   const effectiveSelectedAppId = apps[selectedAppId]
     ? selectedAppId
     : (appEntries[0]?.[0] ?? "");
-  const base = draft.ports?.base ?? 0;
   const stride = draft.ports?.slotStride ?? 0;
   const previewSlots = [0, 1, 2];
 
   function previewPort(app: WorkgroveApp, slot: number): number {
     return resolveWorkgroveAppPort(
-      { ports: { base, slotStride: stride } },
+      { ports: { slotStride: stride } },
       app,
       slot
     );
@@ -881,38 +854,12 @@ export function RepositoryConfigDialog({
         <div>
           <h2 className="font-heading font-medium text-base">Ports & slots</h2>
           <p className="text-muted-foreground text-xs/relaxed">
-            Apps can use the shared repository range or define their own
-            slot-zero base port. Every next slot adds the same stride.
+            Every app defines its own slot-zero port. The shared stride moves
+            all app ports together for each worktree slot.
           </p>
         </div>
         <FieldGroup>
           <div className="grid gap-5 md:grid-cols-2">
-            <Controller
-              control={form.control}
-              name="ports.base"
-              render={({ field, fieldState }) => (
-                <Field data-invalid={fieldState.invalid}>
-                  <FieldLabel htmlFor="config-ports-base">
-                    Repository base port
-                  </FieldLabel>
-                  <Input
-                    aria-invalid={fieldState.invalid}
-                    id="config-ports-base"
-                    max={65_535}
-                    min={1024}
-                    onChange={(event) =>
-                      field.onChange(Number(event.target.value))
-                    }
-                    type="number"
-                    value={field.value}
-                  />
-                  <FieldDescription>
-                    Slot-zero base for apps using offset allocation.
-                  </FieldDescription>
-                  <FieldError errors={[fieldState.error]} />
-                </Field>
-              )}
-            />
             <Controller
               control={form.control}
               name="ports.slotStride"
@@ -1261,7 +1208,7 @@ export function RepositoryConfigDialog({
             onDelete={() => deleteApp(effectiveSelectedAppId)}
             onDuplicate={() => duplicateApp(effectiveSelectedAppId)}
             onRename={(nextId) => renameApp(effectiveSelectedAppId, nextId)}
-            ports={{ base, slotStride: stride }}
+            ports={{ slotStride: stride }}
             showStartCommand={launchMode === "per-app"}
           />
         </div>

@@ -49,7 +49,7 @@ export const WorkspaceSnapshotSchema = z.object({
   slotOptions: z.array(
     z.object({
       apps: z.array(z.object({ label: z.string(), port: z.number().int() })),
-      occupiedBy: z.string().nullable(),
+      collisionOwners: z.array(z.object({ id: z.string(), name: z.string() })),
       slot: z.number().int().nonnegative(),
     })
   ),
