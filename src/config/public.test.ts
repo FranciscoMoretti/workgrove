@@ -8,8 +8,8 @@ describe("public config contract", () => {
   it("resolves repository tooling ports through the package subpath", () => {
     const config: WorkgroveConfig = {
       version: 1,
-      apps: { web: { offset: 2 } },
-      range: { base: 4000, stride: 10 },
+      apps: { web: { port: { offset: 2 } } },
+      ports: { base: 4000, slotStride: 10 },
       slot: { default: 0, env: "WORKGROVE_SLOT" },
       url: "http://localhost:{port}",
     };

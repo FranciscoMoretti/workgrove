@@ -1,13 +1,38 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { InfoIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import {
+  AppWindowIcon,
+  BoxesIcon,
+  CheckCircle2Icon,
+  CircleAlertIcon,
+  CopyIcon,
+  ExternalLinkIcon,
+  HomeIcon,
+  InfoIcon,
+  NetworkIcon,
+  PlusIcon,
+  Settings2Icon,
+  TerminalSquareIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
 import type { WorkgroveCommand } from "../../config/workgrove-command";
 import {
+  nextAvailableWorkgroveAppPort,
+  renameWorkgroveApp,
+  resolveWorkgroveAppEndpoints,
+  type WorkgroveLaunchMode,
+  withWorkgroveLaunchMode,
+  workgroveAppReferenceCount,
+  workgroveLaunchMode,
+} from "../../config/workgrove-editor";
+import {
   canonicalizeWorkgroveConfig,
+  resolveWorkgroveAppPort,
   type WorkgroveApp,
   WorkgroveAppIdSchema,
+  type WorkgroveAppPort,
   type WorkgroveConfig,
   WorkgroveConfigSchema,
 } from "../../config/workgrove-schema";
@@ -15,7 +40,6 @@ import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { Button } from "./ui/button";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -26,7 +50,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "./ui/dialog";
@@ -49,6 +72,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
+import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 
 function errorMessage(error: unknown): string | undefined {
   if (!error || typeof error !== "object") {
@@ -195,8 +219,9 @@ function CommandEditor({
           <Field data-invalid={Boolean(error)}>
             <FieldLabel>Arguments</FieldLabel>
             <FieldDescription>
-              One executable or argument per row. Templates such as
-              <code className="ml-1">{"{port}"}</code> are supported.
+              One executable or argument per row. Supports {"{port}"},{" "}
+              {"{slot}"}, {"{url}"}, and cross-app templates such as{" "}
+              <code>{"{apps.api.url}"}</code>.
             </FieldDescription>
             {command.argv.map((argument, index) => (
               <div
@@ -290,6 +315,7 @@ function AppIdInput({
       aria-invalid={invalid}
       aria-label="App identifier"
       className="font-mono"
+      id={`app-${id}-identifier`}
       onBlur={() => onRename(draft)}
       onChange={(event) => setDraft(event.target.value)}
       value={draft}
@@ -297,20 +323,35 @@ function AppIdInput({
   );
 }
 
-type LaunchMode = "aggregate" | "none" | "per-app";
+type BuilderSection = "advanced" | "apps" | "commands" | "overview" | "ports";
+
+function launchModeDescription(
+  mode: WorkgroveLaunchMode,
+  noun: "command" | "launch"
+): string {
+  if (mode === "aggregate") {
+    return noun === "command" ? "Aggregate start" : "Aggregate launch";
+  }
+  if (mode === "per-app") {
+    return noun === "command" ? "Per-app start" : "Per-app launch";
+  }
+  return noun === "command" ? "No start command" : "No launch command";
+}
 
 function LaunchModeEditor({
   onChange,
   value,
 }: {
-  onChange: (value: LaunchMode) => void;
-  value: LaunchMode;
+  onChange: (value: WorkgroveLaunchMode) => void;
+  value: WorkgroveLaunchMode;
 }) {
   return (
     <Field>
       <FieldLabel htmlFor="config-launch-mode">Launch mode</FieldLabel>
       <Select
-        onValueChange={(nextValue) => onChange(nextValue as LaunchMode)}
+        onValueChange={(nextValue) =>
+          onChange(nextValue as WorkgroveLaunchMode)
+        }
         value={value}
       >
         <SelectTrigger id="config-launch-mode">
@@ -332,13 +373,85 @@ function LaunchModeEditor({
   );
 }
 
+function PortAllocationEditor({
+  error,
+  id,
+  onChange,
+  ports,
+  value,
+}: {
+  error: unknown;
+  id: string;
+  onChange: (value: WorkgroveAppPort) => void;
+  ports: WorkgroveConfig["ports"];
+  value: WorkgroveAppPort;
+}) {
+  const mode = "base" in value ? "base" : "offset";
+  const numericValue = "base" in value ? value.base : value.offset;
+  const slotZeroPort =
+    mode === "base" ? numericValue : ports.base + numericValue;
+  return (
+    <FieldSet className="md:col-span-2">
+      <FieldLegend variant="label">Port allocation</FieldLegend>
+      <FieldDescription>
+        Use the repository range for related apps, or give this app a
+        conventional slot-zero port such as 8000.
+      </FieldDescription>
+      <ToggleGroup
+        aria-label="Port allocation strategy"
+        onValueChange={(values) => {
+          const nextMode = values[0];
+          if (nextMode === "offset") {
+            onChange({ offset: 0 });
+          } else if (nextMode === "base") {
+            onChange({ base: slotZeroPort });
+          }
+        }}
+        value={[mode]}
+        variant="outline"
+      >
+        <ToggleGroupItem value="offset">Repository range</ToggleGroupItem>
+        <ToggleGroupItem value="base">Custom base port</ToggleGroupItem>
+      </ToggleGroup>
+      <Field data-invalid={Boolean(error)}>
+        <FieldLabel htmlFor={`${id}-port`}>
+          {mode === "base" ? "Slot 0 port" : "Port offset"}
+        </FieldLabel>
+        <Input
+          aria-invalid={Boolean(error)}
+          id={`${id}-port`}
+          max={mode === "base" ? 65_535 : ports.slotStride - 1}
+          min={mode === "base" ? 1024 : 0}
+          onChange={(event) =>
+            onChange({
+              [mode]:
+                event.target.value === ""
+                  ? Number.NaN
+                  : Number(event.target.value),
+            } as WorkgroveAppPort)
+          }
+          type="number"
+          value={Number.isNaN(numericValue) ? "" : numericValue}
+        />
+        <FieldDescription>
+          Slot 0 resolves to {slotZeroPort}; each next slot adds{" "}
+          {ports.slotStride}.
+        </FieldDescription>
+        <FieldError>{errorMessage(error)}</FieldError>
+      </Field>
+    </FieldSet>
+  );
+}
+
 function AppEditor({
   app,
   appCount,
   appError,
   id,
   onDelete,
+  onDuplicate,
   onRename,
+  ports,
   showStartCommand,
   control,
 }: {
@@ -346,185 +459,227 @@ function AppEditor({
   appCount: number;
   appError: unknown;
   id: string;
-  onDelete: () => void;
+  onDelete: () => string | undefined;
+  onDuplicate: () => void;
   onRename: (nextId: string) => string | undefined;
+  ports: WorkgroveConfig["ports"];
   showStartCommand: boolean;
   control: ReturnType<typeof useForm<WorkgroveConfig>>["control"];
 }) {
-  const offsetError = errorMessage(
-    (appError as { offset?: unknown } | undefined)?.offset
+  const [pane, setPane] = useState<"environment" | "settings" | "start">(
+    "settings"
   );
   const startError = errorMessage(
     (appError as { start?: unknown } | undefined)?.start
   );
   const idError = directErrorMessage(appError);
   const [renameError, setRenameError] = useState<string | undefined>();
+  const [deleteError, setDeleteError] = useState<string | undefined>();
   const displayedIdError = renameError ?? idError;
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{app.control?.label || id}</CardTitle>
-        <CardDescription>
-          App identifier, port offset, runtime controls, and process command.
-        </CardDescription>
-        <CardAction>
-          <Button
-            aria-label={`Delete ${id}`}
-            disabled={appCount === 1}
-            onClick={onDelete}
-            size="icon"
-            type="button"
-            variant="ghost"
-          >
-            <Trash2Icon />
-          </Button>
-        </CardAction>
-      </CardHeader>
-      <CardContent>
-        <FieldGroup>
-          <Field data-invalid={Boolean(displayedIdError)}>
-            <FieldLabel>App identifier</FieldLabel>
-            <AppIdInput
-              id={id}
-              invalid={Boolean(displayedIdError)}
-              onRename={(nextId) => setRenameError(onRename(nextId))}
-            />
-            <FieldError>{displayedIdError}</FieldError>
-          </Field>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Controller
-              control={control}
-              name={`apps.${id}.control.label`}
-              render={({ field }) => (
-                <Field>
-                  <FieldLabel htmlFor={`app-${id}-label`}>Label</FieldLabel>
-                  <Input
-                    id={`app-${id}-label`}
-                    onChange={(event) =>
-                      field.onChange(event.target.value || undefined)
-                    }
-                    value={field.value ?? ""}
-                  />
-                </Field>
-              )}
-            />
-            <Controller
-              control={control}
-              name={`apps.${id}.offset`}
-              render={({ field }) => (
-                <Field data-invalid={Boolean(offsetError)}>
-                  <FieldLabel htmlFor={`app-${id}-offset`}>
-                    Port offset
-                  </FieldLabel>
-                  <Input
-                    aria-invalid={Boolean(offsetError)}
-                    id={`app-${id}-offset`}
-                    min={0}
-                    onChange={(event) =>
-                      field.onChange(
-                        event.target.value === ""
-                          ? Number.NaN
-                          : Number(event.target.value)
-                      )
-                    }
-                    type="number"
-                    value={Number.isNaN(field.value) ? "" : field.value}
-                  />
-                  <FieldError>{offsetError}</FieldError>
-                </Field>
-              )}
-            />
-            <Controller
-              control={control}
-              name={`apps.${id}.control.probe`}
-              render={({ field }) => (
-                <Field>
-                  <FieldLabel htmlFor={`app-${id}-probe`}>
-                    Health probe
-                  </FieldLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    value={field.value ?? "tcp"}
-                  >
-                    <SelectTrigger id={`app-${id}-probe`}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        <SelectItem value="tcp">TCP port</SelectItem>
-                        <SelectItem value="none">None</SelectItem>
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              )}
-            />
-            <div className="flex flex-col gap-3 pt-6">
-              <Controller
-                control={control}
-                name={`apps.${id}.control.required`}
-                render={({ field }) => (
-                  <Field orientation="horizontal">
-                    <Checkbox
-                      checked={
-                        field.value ?? (app.control?.probe ?? "tcp") === "tcp"
-                      }
-                      id={`app-${id}-required`}
-                      onCheckedChange={(checked) =>
-                        field.onChange(checked === true)
-                      }
-                    />
-                    <FieldLabel htmlFor={`app-${id}-required`}>
-                      Required
-                    </FieldLabel>
-                  </Field>
-                )}
-              />
-              <Controller
-                control={control}
-                name={`apps.${id}.control.open`}
-                render={({ field }) => (
-                  <Field orientation="horizontal">
-                    <Checkbox
-                      checked={field.value ?? false}
-                      id={`app-${id}-open`}
-                      onCheckedChange={(checked) =>
-                        field.onChange(checked === true)
-                      }
-                    />
-                    <FieldLabel htmlFor={`app-${id}-open`}>
-                      Show open action
-                    </FieldLabel>
-                  </Field>
-                )}
-              />
-            </div>
+    <Card className="h-full gap-0 overflow-visible py-0 ring-0">
+      <CardHeader className="border-b py-4">
+        <div className="flex items-start justify-between gap-4 max-sm:flex-col">
+          <div className="min-w-0">
+            <CardTitle>{app.control?.label || id}</CardTitle>
+            <CardDescription>
+              App identity, port allocation, runtime controls, and process
+              command.
+            </CardDescription>
           </div>
-          <Controller
-            control={control}
-            name={`apps.${id}.exports`}
-            render={({ field }) => (
-              <Field>
-                <FieldLabel>Exported environment</FieldLabel>
-                <FieldDescription>
-                  Values supplied to this app and available as templates.
-                </FieldDescription>
-                <KeyValueEditor
-                  addLabel="Add export"
-                  id={`app-${id}-exports`}
-                  onChange={field.onChange}
-                  value={field.value}
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              onClick={onDuplicate}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              <CopyIcon data-icon="inline-start" />
+              Duplicate
+            </Button>
+            <Button
+              aria-label={`Delete ${id}`}
+              disabled={appCount === 1}
+              onClick={() => setDeleteError(onDelete())}
+              size="icon"
+              type="button"
+              variant="ghost"
+            >
+              <Trash2Icon />
+            </Button>
+          </div>
+        </div>
+        {deleteError ? (
+          <p className="text-destructive text-xs">{deleteError}</p>
+        ) : null}
+      </CardHeader>
+      <div className="flex items-center gap-1 overflow-x-auto border-b px-4 py-2">
+        <Button
+          onClick={() => setPane("settings")}
+          size="sm"
+          type="button"
+          variant={pane === "settings" ? "secondary" : "ghost"}
+        >
+          App settings
+        </Button>
+        <Button
+          onClick={() => setPane("environment")}
+          size="sm"
+          type="button"
+          variant={pane === "environment" ? "secondary" : "ghost"}
+        >
+          Exported environment
+        </Button>
+        <Button
+          onClick={() => setPane("start")}
+          size="sm"
+          type="button"
+          variant={pane === "start" ? "secondary" : "ghost"}
+        >
+          Start command
+        </Button>
+      </div>
+      <CardContent className="py-5">
+        <FieldGroup>
+          {pane === "settings" ? (
+            <div className="grid gap-5 md:grid-cols-2">
+              <Field data-invalid={Boolean(displayedIdError)}>
+                <FieldLabel htmlFor={`app-${id}-identifier`}>
+                  App identifier
+                </FieldLabel>
+                <AppIdInput
+                  id={id}
+                  invalid={Boolean(displayedIdError)}
+                  onRename={(nextId) => setRenameError(onRename(nextId))}
                 />
+                <FieldDescription>
+                  Letters, numbers, underscores, and hyphens.
+                </FieldDescription>
+                <FieldError>{displayedIdError}</FieldError>
               </Field>
-            )}
-          />
-          {showStartCommand ? (
+              <Controller
+                control={control}
+                name={`apps.${id}.control.label`}
+                render={({ field }) => (
+                  <Field>
+                    <FieldLabel htmlFor={`app-${id}-label`}>Label</FieldLabel>
+                    <Input
+                      id={`app-${id}-label`}
+                      onChange={(event) =>
+                        field.onChange(event.target.value || undefined)
+                      }
+                      value={field.value ?? ""}
+                    />
+                  </Field>
+                )}
+              />
+              <Controller
+                control={control}
+                name={`apps.${id}.port`}
+                render={({ field, fieldState }) => (
+                  <PortAllocationEditor
+                    error={fieldState.error}
+                    id={`app-${id}`}
+                    onChange={field.onChange}
+                    ports={ports}
+                    value={field.value}
+                  />
+                )}
+              />
+              <Controller
+                control={control}
+                name={`apps.${id}.control.probe`}
+                render={({ field }) => (
+                  <Field>
+                    <FieldLabel htmlFor={`app-${id}-probe`}>
+                      Health probe
+                    </FieldLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      value={field.value ?? "tcp"}
+                    >
+                      <SelectTrigger id={`app-${id}-probe`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value="tcp">TCP port</SelectItem>
+                          <SelectItem value="none">None</SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                )}
+              />
+              <div className="flex flex-col gap-3 pt-6">
+                <Controller
+                  control={control}
+                  name={`apps.${id}.control.required`}
+                  render={({ field }) => (
+                    <Field orientation="horizontal">
+                      <Checkbox
+                        checked={
+                          field.value ?? (app.control?.probe ?? "tcp") === "tcp"
+                        }
+                        id={`app-${id}-required`}
+                        onCheckedChange={(checked) =>
+                          field.onChange(checked === true)
+                        }
+                      />
+                      <FieldLabel htmlFor={`app-${id}-required`}>
+                        Required
+                      </FieldLabel>
+                    </Field>
+                  )}
+                />
+                <Controller
+                  control={control}
+                  name={`apps.${id}.control.open`}
+                  render={({ field }) => (
+                    <Field orientation="horizontal">
+                      <Checkbox
+                        checked={field.value ?? false}
+                        id={`app-${id}-open`}
+                        onCheckedChange={(checked) =>
+                          field.onChange(checked === true)
+                        }
+                      />
+                      <FieldLabel htmlFor={`app-${id}-open`}>
+                        Show open action
+                      </FieldLabel>
+                    </Field>
+                  )}
+                />
+              </div>
+            </div>
+          ) : null}
+          {pane === "environment" ? (
+            <Controller
+              control={control}
+              name={`apps.${id}.exports`}
+              render={({ field }) => (
+                <Field>
+                  <FieldLabel>Exported environment</FieldLabel>
+                  <FieldDescription>
+                    Values supplied to this app and available as templates.
+                  </FieldDescription>
+                  <KeyValueEditor
+                    addLabel="Add export"
+                    id={`app-${id}-exports`}
+                    onChange={field.onChange}
+                    value={field.value}
+                  />
+                </Field>
+              )}
+            />
+          ) : null}
+          {pane === "start" && showStartCommand ? (
             <Controller
               control={control}
               name={`apps.${id}.start`}
               render={({ field }) => (
                 <CommandEditor
-                  description="Use per-app commands for independently managed processes."
+                  description="Run this app as an independently managed process."
                   error={startError}
                   id={`app-${id}-start`}
                   label="Start command"
@@ -534,12 +689,23 @@ function AppEditor({
               )}
             />
           ) : null}
+          {pane === "start" && !showStartCommand ? (
+            <Alert>
+              <InfoIcon />
+              <AlertTitle>Per-app launch mode is off</AlertTitle>
+              <AlertDescription>
+                Choose “One process per app” under Repository commands to
+                configure an individual command here.
+              </AlertDescription>
+            </Alert>
+          ) : null}
         </FieldGroup>
       </CardContent>
     </Card>
   );
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: this component coordinates one shared form across the builder's app, command, slot, preview, and validation surfaces.
 export function RepositoryConfigDialog({
   config,
   configPath,
@@ -562,80 +728,31 @@ export function RepositoryConfigDialog({
     mode: "onChange",
     resolver: zodResolver(WorkgroveConfigSchema),
   });
+  const [section, setSection] = useState<BuilderSection>("overview");
+  const [selectedAppId, setSelectedAppId] = useState(
+    () => Object.keys(config.apps)[0] ?? ""
+  );
   const apps = useWatch({ control: form.control, name: "apps" }) ?? {};
-  const aggregateStart = useWatch({
-    control: form.control,
-    name: "control.start",
-  });
   const appEntries = Object.entries(apps);
   const errors = form.formState.errors;
-  let launchMode: LaunchMode = "none";
-  if (aggregateStart) {
-    launchMode = "aggregate";
-  } else if (Object.values(apps).some((app) => app.start)) {
-    launchMode = "per-app";
-  }
+  const launchMode = workgroveLaunchMode({
+    apps,
+    control: form.getValues("control"),
+  });
 
-  function changeLaunchMode(mode: LaunchMode): void {
-    if (mode === "none") {
-      form.setValue("control.start", undefined, {
-        shouldDirty: true,
-        shouldValidate: true,
-      });
-      form.setValue(
-        "apps",
-        Object.fromEntries(
-          Object.entries(apps).map(([id, app]) => [
-            id,
-            { ...app, start: undefined },
-          ])
-        ),
-        { shouldDirty: true, shouldValidate: true }
-      );
-      return;
-    }
-    if (mode === "aggregate") {
-      form.setValue(
-        "apps",
-        Object.fromEntries(
-          Object.entries(apps).map(([id, app]) => [
-            id,
-            { ...app, start: undefined },
-          ])
-        ),
-        { shouldDirty: true, shouldValidate: true }
-      );
-      form.setValue("control.start", aggregateStart ?? { argv: [""] }, {
-        shouldDirty: true,
-        shouldValidate: true,
-      });
-      return;
-    }
-    form.setValue("control.start", undefined, {
+  function changeLaunchMode(mode: WorkgroveLaunchMode): void {
+    const next = withWorkgroveLaunchMode(
+      { apps, control: form.getValues("control") },
+      mode
+    );
+    form.setValue("apps", next.apps, {
       shouldDirty: true,
       shouldValidate: true,
     });
-    const requiredIds = Object.entries(apps)
-      .filter(([, app]) => {
-        const probe = app.control?.probe ?? "tcp";
-        return probe === "tcp" && (app.control?.required ?? true);
-      })
-      .map(([id]) => id);
-    const targets = new Set(
-      requiredIds.length > 0 ? requiredIds : Object.keys(apps).slice(0, 1)
-    );
-    form.setValue(
-      "apps",
-      Object.fromEntries(
-        Object.entries(apps).map(([id, app]) => [
-          id,
-          targets.has(id)
-            ? { ...app, start: app.start ?? { argv: [""] } }
-            : app,
-        ])
-      ),
-      { shouldDirty: true, shouldValidate: true }
-    );
+    form.setValue("control", next.control, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
   }
 
   function addApp(): void {
@@ -645,16 +762,14 @@ export function RepositoryConfigDialog({
       id = `app${suffix}`;
       suffix += 1;
     }
-    const usedOffsets = new Set(Object.values(apps).map((app) => app.offset));
-    let offset = 0;
-    while (usedOffsets.has(offset)) {
-      offset += 1;
-    }
+    const port = nextAvailableWorkgroveAppPort(apps, form.getValues("ports"));
     form.setValue(
       "apps",
-      { ...apps, [id]: { offset } },
+      { ...apps, [id]: { port } },
       { shouldDirty: true, shouldValidate: true }
     );
+    setSelectedAppId(id);
+    setSection("apps");
   }
 
   function renameApp(id: string, nextId: string): string | undefined {
@@ -668,15 +783,500 @@ export function RepositoryConfigDialog({
     if (Object.hasOwn(apps, nextId)) {
       return `App ${nextId} already exists`;
     }
-    const next = Object.fromEntries(
-      Object.entries(apps).map(([appId, app]) => [
-        appId === id ? nextId : appId,
-        app,
-      ])
-    );
+    const next = renameWorkgroveApp(form.getValues(), id, nextId);
     form.clearErrors("apps");
-    form.setValue("apps", next, { shouldDirty: true, shouldValidate: true });
+    form.setValue("apps", next.apps, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    form.setValue("control", next.control, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    form.setValue("url", next.url, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    setSelectedAppId(nextId);
     return undefined;
+  }
+
+  function duplicateApp(id: string): void {
+    const source = apps[id];
+    if (!source) {
+      return;
+    }
+    let nextId = `${id}Copy`;
+    let suffix = 2;
+    while (Object.hasOwn(apps, nextId)) {
+      nextId = `${id}Copy${suffix}`;
+      suffix += 1;
+    }
+    const port = nextAvailableWorkgroveAppPort(apps, form.getValues("ports"));
+    form.setValue(
+      "apps",
+      {
+        ...apps,
+        [nextId]: { ...structuredClone(source), port },
+      },
+      { shouldDirty: true, shouldValidate: true }
+    );
+    setSelectedAppId(nextId);
+  }
+
+  function deleteApp(id: string): string | undefined {
+    const references = workgroveAppReferenceCount(form.getValues(), id);
+    if (references > 0) {
+      return `Remove or change ${references} template ${references === 1 ? "reference" : "references"} to ${id} before deleting this app.`;
+    }
+    const remaining = appEntries.filter(([appId]) => appId !== id);
+    form.setValue("apps", Object.fromEntries(remaining), {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    setSelectedAppId(remaining[0]?.[0] ?? "");
+    return undefined;
+  }
+
+  const draft = useWatch({ control: form.control });
+  const validation = WorkgroveConfigSchema.safeParse(draft);
+  const validationIssues = validation.success ? [] : validation.error.issues;
+  const selectedApp = apps[selectedAppId] ?? appEntries[0]?.[1];
+  const effectiveSelectedAppId = apps[selectedAppId]
+    ? selectedAppId
+    : (appEntries[0]?.[0] ?? "");
+  const base = draft.ports?.base ?? 0;
+  const stride = draft.ports?.slotStride ?? 0;
+  const previewSlots = [0, 1, 2];
+
+  function previewPort(app: WorkgroveApp, slot: number): number {
+    return resolveWorkgroveAppPort(
+      { ports: { base, slotStride: stride } },
+      app,
+      slot
+    );
+  }
+
+  function previewUrl(app: WorkgroveApp, slot: number): string {
+    try {
+      const id = appEntries.find(([, candidate]) => candidate === app)?.[0];
+      if (!id) {
+        return "Preview unavailable";
+      }
+      return resolveWorkgroveAppEndpoints(form.getValues(), slot)[id].url;
+    } catch {
+      return "Preview unavailable";
+    }
+  }
+
+  function resetChanges(): void {
+    form.reset(canonicalizeWorkgroveConfig(config));
+    setSelectedAppId(Object.keys(config.apps)[0] ?? "");
+    setSection("overview");
+  }
+
+  function portsAndSlots() {
+    return (
+      <section className="flex flex-col gap-6 p-6">
+        <div>
+          <h2 className="font-heading font-medium text-base">Ports & slots</h2>
+          <p className="text-muted-foreground text-xs/relaxed">
+            Apps can use the shared repository range or define their own
+            slot-zero base port. Every next slot adds the same stride.
+          </p>
+        </div>
+        <FieldGroup>
+          <div className="grid gap-5 md:grid-cols-2">
+            <Controller
+              control={form.control}
+              name="ports.base"
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="config-ports-base">
+                    Repository base port
+                  </FieldLabel>
+                  <Input
+                    aria-invalid={fieldState.invalid}
+                    id="config-ports-base"
+                    max={65_535}
+                    min={1024}
+                    onChange={(event) =>
+                      field.onChange(Number(event.target.value))
+                    }
+                    type="number"
+                    value={field.value}
+                  />
+                  <FieldDescription>
+                    Slot-zero base for apps using offset allocation.
+                  </FieldDescription>
+                  <FieldError errors={[fieldState.error]} />
+                </Field>
+              )}
+            />
+            <Controller
+              control={form.control}
+              name="ports.slotStride"
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="config-slot-stride">
+                    Slot stride
+                  </FieldLabel>
+                  <Input
+                    aria-invalid={fieldState.invalid}
+                    id="config-slot-stride"
+                    max={65_535}
+                    min={1}
+                    onChange={(event) =>
+                      field.onChange(Number(event.target.value))
+                    }
+                    type="number"
+                    value={field.value}
+                  />
+                  <FieldDescription>
+                    Ports reserved for each worktree slot.
+                  </FieldDescription>
+                  <FieldError errors={[fieldState.error]} />
+                </Field>
+              )}
+            />
+            <Controller
+              control={form.control}
+              name="slot.default"
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="config-slot-default">
+                    Default slot
+                  </FieldLabel>
+                  <Input
+                    aria-invalid={fieldState.invalid}
+                    id="config-slot-default"
+                    min={0}
+                    onChange={(event) =>
+                      field.onChange(Number(event.target.value))
+                    }
+                    type="number"
+                    value={field.value}
+                  />
+                  <FieldError errors={[fieldState.error]} />
+                </Field>
+              )}
+            />
+            <Controller
+              control={form.control}
+              name="slot.env"
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="config-slot-env">
+                    Slot environment variable
+                  </FieldLabel>
+                  <Input
+                    aria-invalid={fieldState.invalid}
+                    className="font-mono"
+                    id="config-slot-env"
+                    {...field}
+                  />
+                  <FieldError errors={[fieldState.error]} />
+                </Field>
+              )}
+            />
+            <Controller
+              control={form.control}
+              name="slot.file"
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="config-slot-file">Slot file</FieldLabel>
+                  <Input
+                    aria-invalid={fieldState.invalid}
+                    className="font-mono"
+                    id="config-slot-file"
+                    onChange={(event) =>
+                      field.onChange(event.target.value || undefined)
+                    }
+                    value={field.value ?? ""}
+                  />
+                  <FieldDescription>
+                    Optional; defaults to .env.worktree.local.
+                  </FieldDescription>
+                  <FieldError errors={[fieldState.error]} />
+                </Field>
+              )}
+            />
+            <Controller
+              control={form.control}
+              name="url"
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor="config-url">App URL template</FieldLabel>
+                  <Input
+                    aria-invalid={fieldState.invalid}
+                    className="font-mono"
+                    id="config-url"
+                    {...field}
+                  />
+                  <FieldDescription>
+                    Supports {"{port}"} and {"{slot}"} templates.
+                  </FieldDescription>
+                  <FieldError errors={[fieldState.error]} />
+                </Field>
+              )}
+            />
+          </div>
+        </FieldGroup>
+      </section>
+    );
+  }
+
+  function repositoryCommands() {
+    return (
+      <section className="flex flex-col gap-6 p-6">
+        <div>
+          <h2 className="font-heading font-medium text-base">
+            Repository commands
+          </h2>
+          <p className="text-muted-foreground text-xs/relaxed">
+            Configure worktree setup and choose one launch strategy.
+          </p>
+        </div>
+        <Alert>
+          <InfoIcon />
+          <AlertTitle>Commands require repository trust</AlertTitle>
+          <AlertDescription>
+            Changing an executable command invalidates its existing approval
+            fingerprint.
+          </AlertDescription>
+        </Alert>
+        <FieldGroup>
+          <LaunchModeEditor onChange={changeLaunchMode} value={launchMode} />
+          <Controller
+            control={form.control}
+            name="control.setup"
+            render={({ field, fieldState }) => (
+              <CommandEditor
+                description="Prepare a worktree before development."
+                error={errorMessage(fieldState.error)}
+                id="config-setup"
+                label="Setup command"
+                onChange={field.onChange}
+                value={field.value}
+              />
+            )}
+          />
+          {launchMode === "aggregate" ? (
+            <Controller
+              control={form.control}
+              name="control.start"
+              render={({ field, fieldState }) => (
+                <CommandEditor
+                  description="Start every app in one managed process."
+                  error={errorMessage(fieldState.error)}
+                  id="config-start"
+                  label="Aggregate start command"
+                  onChange={field.onChange}
+                  value={field.value}
+                />
+              )}
+            />
+          ) : null}
+        </FieldGroup>
+      </section>
+    );
+  }
+
+  function advancedSettings() {
+    return (
+      <section className="flex flex-col gap-6 p-6">
+        <div>
+          <h2 className="font-heading font-medium text-base">Advanced</h2>
+          <p className="text-muted-foreground text-xs/relaxed">
+            Schema declaration and configuration format version.
+          </p>
+        </div>
+        <FieldGroup>
+          <Controller
+            control={form.control}
+            name="$schema"
+            render={({ field, fieldState }) => (
+              <Field data-invalid={fieldState.invalid}>
+                <FieldLabel htmlFor="config-schema">JSON Schema URL</FieldLabel>
+                <Input
+                  aria-invalid={fieldState.invalid}
+                  className="font-mono"
+                  id="config-schema"
+                  onChange={(event) =>
+                    field.onChange(event.target.value || undefined)
+                  }
+                  value={field.value ?? ""}
+                />
+                <FieldDescription>
+                  Optional editor and tooling hint.
+                </FieldDescription>
+                <FieldError errors={[fieldState.error]} />
+              </Field>
+            )}
+          />
+          <Field data-disabled>
+            <FieldLabel htmlFor="config-version">
+              Configuration version
+            </FieldLabel>
+            <Input disabled id="config-version" type="number" value={1} />
+            <FieldDescription>
+              Version 1 is the only supported format.
+            </FieldDescription>
+          </Field>
+        </FieldGroup>
+      </section>
+    );
+  }
+
+  function overview() {
+    return (
+      <section className="flex flex-col gap-6 p-6">
+        <div>
+          <h2 className="font-heading font-medium text-base">
+            Configuration overview
+          </h2>
+          <p className="text-muted-foreground text-xs/relaxed">
+            Build the repository model by adding apps, then configure commands
+            and slots.
+          </p>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>{appEntries.length} configured apps</CardTitle>
+              <CardDescription>
+                Each app has its own port allocation, controls, exports, and
+                optional start command.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                onClick={() => setSection("apps")}
+                type="button"
+                variant="outline"
+              >
+                <BoxesIcon data-icon="inline-start" />
+                Manage apps
+              </Button>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                {launchModeDescription(launchMode, "launch")}
+              </CardTitle>
+              <CardDescription>
+                Setup and start commands are represented as argv arrays without
+                invoking a shell.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                onClick={() => setSection("commands")}
+                type="button"
+                variant="outline"
+              >
+                <TerminalSquareIcon data-icon="inline-start" />
+                Configure commands
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              Apps at default slot {draft.slot?.default ?? 0}
+            </CardTitle>
+            <CardDescription>
+              Live preview from the current unsaved configuration.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {appEntries.map(([id, app]) => (
+              <div
+                className="flex items-center justify-between gap-4 border-b py-2 last:border-b-0"
+                key={id}
+              >
+                <span className="flex items-center gap-2 font-medium">
+                  <AppWindowIcon />
+                  {app.control?.label || id}
+                </span>
+                <code>{previewUrl(app, draft.slot?.default ?? 0)}</code>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </section>
+    );
+  }
+
+  function centerContent() {
+    if (section === "apps") {
+      return selectedApp ? (
+        <div className="p-4">
+          <div className="mb-4 lg:hidden">
+            <Field>
+              <FieldLabel htmlFor="mobile-app-selector">
+                Selected app
+              </FieldLabel>
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+                <Select
+                  onValueChange={(value) => {
+                    if (value) {
+                      setSelectedAppId(value);
+                    }
+                  }}
+                  value={effectiveSelectedAppId}
+                >
+                  <SelectTrigger
+                    className="min-w-0 flex-1"
+                    id="mobile-app-selector"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {appEntries.map(([id]) => (
+                        <SelectItem key={id} value={id}>
+                          {id}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <Button onClick={addApp} type="button" variant="outline">
+                  <PlusIcon data-icon="inline-start" />
+                  Add app
+                </Button>
+              </div>
+            </Field>
+          </div>
+          <AppEditor
+            app={selectedApp}
+            appCount={appEntries.length}
+            appError={errors.apps?.[effectiveSelectedAppId]}
+            control={form.control}
+            id={effectiveSelectedAppId}
+            key={effectiveSelectedAppId}
+            onDelete={() => deleteApp(effectiveSelectedAppId)}
+            onDuplicate={() => duplicateApp(effectiveSelectedAppId)}
+            onRename={(nextId) => renameApp(effectiveSelectedAppId, nextId)}
+            ports={{ base, slotStride: stride }}
+            showStartCommand={launchMode === "per-app"}
+          />
+        </div>
+      ) : null;
+    }
+    if (section === "commands") {
+      return repositoryCommands();
+    }
+    if (section === "ports") {
+      return portsAndSlots();
+    }
+    if (section === "advanced") {
+      return advancedSettings();
+    }
+    return overview();
   }
 
   return (
@@ -688,277 +1288,296 @@ export function RepositoryConfigDialog({
       }}
       open={open}
     >
-      <DialogContent className="flex h-[90vh] flex-col gap-0 p-0 sm:max-w-5xl">
-        <DialogHeader className="shrink-0 border-b p-5 pr-12">
-          <DialogTitle>Repository configuration</DialogTitle>
-          <DialogDescription>
-            Edit <code className="break-all">{configPath}</code>. Validation is
-            shared with the Workgrove executable.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="h-[calc(100vh-1rem)] max-w-[calc(100%-1rem)] gap-0 p-0 sm:max-w-[calc(100%-1rem)]">
         <form
-          className="flex min-h-0 flex-1 flex-col"
+          className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)_auto]"
           onSubmit={form.handleSubmit((value) =>
             onSave(canonicalizeWorkgroveConfig(value))
           )}
         >
-          <ScrollArea className="min-h-0 flex-1">
-            <div className="flex flex-col gap-5 p-5">
-              <Alert>
-                <InfoIcon />
-                <AlertTitle>Commands are trusted repository code</AlertTitle>
-                <AlertDescription>
-                  Choose either one aggregate start command or per-app start
-                  commands. Workgrove validates the complete configuration again
-                  before writing it.
-                </AlertDescription>
-              </Alert>
-              <Card>
-                <CardHeader>
-                  <CardTitle>Ports and slots</CardTitle>
-                  <CardDescription>
-                    Each app receives base + slot × stride + app offset.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <FieldGroup>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <Controller
-                        control={form.control}
-                        name="range.base"
-                        render={({ field, fieldState }) => (
-                          <Field data-invalid={fieldState.invalid}>
-                            <FieldLabel htmlFor="config-range-base">
-                              Base port
-                            </FieldLabel>
-                            <Input
-                              aria-invalid={fieldState.invalid}
-                              id="config-range-base"
-                              max={65_535}
-                              min={1024}
-                              onChange={(event) =>
-                                field.onChange(Number(event.target.value))
-                              }
-                              type="number"
-                              value={field.value}
-                            />
-                            <FieldError errors={[fieldState.error]} />
-                          </Field>
-                        )}
-                      />
-                      <Controller
-                        control={form.control}
-                        name="range.stride"
-                        render={({ field, fieldState }) => (
-                          <Field data-invalid={fieldState.invalid}>
-                            <FieldLabel htmlFor="config-range-stride">
-                              Slot stride
-                            </FieldLabel>
-                            <Input
-                              aria-invalid={fieldState.invalid}
-                              id="config-range-stride"
-                              max={65_535}
-                              min={1}
-                              onChange={(event) =>
-                                field.onChange(Number(event.target.value))
-                              }
-                              type="number"
-                              value={field.value}
-                            />
-                            <FieldError errors={[fieldState.error]} />
-                          </Field>
-                        )}
-                      />
-                      <Controller
-                        control={form.control}
-                        name="slot.default"
-                        render={({ field, fieldState }) => (
-                          <Field data-invalid={fieldState.invalid}>
-                            <FieldLabel htmlFor="config-slot-default">
-                              Default slot
-                            </FieldLabel>
-                            <Input
-                              aria-invalid={fieldState.invalid}
-                              id="config-slot-default"
-                              min={0}
-                              onChange={(event) =>
-                                field.onChange(Number(event.target.value))
-                              }
-                              type="number"
-                              value={field.value}
-                            />
-                            <FieldError errors={[fieldState.error]} />
-                          </Field>
-                        )}
-                      />
-                      <Controller
-                        control={form.control}
-                        name="slot.env"
-                        render={({ field, fieldState }) => (
-                          <Field data-invalid={fieldState.invalid}>
-                            <FieldLabel htmlFor="config-slot-env">
-                              Slot environment variable
-                            </FieldLabel>
-                            <Input
-                              aria-invalid={fieldState.invalid}
-                              className="font-mono"
-                              id="config-slot-env"
-                              {...field}
-                            />
-                            <FieldError errors={[fieldState.error]} />
-                          </Field>
-                        )}
-                      />
-                      <Controller
-                        control={form.control}
-                        name="slot.file"
-                        render={({ field, fieldState }) => (
-                          <Field data-invalid={fieldState.invalid}>
-                            <FieldLabel htmlFor="config-slot-file">
-                              Slot file
-                            </FieldLabel>
-                            <Input
-                              aria-invalid={fieldState.invalid}
-                              className="font-mono"
-                              id="config-slot-file"
-                              onChange={(event) =>
-                                field.onChange(event.target.value || undefined)
-                              }
-                              value={field.value ?? ""}
-                            />
-                            <FieldDescription>
-                              Optional; defaults to .env.worktree.local.
-                            </FieldDescription>
-                            <FieldError errors={[fieldState.error]} />
-                          </Field>
-                        )}
-                      />
-                      <Controller
-                        control={form.control}
-                        name="url"
-                        render={({ field, fieldState }) => (
-                          <Field data-invalid={fieldState.invalid}>
-                            <FieldLabel htmlFor="config-url">
-                              App URL template
-                            </FieldLabel>
-                            <Input
-                              aria-invalid={fieldState.invalid}
-                              className="font-mono"
-                              id="config-url"
-                              {...field}
-                            />
-                            <FieldError errors={[fieldState.error]} />
-                          </Field>
-                        )}
-                      />
-                    </div>
-                  </FieldGroup>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle>Repository commands</CardTitle>
-                  <CardDescription>
-                    Setup runs once per worktree. Aggregate start is mutually
-                    exclusive with per-app starts.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <FieldGroup>
-                    <LaunchModeEditor
-                      onChange={changeLaunchMode}
-                      value={launchMode}
-                    />
-                    <Controller
-                      control={form.control}
-                      name="control.setup"
-                      render={({ field, fieldState }) => (
-                        <CommandEditor
-                          description="Prepare a worktree before development."
-                          error={errorMessage(fieldState.error)}
-                          id="config-setup"
-                          label="Setup command"
-                          onChange={field.onChange}
-                          value={field.value}
-                        />
-                      )}
-                    />
-                    {launchMode === "aggregate" ? (
-                      <Controller
-                        control={form.control}
-                        name="control.start"
-                        render={({ field, fieldState }) => (
-                          <CommandEditor
-                            description="Start all apps in one managed process."
-                            error={errorMessage(fieldState.error)}
-                            id="config-start"
-                            label="Aggregate start command"
-                            onChange={field.onChange}
-                            value={field.value}
-                          />
-                        )}
-                      />
-                    ) : null}
-                  </FieldGroup>
-                </CardContent>
-              </Card>
-              <section className="flex flex-col gap-4">
-                <div className="flex items-end justify-between gap-4">
-                  <div>
-                    <h2 className="font-heading font-medium text-sm">Apps</h2>
-                    <p className="text-muted-foreground text-xs/relaxed">
-                      Define each independently addressable development service.
-                    </p>
-                  </div>
-                  <Button onClick={addApp} type="button" variant="outline">
+          <header className="flex items-center justify-between gap-4 border-b px-5 py-3 pr-12 max-sm:flex-col max-sm:items-stretch max-sm:gap-3 max-md:items-start">
+            <DialogHeader className="min-w-0">
+              <DialogTitle className="text-base">
+                Configuration builder
+              </DialogTitle>
+              <DialogDescription className="truncate font-mono">
+                {configPath}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex shrink-0 items-center gap-2 max-sm:grid max-sm:grid-cols-2">
+              <Button
+                disabled={pending || !form.formState.isDirty}
+                onClick={resetChanges}
+                type="button"
+                variant="outline"
+              >
+                Discard changes
+              </Button>
+              <Button
+                disabled={
+                  pending || !form.formState.isDirty || !validation.success
+                }
+                type="submit"
+              >
+                {pending ? "Saving…" : "Save configuration"}
+              </Button>
+            </div>
+          </header>
+          <div className="grid min-h-0 min-w-0 lg:grid-cols-[15rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)_22rem]">
+            <aside className="flex min-h-0 flex-col border-r bg-muted/20 max-lg:hidden">
+              <nav className="flex flex-col gap-1 p-3">
+                <Button
+                  className="justify-start"
+                  onClick={() => setSection("overview")}
+                  type="button"
+                  variant={section === "overview" ? "secondary" : "ghost"}
+                >
+                  <HomeIcon data-icon="inline-start" />
+                  Overview
+                </Button>
+                <Button
+                  className="justify-start"
+                  onClick={() => setSection("apps")}
+                  type="button"
+                  variant={section === "apps" ? "secondary" : "ghost"}
+                >
+                  <BoxesIcon data-icon="inline-start" />
+                  Apps
+                </Button>
+                <div className="flex flex-col gap-1 pl-3">
+                  {appEntries.map(([id, app]) => (
+                    <Button
+                      className="justify-between"
+                      key={id}
+                      onClick={() => {
+                        setSelectedAppId(id);
+                        setSection("apps");
+                      }}
+                      size="sm"
+                      type="button"
+                      variant={
+                        section === "apps" && effectiveSelectedAppId === id
+                          ? "secondary"
+                          : "ghost"
+                      }
+                    >
+                      <span className="truncate">
+                        {app.control?.label || id}
+                      </span>
+                      <code>{previewPort(app, draft.slot?.default ?? 0)}</code>
+                    </Button>
+                  ))}
+                  <Button
+                    className="justify-start"
+                    onClick={addApp}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
                     <PlusIcon data-icon="inline-start" />
                     Add app
                   </Button>
                 </div>
-                {appEntries.map(([id, app]) => (
-                  <AppEditor
-                    app={app}
-                    appCount={appEntries.length}
-                    appError={errors.apps?.[id]}
-                    control={form.control}
-                    id={id}
-                    key={id}
-                    onDelete={() =>
-                      form.setValue(
-                        "apps",
-                        Object.fromEntries(
-                          appEntries.filter(([appId]) => appId !== id)
-                        ),
-                        { shouldDirty: true, shouldValidate: true }
-                      )
+                <Button
+                  className="justify-start"
+                  onClick={() => setSection("commands")}
+                  type="button"
+                  variant={section === "commands" ? "secondary" : "ghost"}
+                >
+                  <TerminalSquareIcon data-icon="inline-start" />
+                  Repository commands
+                </Button>
+                <Button
+                  className="justify-start"
+                  onClick={() => setSection("ports")}
+                  type="button"
+                  variant={section === "ports" ? "secondary" : "ghost"}
+                >
+                  <NetworkIcon data-icon="inline-start" />
+                  Ports & slots
+                </Button>
+                <Button
+                  className="justify-start"
+                  onClick={() => setSection("advanced")}
+                  type="button"
+                  variant={section === "advanced" ? "secondary" : "ghost"}
+                >
+                  <Settings2Icon data-icon="inline-start" />
+                  Advanced
+                </Button>
+              </nav>
+            </aside>
+            <main className="flex min-h-0 min-w-0 flex-col bg-background">
+              <div className="border-b p-3 lg:hidden">
+                <Select
+                  onValueChange={(value) => setSection(value as BuilderSection)}
+                  value={section}
+                >
+                  <SelectTrigger
+                    aria-label="Builder section"
+                    className="w-full"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="overview">Overview</SelectItem>
+                      <SelectItem value="apps">Apps</SelectItem>
+                      <SelectItem value="commands">
+                        Repository commands
+                      </SelectItem>
+                      <SelectItem value="ports">Ports & slots</SelectItem>
+                      <SelectItem value="advanced">Advanced</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+              <ScrollArea className="min-h-0 min-w-0 flex-1">
+                {centerContent()}
+              </ScrollArea>
+              <div className="flex flex-col gap-2 border-t bg-muted/10 p-3 text-xs xl:hidden">
+                <div className="flex items-center justify-between gap-3">
+                  <strong>Live slot preview</strong>
+                  <span
+                    className={
+                      validation.success
+                        ? "text-muted-foreground"
+                        : "text-destructive"
                     }
-                    onRename={(nextId) => renameApp(id, nextId)}
-                    showStartCommand={launchMode === "per-app"}
-                  />
-                ))}
-                <FieldError>{directErrorMessage(errors.apps)}</FieldError>
-              </section>
-              {error ? (
-                <Alert variant="destructive">
-                  <AlertTitle>Could not save configuration</AlertTitle>
-                  <AlertDescription>{error.message}</AlertDescription>
-                </Alert>
-              ) : null}
-            </div>
-          </ScrollArea>
-          <DialogFooter className="shrink-0 border-t p-4">
-            <Button
-              disabled={pending}
-              onClick={onClose}
-              type="button"
-              variant="outline"
-            >
-              Cancel
-            </Button>
-            <Button disabled={pending || !form.formState.isDirty} type="submit">
-              {pending ? "Saving…" : "Save configuration"}
-            </Button>
-          </DialogFooter>
+                  >
+                    {validation.success
+                      ? "Valid configuration"
+                      : `${validationIssues.length} ${validationIssues.length === 1 ? "issue" : "issues"}`}
+                  </span>
+                </div>
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {previewSlots.flatMap((slot) =>
+                    appEntries.map(([id, app]) => (
+                      <span
+                        className="shrink-0 rounded-md border bg-background px-2 py-1"
+                        key={`compact:${slot}:${id}`}
+                      >
+                        Slot {slot} · {app.control?.label || id}{" "}
+                        <code>{previewPort(app, slot)}</code>
+                      </span>
+                    ))
+                  )}
+                </div>
+                {!validation.success && validationIssues[0] ? (
+                  <p className="text-destructive">
+                    <code>
+                      {validationIssues[0].path.join(".") || "config"}
+                    </code>{" "}
+                    · {validationIssues[0].message}
+                  </p>
+                ) : null}
+              </div>
+            </main>
+            <aside className="min-h-0 border-l bg-muted/10 max-xl:hidden">
+              <ScrollArea className="h-full">
+                <div className="flex flex-col gap-4 p-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Slot preview</CardTitle>
+                      <CardDescription>
+                        Computed from unsaved values.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex flex-col gap-4">
+                      {previewSlots.map((slot) => (
+                        <section
+                          className="flex flex-col gap-2 border-b pb-3 last:border-b-0 last:pb-0"
+                          key={slot}
+                        >
+                          <strong>
+                            Slot {slot}
+                            {slot === draft.slot?.default ? " · default" : ""}
+                          </strong>
+                          {appEntries.map(([id, app]) => (
+                            <div
+                              className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 text-xs"
+                              key={`${slot}:${id}`}
+                            >
+                              <span className="truncate">
+                                {app.control?.label || id}
+                              </span>
+                              <span className="flex items-center gap-2">
+                                <code>{previewPort(app, slot)}</code>
+                                <ExternalLinkIcon />
+                              </span>
+                              <code className="col-span-2 truncate text-muted-foreground">
+                                {previewUrl(app, slot)}
+                              </code>
+                            </div>
+                          ))}
+                        </section>
+                      ))}
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Validation</CardTitle>
+                      <CardDescription>
+                        The shared Zod schema validates this draft.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {validation.success ? (
+                        <div className="flex items-start gap-2">
+                          <CheckCircle2Icon />
+                          <div>
+                            <strong>No issues found</strong>
+                            <p className="text-muted-foreground">
+                              This configuration is valid.
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-3">
+                          <div className="flex items-start gap-2 text-destructive">
+                            <CircleAlertIcon />
+                            <strong>
+                              {validationIssues.length} validation{" "}
+                              {validationIssues.length === 1
+                                ? "issue"
+                                : "issues"}
+                            </strong>
+                          </div>
+                          {validationIssues.slice(0, 5).map((issue) => (
+                            <p
+                              className="text-xs"
+                              key={`${issue.path.join(".")}:${issue.message}`}
+                            >
+                              <code>{issue.path.join(".") || "config"}</code> ·{" "}
+                              {issue.message}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                  {error ? (
+                    <Alert variant="destructive">
+                      <CircleAlertIcon />
+                      <AlertTitle>Could not save configuration</AlertTitle>
+                      <AlertDescription>{error.message}</AlertDescription>
+                    </Alert>
+                  ) : null}
+                </div>
+              </ScrollArea>
+            </aside>
+          </div>
+          <footer className="flex items-center justify-between gap-4 border-t px-5 py-3 text-xs">
+            <span className="flex items-center gap-2">
+              {validation.success ? <CheckCircle2Icon /> : <CircleAlertIcon />}{" "}
+              {appEntries.length} {appEntries.length === 1 ? "app" : "apps"} ·{" "}
+              {launchModeDescription(launchMode, "command")} ·{" "}
+              {validation.success
+                ? "Valid configuration"
+                : `${validationIssues.length} ${validationIssues.length === 1 ? "issue" : "issues"}`}
+            </span>
+            <span className="text-muted-foreground">Version 1</span>
+          </footer>
         </form>
       </DialogContent>
     </Dialog>

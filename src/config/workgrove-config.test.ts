@@ -23,7 +23,7 @@ const config: WorkgroveConfig = {
     api: {
       control: { label: "API", open: false, probe: "tcp", required: true },
       exports: { API_PORT: "{port}" },
-      offset: 1,
+      port: { base: 8000 },
       start: {
         argv: ["python", "-m", "api", "--port", "{port}"],
         env: { PORT: "{port}" },
@@ -32,11 +32,11 @@ const config: WorkgroveConfig = {
     web: {
       control: { label: "Web", open: true, probe: "tcp", required: true },
       exports: { PORT: "{port}", API_URL: "{apps.api.url}" },
-      offset: 0,
+      port: { offset: 1 },
       start: { argv: ["npm", "run", "dev"], env: { PORT: "{port}" } },
     },
   },
-  range: { base: 4000, stride: 10 },
+  ports: { base: 4000, slotStride: 10 },
   slot: { default: 0, env: "WORKGROVE_SLOT", file: ".env.worktree.local" },
   url: "http://localhost:{port}",
 };
@@ -47,30 +47,30 @@ describe("generic Workgrove configuration", () => {
       resolveWorkgroveRuntime(config, { WORKGROVE_SLOT: "3" }).apps
     ).toEqual({
       api: {
-        env: { API_PORT: "4031" },
-        port: 4031,
-        url: "http://localhost:4031",
+        env: { API_PORT: "8030" },
+        port: 8030,
+        url: "http://localhost:8030",
       },
       web: {
-        env: { API_URL: "http://localhost:4031", PORT: "4030" },
-        port: 4030,
-        url: "http://localhost:4030",
+        env: { API_URL: "http://localhost:8030", PORT: "4031" },
+        port: 4031,
+        url: "http://localhost:4031",
       },
     });
     expect(resolveStartCommands(config, 3)).toEqual([
       {
         appId: "api",
-        argv: ["python", "-m", "api", "--port", "4031"],
+        argv: ["python", "-m", "api", "--port", "8030"],
         cwd: null,
-        env: { API_PORT: "4031", PORT: "4031", WORKGROVE_SLOT: "3" },
+        env: { API_PORT: "8030", PORT: "8030", WORKGROVE_SLOT: "3" },
       },
       {
         appId: "web",
         argv: ["npm", "run", "dev"],
         cwd: null,
         env: {
-          API_URL: "http://localhost:4031",
-          PORT: "4030",
+          API_URL: "http://localhost:8030",
+          PORT: "4031",
           WORKGROVE_SLOT: "3",
         },
       },
@@ -181,9 +181,9 @@ describe("generic Workgrove configuration", () => {
       )
     ).toEqual({
       appId: null,
-      argv: ["tool", "--port", "4020"],
+      argv: ["tool", "--port", "4021"],
       cwd: "packages/2",
-      env: { TARGET: "http://localhost:4021", WORKGROVE_SLOT: "2" },
+      env: { TARGET: "http://localhost:8020", WORKGROVE_SLOT: "2" },
     });
   });
 

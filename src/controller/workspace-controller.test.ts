@@ -24,16 +24,16 @@ import { appsCanRestart } from "./workspace-snapshot";
 const config = {
   version: 1,
   slot: { default: 0, env: "CHATJS_DEV_SLOT", file: ".env.worktree.local" },
-  range: { base: 3000, stride: 10 },
+  ports: { base: 3000, slotStride: 10 },
   url: "http://localhost:{port}",
   apps: {
     chat: {
-      offset: 0,
+      port: { offset: 0 },
       exports: { APP_URL: "{url}", PORT: "{port}" },
       control: { label: "Chat", open: true, probe: "tcp", required: true },
     },
     electron: {
-      offset: 1,
+      port: { offset: 1 },
       exports: { ELECTRON_APP_URL: "{apps.chat.url}" },
       control: {
         label: "Desktop",
@@ -43,7 +43,7 @@ const config = {
       },
     },
     site: {
-      offset: 2,
+      port: { offset: 2 },
       exports: { PORT: "{port}" },
       control: { label: "Docs Site", open: true, probe: "tcp", required: true },
     },

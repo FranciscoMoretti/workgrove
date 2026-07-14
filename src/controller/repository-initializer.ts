@@ -165,10 +165,10 @@ export function planRepositoryInitialization(
           required: true,
         },
         exports: { PORT: "{port}" },
-        offset: 0,
+        port: { offset: 0 },
       },
     },
-    range: { base: stableBasePort(root), stride: 10 },
+    ports: { base: stableBasePort(root), slotStride: 10 },
     slot: { default: 0, env: "WORKGROVE_SLOT", file: ".env.worktree.local" },
     url: "http://localhost:{port}",
   };

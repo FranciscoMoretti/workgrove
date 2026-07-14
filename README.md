@@ -31,11 +31,11 @@ app's environment itself.
     "default": 0,
     "file": ".env.worktree.local"
   },
-  "range": { "base": 4000, "stride": 10 },
+  "ports": { "base": 4000, "slotStride": 10 },
   "url": "http://localhost:{port}",
   "apps": {
     "web": {
-      "offset": 0,
+      "port": { "offset": 0 },
       "control": {
         "label": "Web",
         "open": true,
@@ -55,10 +55,18 @@ app's environment itself.
 }
 ```
 
+Apps can either use an offset inside the shared repository range or declare a
+conventional slot-zero base port. For example, `"port": { "base": 8000 }`
+gives that app ports 8000, 8010, and 8020 for slots 0, 1, and 2 when
+`slotStride` is 10. Every app must occupy a distinct port lane modulo the
+stride, so its ports cannot collide with another app in a different worktree
+slot; with a stride of 10, pair a base of 8000 with offsets 1 through 9 rather
+than offset 0.
+
 Workgrove asks you to review and trust executable commands the first time a
 repository is opened. Trust is saved for that repository and does not need to
-be repeated when its commands change. Older `.worktree-env.json` files remain
-readable for migration.
+be repeated when its commands change. `.worktree-env.json` remains discoverable
+as an alternate filename when it uses the current configuration contract.
 
 When a repository has no configuration, the initialization dialog can prepare
 conservative starters for Node.js, Django, FastAPI, Rust, Go, and Docker

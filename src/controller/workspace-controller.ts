@@ -32,7 +32,10 @@ import {
   updateWorkgroveConfig,
   type WorktreeEnvConfig,
 } from "../config/workgrove-config";
-import type { WorkgroveConfig } from "../config/workgrove-schema";
+import {
+  maximumWorkgroveSlot,
+  type WorkgroveConfig,
+} from "../config/workgrove-schema";
 import { parseWorktreeList } from "../git/discover-worktrees";
 import { appHealth, resolveControlledApps } from "../runtime/app-health";
 import { commandEnvironment } from "../runtime/command-environment";
@@ -194,12 +197,7 @@ export class WorkspaceController {
     if (discovered.length === 0) {
       throw new Error("No Git worktrees were discovered");
     }
-    const greatestOffset = Math.max(
-      ...Object.values(config.apps).map((app) => app.offset)
-    );
-    const maxSlot = Math.floor(
-      (65_535 - config.range.base - greatestOffset) / config.range.stride
-    );
+    const maxSlot = maximumWorkgroveSlot(config);
     const slotFile = config.slot.file ?? ".env.worktree.local";
     const parsedSlots = discovered.map((item) => {
       const file = resolveSlotFilePath(item.path, slotFile);
@@ -335,9 +333,9 @@ export class WorkspaceController {
     const workspace = this.inspect(repoPath);
     const topology = (value: WorkgroveConfig) => ({
       apps: Object.fromEntries(
-        Object.entries(value.apps).map(([id, app]) => [id, app.offset])
+        Object.entries(value.apps).map(([id, app]) => [id, app.port])
       ),
-      range: value.range,
+      ports: value.ports,
       slot: value.slot,
       url: value.url,
     });

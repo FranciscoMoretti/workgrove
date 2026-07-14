@@ -5,13 +5,14 @@ import { join } from "node:path";
 import { workgroveJsonSchema } from "./workgrove-json-schema";
 import {
   canonicalizeWorkgroveConfig,
+  maximumWorkgroveSlot,
   WorkgroveConfigSchema,
 } from "./workgrove-schema";
 
 const validConfig = {
   version: 1,
-  apps: { web: { offset: 0 } },
-  range: { base: 4000, stride: 10 },
+  apps: { web: { port: { offset: 0 } } },
+  ports: { base: 4000, slotStride: 10 },
   slot: { default: 0, env: "WORKGROVE_SLOT" },
   url: "http://localhost:{port}",
 } as const;
@@ -21,8 +22,8 @@ describe("shared Workgrove schema", () => {
     const result = WorkgroveConfigSchema.safeParse({
       ...validConfig,
       apps: {
-        api: { offset: 0, start: { argv: ["bun", "api"] } },
-        web: { offset: 0 },
+        api: { port: { base: 4000 }, start: { argv: ["bun", "api"] } },
+        web: { port: { offset: 0 } },
       },
       control: { start: { argv: ["bun", "dev"] } },
     });
@@ -35,7 +36,74 @@ describe("shared Workgrove schema", () => {
       expect(result.error.issues.map((issue) => issue.path)).toContainEqual([
         "apps",
         "web",
-        "offset",
+        "port",
+      ]);
+    }
+  });
+
+  it("accepts either a range offset or a custom slot-zero base port", () => {
+    expect(
+      WorkgroveConfigSchema.parse({
+        ...validConfig,
+        apps: {
+          api: { port: { base: 8000 } },
+          web: { port: { offset: 1 } },
+        },
+      }).apps
+    ).toEqual({
+      api: { port: { base: 8000 } },
+      web: { port: { offset: 1 } },
+    });
+    expect(
+      WorkgroveConfigSchema.safeParse({
+        ...validConfig,
+        apps: { api: { port: { base: 8000, offset: 0 } } },
+      }).success
+    ).toBe(false);
+  });
+
+  it("limits slots using the highest app-specific slot-zero port", () => {
+    const config = WorkgroveConfigSchema.parse({
+      ...validConfig,
+      apps: {
+        api: { port: { base: 8000 } },
+        web: { port: { offset: 1 } },
+      },
+    });
+    expect(maximumWorkgroveSlot(config)).toBe(5753);
+  });
+
+  it("rejects app port lanes that collide across worktree slots", () => {
+    const result = WorkgroveConfigSchema.safeParse({
+      ...validConfig,
+      apps: {
+        api: { port: { base: 8000 } },
+        worker: { port: { base: 8010 } },
+      },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toContain("Port lane collides");
+    }
+  });
+
+  it("rejects templates that reference an unknown app", () => {
+    const result = WorkgroveConfigSchema.safeParse({
+      ...validConfig,
+      apps: {
+        web: {
+          exports: { API_URL: "{apps.api.url}" },
+          port: { offset: 0 },
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual([
+        "apps",
+        "web",
+        "exports",
+        "API_URL",
       ]);
     }
   });
@@ -57,7 +125,7 @@ describe("shared Workgrove schema", () => {
     expect(
       canonicalizeWorkgroveConfig({
         ...validConfig,
-        apps: { web: { control: {}, exports: {}, offset: 0 } },
+        apps: { web: { control: {}, exports: {}, port: { offset: 0 } } },
         control: {},
       })
     ).toEqual(validConfig);

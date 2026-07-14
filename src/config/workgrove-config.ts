@@ -13,6 +13,7 @@ import type {
   RepositoryCommandProfile,
   WorkgroveCommand,
 } from "./workgrove-command";
+import { resolveWorkgroveAppEndpoints } from "./workgrove-editor";
 import {
   canonicalizeWorkgroveConfig,
   MAX_WORKGROVE_PORT,
@@ -20,11 +21,19 @@ import {
   type WorkgroveConfig,
   WorkgroveConfigSchema,
 } from "./workgrove-schema";
+import {
+  renderWorkgroveTemplate,
+  type WorkgroveTemplateContext,
+} from "./workgrove-template";
 
 // biome-ignore lint/performance/noBarrelFile: preserve the existing internal config-module type exports during the browser-safe schema split.
 export {
+  maximumWorkgroveSlot,
+  resolveWorkgroveAppPort,
   type WorkgroveApp,
   WorkgroveAppIdSchema,
+  type WorkgroveAppPort,
+  WorkgroveAppPortSchema,
   WorkgroveAppSchema,
   type WorkgroveConfig,
   WorkgroveConfigSchema,
@@ -32,8 +41,6 @@ export {
 } from "./workgrove-schema";
 
 const SLOT_PATTERN = /^\d+$/;
-const TEMPLATE_PATTERN = /\{([^}]+)\}/g;
-const APP_TEMPLATE_PATTERN = /^apps\.([a-zA-Z0-9_-]+)\.(port|url)$/;
 export interface ResolvedWorkgroveApp {
   env: Record<string, string>;
   port: number;
@@ -57,41 +64,14 @@ export interface WorkgroveConfigDocument {
   revision: string;
 }
 
-interface TemplateContext {
-  apps: Record<string, { port: number; url: string }>;
-  port: number;
-  slot: number;
-  url?: string;
-}
-
-function renderTemplate(template: string, context: TemplateContext): string {
-  return template.replace(TEMPLATE_PATTERN, (_, token: string) => {
-    if (token === "slot") {
-      return String(context.slot);
-    }
-    if (token === "port") {
-      return String(context.port);
-    }
-    if (token === "url" && context.url) {
-      return context.url;
-    }
-    const match = APP_TEMPLATE_PATTERN.exec(token);
-    const app = match ? context.apps[match[1]] : null;
-    if (match && app) {
-      return String(app[match[2] as "port" | "url"]);
-    }
-    throw new Error(`Unknown Workgrove template variable "${token}"`);
-  });
-}
-
 export function renderCommandEnvironment(
   values: Record<string, string> | undefined,
-  context: TemplateContext
+  context: WorkgroveTemplateContext
 ): Record<string, string> {
   return Object.fromEntries(
     Object.entries(values ?? {}).map(([name, value]) => [
       name,
-      renderTemplate(value, context),
+      renderWorkgroveTemplate(value, context),
     ])
   );
 }
@@ -107,16 +87,12 @@ export function resolveWorkgroveRuntime(
   }
   const slot = Number(rawSlot);
   const entries = Object.entries(config.apps);
-  const endpoints: Record<string, { port: number; url: string }> = {};
-  for (const [id, app] of entries) {
-    const port = config.range.base + slot * config.range.stride + app.offset;
+  const endpoints = resolveWorkgroveAppEndpoints(config, slot);
+  for (const [id, endpoint] of Object.entries(endpoints)) {
+    const port = endpoint.port;
     if (port < MIN_WORKGROVE_PORT || port > MAX_WORKGROVE_PORT) {
       throw new Error(`App "${id}" computed invalid port ${port}`);
     }
-    endpoints[id] = {
-      port,
-      url: renderTemplate(config.url, { apps: endpoints, port, slot }),
-    };
   }
   const apps = Object.fromEntries(
     entries.map(([id, app]) => {
@@ -278,7 +254,7 @@ export function resolveStartCommands(
       {
         appId,
         argv: app.start.argv.map((value) =>
-          renderTemplate(value, {
+          renderWorkgroveTemplate(value, {
             apps: endpoints,
             port: resolved.port,
             slot,
@@ -286,7 +262,7 @@ export function resolveStartCommands(
           })
         ),
         cwd: app.start.cwd
-          ? renderTemplate(app.start.cwd, {
+          ? renderWorkgroveTemplate(app.start.cwd, {
               apps: endpoints,
               port: resolved.port,
               slot,
@@ -318,7 +294,7 @@ export function resolveStartCommands(
     {
       appId: null,
       argv: aggregate.argv.map((value) =>
-        renderTemplate(value, {
+        renderWorkgroveTemplate(value, {
           apps: endpoints,
           port: first.port,
           slot,
@@ -326,7 +302,7 @@ export function resolveStartCommands(
         })
       ),
       cwd: aggregate.cwd
-        ? renderTemplate(aggregate.cwd, {
+        ? renderWorkgroveTemplate(aggregate.cwd, {
             apps: endpoints,
             port: first.port,
             slot,
@@ -366,7 +342,7 @@ export function resolveSetupCommand(
   return {
     appId: null,
     argv: command.argv.map((value) =>
-      renderTemplate(value, {
+      renderWorkgroveTemplate(value, {
         apps: endpoints,
         port: first.port,
         slot,
@@ -374,7 +350,7 @@ export function resolveSetupCommand(
       })
     ),
     cwd: command.cwd
-      ? renderTemplate(command.cwd, {
+      ? renderWorkgroveTemplate(command.cwd, {
           apps: endpoints,
           port: first.port,
           slot,
