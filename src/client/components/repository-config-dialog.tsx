@@ -5,7 +5,6 @@ import {
   CheckCircle2Icon,
   CircleAlertIcon,
   CopyIcon,
-  ExternalLinkIcon,
   HomeIcon,
   InfoIcon,
   NetworkIcon,
@@ -37,6 +36,7 @@ import {
   WorkgroveConfigSchema,
 } from "../../config/workgrove-schema";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
+import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import {
   Card,
@@ -72,6 +72,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "./ui/table";
+
+const PREVIEW_SLOTS = [0, 1, 2] as const;
 
 function errorMessage(error: unknown): string | undefined {
   if (!error || typeof error !== "object") {
@@ -409,9 +419,13 @@ function PortAllocationEditor({
         type="number"
         value={Number.isNaN(numericValue) ? "" : numericValue}
       />
-      <FieldDescription>
-        Slot 0 uses {numericValue}; every next slot adds {ports.slotStride}.
-      </FieldDescription>
+      <div className="flex flex-wrap gap-2" role="status">
+        {PREVIEW_SLOTS.map((slot) => (
+          <Badge key={slot} variant="outline">
+            Slot {slot} <code>{numericValue + slot * ports.slotStride}</code>
+          </Badge>
+        ))}
+      </div>
       <FieldError>{errorMessage(error)}</FieldError>
     </Field>
   );
@@ -820,7 +834,6 @@ export function RepositoryConfigDialog({
     ? selectedAppId
     : (appEntries[0]?.[0] ?? "");
   const stride = draft.ports?.slotStride ?? 0;
-  const previewSlots = [0, 1, 2];
 
   function previewPort(app: WorkgroveApp, slot: number): number {
     return resolveWorkgroveAppPort(
@@ -969,6 +982,48 @@ export function RepositoryConfigDialog({
             />
           </div>
         </FieldGroup>
+        <Card size="sm">
+          <CardHeader>
+            <CardTitle>Slot preview</CardTitle>
+            <CardDescription>
+              Computed from the current unsaved app ports and slot stride.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>App</TableHead>
+                  {PREVIEW_SLOTS.map((slot) => (
+                    <TableHead key={slot}>
+                      Slot {slot}
+                      {slot === draft.slot?.default ? " · default" : ""}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {appEntries.map(([id, app]) => (
+                  <TableRow key={id}>
+                    <TableCell className="font-medium">
+                      {app.control?.label || id}
+                    </TableCell>
+                    {PREVIEW_SLOTS.map((slot) => (
+                      <TableCell key={`${id}:${slot}`}>
+                        <div className="flex flex-col gap-1">
+                          <code>{previewPort(app, slot)}</code>
+                          <code className="text-muted-foreground">
+                            {previewUrl(app, slot)}
+                          </code>
+                        </div>
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       </section>
     );
   }
@@ -1270,7 +1325,7 @@ export function RepositoryConfigDialog({
               </Button>
             </div>
           </header>
-          <div className="grid min-h-0 min-w-0 lg:grid-cols-[15rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)_22rem]">
+          <div className="grid min-h-0 min-w-0 lg:grid-cols-[15rem_minmax(0,1fr)]">
             <aside className="flex min-h-0 flex-col border-r bg-muted/20 max-lg:hidden">
               <nav className="flex flex-col gap-1 p-3">
                 <Button
@@ -1382,140 +1437,19 @@ export function RepositoryConfigDialog({
               <ScrollArea className="min-h-0 min-w-0 flex-1">
                 {centerContent()}
               </ScrollArea>
-              <div className="flex flex-col gap-2 border-t bg-muted/10 p-3 text-xs xl:hidden">
-                <div className="flex items-center justify-between gap-3">
-                  <strong>Live slot preview</strong>
-                  <span
-                    className={
-                      validation.success
-                        ? "text-muted-foreground"
-                        : "text-destructive"
-                    }
-                  >
-                    {validation.success
-                      ? "Valid configuration"
-                      : `${validationIssues.length} ${validationIssues.length === 1 ? "issue" : "issues"}`}
-                  </span>
+              {error ? (
+                <div className="border-t p-3">
+                  <Alert variant="destructive">
+                    <CircleAlertIcon />
+                    <AlertTitle>Could not save configuration</AlertTitle>
+                    <AlertDescription>{error.message}</AlertDescription>
+                  </Alert>
                 </div>
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                  {previewSlots.flatMap((slot) =>
-                    appEntries.map(([id, app]) => (
-                      <span
-                        className="shrink-0 rounded-md border bg-background px-2 py-1"
-                        key={`compact:${slot}:${id}`}
-                      >
-                        Slot {slot} · {app.control?.label || id}{" "}
-                        <code>{previewPort(app, slot)}</code>
-                      </span>
-                    ))
-                  )}
-                </div>
-                {!validation.success && validationIssues[0] ? (
-                  <p className="text-destructive">
-                    <code>
-                      {validationIssues[0].path.join(".") || "config"}
-                    </code>{" "}
-                    · {validationIssues[0].message}
-                  </p>
-                ) : null}
-              </div>
+              ) : null}
             </main>
-            <aside className="min-h-0 border-l bg-muted/10 max-xl:hidden">
-              <ScrollArea className="h-full">
-                <div className="flex flex-col gap-4 p-4">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Slot preview</CardTitle>
-                      <CardDescription>
-                        Computed from unsaved values.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="flex flex-col gap-4">
-                      {previewSlots.map((slot) => (
-                        <section
-                          className="flex flex-col gap-2 border-b pb-3 last:border-b-0 last:pb-0"
-                          key={slot}
-                        >
-                          <strong>
-                            Slot {slot}
-                            {slot === draft.slot?.default ? " · default" : ""}
-                          </strong>
-                          {appEntries.map(([id, app]) => (
-                            <div
-                              className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 text-xs"
-                              key={`${slot}:${id}`}
-                            >
-                              <span className="truncate">
-                                {app.control?.label || id}
-                              </span>
-                              <span className="flex items-center gap-2">
-                                <code>{previewPort(app, slot)}</code>
-                                <ExternalLinkIcon />
-                              </span>
-                              <code className="col-span-2 truncate text-muted-foreground">
-                                {previewUrl(app, slot)}
-                              </code>
-                            </div>
-                          ))}
-                        </section>
-                      ))}
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Validation</CardTitle>
-                      <CardDescription>
-                        The shared Zod schema validates this draft.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      {validation.success ? (
-                        <div className="flex items-start gap-2">
-                          <CheckCircle2Icon />
-                          <div>
-                            <strong>No issues found</strong>
-                            <p className="text-muted-foreground">
-                              This configuration is valid.
-                            </p>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col gap-3">
-                          <div className="flex items-start gap-2 text-destructive">
-                            <CircleAlertIcon />
-                            <strong>
-                              {validationIssues.length} validation{" "}
-                              {validationIssues.length === 1
-                                ? "issue"
-                                : "issues"}
-                            </strong>
-                          </div>
-                          {validationIssues.slice(0, 5).map((issue) => (
-                            <p
-                              className="text-xs"
-                              key={`${issue.path.join(".")}:${issue.message}`}
-                            >
-                              <code>{issue.path.join(".") || "config"}</code> ·{" "}
-                              {issue.message}
-                            </p>
-                          ))}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                  {error ? (
-                    <Alert variant="destructive">
-                      <CircleAlertIcon />
-                      <AlertTitle>Could not save configuration</AlertTitle>
-                      <AlertDescription>{error.message}</AlertDescription>
-                    </Alert>
-                  ) : null}
-                </div>
-              </ScrollArea>
-            </aside>
           </div>
-          <footer className="flex items-center justify-between gap-4 border-t px-5 py-3 text-xs">
-            <span className="flex items-center gap-2">
+          <footer className="grid items-center gap-2 border-t px-5 py-3 text-xs sm:grid-cols-[auto_minmax(0,1fr)_auto]">
+            <span className="flex items-center gap-2 whitespace-nowrap">
               {validation.success ? <CheckCircle2Icon /> : <CircleAlertIcon />}{" "}
               {appEntries.length} {appEntries.length === 1 ? "app" : "apps"} ·{" "}
               {launchModeDescription(launchMode, "command")} ·{" "}
@@ -1523,7 +1457,17 @@ export function RepositoryConfigDialog({
                 ? "Valid configuration"
                 : `${validationIssues.length} ${validationIssues.length === 1 ? "issue" : "issues"}`}
             </span>
-            <span className="text-muted-foreground">Version 1</span>
+            {!validation.success && validationIssues[0] ? (
+              <span className="truncate text-destructive">
+                <code>{validationIssues[0].path.join(".") || "config"}</code> ·{" "}
+                {validationIssues[0].message}
+              </span>
+            ) : (
+              <span />
+            )}
+            <span className="text-muted-foreground sm:text-right">
+              Version 1
+            </span>
           </footer>
         </form>
       </DialogContent>
