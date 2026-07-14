@@ -27,6 +27,7 @@ export interface RepositoryInitializationPlan {
   config: WorktreeEnvConfig;
   configPath: string;
   detectedRuntime: string;
+  detectedSetupCommand: string | null;
   detectedStartCommand: string | null;
   repoPath: string;
 }
@@ -35,6 +36,7 @@ interface ProjectDefaults {
   label: string;
   setup?: WorkgroveCommand;
   start?: WorkgroveCommand;
+  startMode?: "aggregate" | "per-app";
 }
 
 function gitRoot(repoPath: string): string {
@@ -80,6 +82,7 @@ function projectDefaults(root: string): ProjectDefaults {
         argv: ["docker", "compose", "up"],
         env: { PORT: "{port}" },
       },
+      startMode: "aggregate",
     };
   }
   if (existsSync(join(root, "package.json"))) {
@@ -87,6 +90,7 @@ function projectDefaults(root: string): ProjectDefaults {
       label: "Node.js · bun",
       setup: { argv: ["bun", "install"] },
       start: { argv: ["bun", "dev"] },
+      startMode: "per-app",
     };
   }
   if (existsSync(join(root, "manage.py"))) {
@@ -95,6 +99,7 @@ function projectDefaults(root: string): ProjectDefaults {
       start: {
         argv: ["python", "manage.py", "runserver", "127.0.0.1:{port}"],
       },
+      startMode: "per-app",
     };
   }
   if (existsSync(join(root, "pyproject.toml"))) {
@@ -113,6 +118,7 @@ function projectDefaults(root: string): ProjectDefaults {
             "{port}",
           ],
         },
+        startMode: "per-app",
       };
     }
     return { label: "Python" };
@@ -122,12 +128,14 @@ function projectDefaults(root: string): ProjectDefaults {
       label: "Rust · Cargo",
       setup: { argv: ["cargo", "fetch"] },
       start: { argv: ["cargo", "run"], env: { PORT: "{port}" } },
+      startMode: "per-app",
     };
   }
   if (existsSync(join(root, "go.mod"))) {
     return {
       label: "Go",
       start: { argv: ["go", "run", "."], env: { PORT: "{port}" } },
+      startMode: "per-app",
     };
   }
   return { label: "Unknown" };
@@ -166,16 +174,21 @@ export function planRepositoryInitialization(
         },
         exports: { PORT: "{port}" },
         port: { base: stableBasePort(root) },
+        ...(defaults.start && defaults.startMode === "per-app"
+          ? { start: defaults.start }
+          : {}),
       },
     },
     ports: { slotStride: 10 },
     slot: { default: 0, env: "WORKGROVE_SLOT", file: ".env.worktree.local" },
     url: "http://localhost:{port}",
   };
-  if (defaults.setup || defaults.start) {
+  if (defaults.setup || defaults.startMode === "aggregate") {
     config.control = {
       ...(defaults.setup ? { setup: defaults.setup } : {}),
-      ...(defaults.start ? { start: defaults.start } : {}),
+      ...(defaults.startMode === "aggregate" && defaults.start
+        ? { start: defaults.start }
+        : {}),
     };
   }
   resolveWorktreeRuntime(config, {});
@@ -183,6 +196,7 @@ export function planRepositoryInitialization(
     config,
     configPath,
     detectedRuntime: defaults.label,
+    detectedSetupCommand: defaults.setup?.argv.join(" ") ?? null,
     detectedStartCommand: defaults.start?.argv.join(" ") ?? null,
     repoPath: root,
   };
