@@ -2,7 +2,13 @@ import { AlertCircleIcon, ShieldCheckIcon } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { Button } from "./ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "./ui/card";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +27,21 @@ function trustButtonLabel(pending: boolean, actionLabel: string | null) {
 
 function dismissButtonLabel(actionLabel: string | null) {
   return actionLabel ? "Cancel" : "Continue without trusting";
+}
+
+function reviewedCommand(value: string): {
+  command: string;
+  description: string;
+  label: string;
+} {
+  const separator = value.indexOf(": ");
+  const label = separator === -1 ? "Command" : value.slice(0, separator);
+  const command = separator === -1 ? value : value.slice(separator + 2);
+  const description =
+    label === "Setup"
+      ? "Prepares a newly created worktree."
+      : "Starts the managed development runtime.";
+  return { command, description, label };
 }
 
 export function RepositoryTrustDialog({
@@ -53,7 +74,7 @@ export function RepositoryTrustDialog({
     >
       <DialogContent className="sm:max-w-lg" showCloseButton={false}>
         <DialogHeader>
-          <DialogTitle>Do you trust commands from this repository?</DialogTitle>
+          <DialogTitle>Trust repository commands?</DialogTitle>
           <DialogDescription>
             {actionLabel ? (
               <>
@@ -72,20 +93,24 @@ export function RepositoryTrustDialog({
         <code className="break-all bg-muted px-2 py-1.5 text-muted-foreground">
           {repoPath}
         </code>
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle>Commands this repository can run</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="flex flex-col gap-2">
-              {commands.map((command) => (
-                <li key={command}>
-                  <code className="break-all">{command}</code>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+        <div className="flex flex-col gap-2">
+          {commands.map((value) => {
+            const item = reviewedCommand(value);
+            return (
+              <Card key={value} size="sm">
+                <CardHeader>
+                  <CardTitle>{item.label}</CardTitle>
+                  <CardDescription>{item.description}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <code className="block break-all bg-muted px-2 py-1.5">
+                    {item.command}
+                  </code>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
         <p className="text-muted-foreground">
           Trust is saved for this repository. You can change its configured
           commands later without another prompt.

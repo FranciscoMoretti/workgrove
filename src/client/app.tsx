@@ -9,7 +9,6 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 
 import type {
-  SlotOption,
   WorkspaceSnapshot,
   WorktreeSnapshot,
 } from "../controller/workspace-snapshot";
@@ -17,10 +16,10 @@ import { repositoryPathFromSearch, repositoryUrl } from "../repository-context";
 import { CreateWorktreeDialog } from "./components/create-worktree-dialog";
 import { DeleteWorktreeDialog } from "./components/delete-worktree-dialog";
 import { DetailsPanel } from "./components/details-panel";
+import { RecoveryBoundary } from "./components/recovery-boundary";
 import { RepositoryConfigDialog } from "./components/repository-config-dialog";
 import { RepositoryDialog } from "./components/repository-dialog";
 import { RepositoryTrustDialog } from "./components/repository-trust-dialog";
-import { SlotDialog } from "./components/slot-dialog";
 import { Toolbar } from "./components/toolbar";
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
 import { Button } from "./components/ui/button";
@@ -219,10 +218,6 @@ export function App() {
   const [createOpen, setCreateOpen] = useState(false);
   const [repositoryOpen, setRepositoryOpen] = useState(false);
   const [repositoryConfigOpen, setRepositoryConfigOpen] = useState(false);
-  const [slotChoice, setSlotChoice] = useState<{
-    option: SlotOption;
-    worktree: WorktreeSnapshot;
-  } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WorktreeSnapshot | null>(
     null
   );
@@ -306,7 +301,13 @@ export function App() {
         defaultSlot={data.defaultSlot}
         onDelete={setDeleteTarget}
         onInspect={setSelectedId}
-        onSetSlot={(worktree, option) => setSlotChoice({ option, worktree })}
+        onSetSlot={(worktree, option) =>
+          commands.setSlot.mutate({
+            repoPath,
+            slot: option.slot,
+            worktreeId: worktree.id,
+          })
+        }
         onToggleApps={toggleApps}
         selectedId={selectedId}
         slots={data.slotOptions}
@@ -373,26 +374,34 @@ export function App() {
             maxSize="70%"
             minSize="30%"
           >
-            <DetailsPanel
-              actionPending={pendingIds.has(selected.id)}
-              clearPending={commands.clearLogs.isPending}
-              commandActions={commandActions}
-              error={logs.error}
-              loading={logs.isLoading}
-              logs={logs.data ?? []}
-              onClearLogs={() =>
-                commands.clearLogs.mutate({
-                  repoPath,
-                  worktreeId: selected.id,
-                })
-              }
-              onClose={() => setSelectedId(null)}
-              onDelete={() => setDeleteTarget(selected)}
-              onInspect={() => setSelectedId(selected.id)}
-              onRetryLogs={() => logs.refetch().then(() => undefined)}
-              onToggleApps={() => toggleApps(selected)}
-              worktree={selected}
-            />
+            <RecoveryBoundary
+              description="The worktree details panel failed, but the workspace table is still available."
+              dismissLabel="Close details"
+              key={selected.id}
+              onDismiss={() => setSelectedId(null)}
+              title="Details unavailable"
+            >
+              <DetailsPanel
+                actionPending={pendingIds.has(selected.id)}
+                clearPending={commands.clearLogs.isPending}
+                commandActions={commandActions}
+                error={logs.error}
+                loading={logs.isLoading}
+                logs={logs.data ?? []}
+                onClearLogs={() =>
+                  commands.clearLogs.mutate({
+                    repoPath,
+                    worktreeId: selected.id,
+                  })
+                }
+                onClose={() => setSelectedId(null)}
+                onDelete={() => setDeleteTarget(selected)}
+                onInspect={() => setSelectedId(selected.id)}
+                onRetryLogs={() => logs.refetch().then(() => undefined)}
+                onToggleApps={() => toggleApps(selected)}
+                worktree={selected}
+              />
+            </RecoveryBoundary>
           </ResizablePanel>
         </ResizablePanelGroup>
       ) : (
@@ -437,19 +446,6 @@ export function App() {
         }}
         open={repositoryConfigOpen}
         pending={commands.updateRepositoryConfig.isPending}
-      />
-      <SlotDialog
-        key={
-          slotChoice
-            ? `${slotChoice.worktree.id}:${slotChoice.option.slot}`
-            : "no-slot"
-        }
-        mutation={commands.setSlot}
-        onClose={() => setSlotChoice(null)}
-        open={slotChoice !== null}
-        option={slotChoice?.option ?? null}
-        repoPath={repoPath}
-        worktree={slotChoice?.worktree ?? null}
       />
       <DeleteWorktreeDialog
         key={deleteTarget?.id ?? "no-delete"}

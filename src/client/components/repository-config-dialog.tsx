@@ -13,7 +13,7 @@ import {
   TerminalSquareIcon,
   Trash2Icon,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
 import type { WorkgroveCommand } from "../../config/workgrove-command";
@@ -35,6 +35,7 @@ import {
   type WorkgroveConfig,
   WorkgroveConfigSchema,
 } from "../../config/workgrove-schema";
+import { formatCommandLine, parseCommandLine } from "../command-line";
 import {
   clearConfigDraft,
   loadConfigDraft,
@@ -55,6 +56,7 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -74,10 +76,9 @@ import {
   FieldError,
   FieldGroup,
   FieldLabel,
-  FieldLegend,
-  FieldSet,
 } from "./ui/field";
 import { Input } from "./ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "./ui/input-group";
 import { ScrollArea } from "./ui/scroll-area";
 import {
   Select,
@@ -87,6 +88,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
+import { Switch } from "./ui/switch";
 import {
   Table,
   TableBody,
@@ -200,6 +202,88 @@ function KeyValueEditor({
   );
 }
 
+function editableCommandLine(argv: string[]): string {
+  return argv.length === 1 && argv[0] === "" ? "" : formatCommandLine(argv);
+}
+
+function CommandLineField({
+  command,
+  error,
+  id,
+  label,
+  onChange,
+}: {
+  command: WorkgroveCommand;
+  error?: string;
+  id: string;
+  label: string;
+  onChange: (argv: string[]) => void;
+}) {
+  const externalValue = editableCommandLine(command.argv);
+  const [draft, setDraft] = useState(() => externalValue);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const submittedValue = useRef(externalValue);
+  const invalid = Boolean(error || parseError);
+
+  useEffect(() => {
+    if (externalValue !== submittedValue.current) {
+      setDraft(externalValue);
+      setParseError(null);
+    }
+    submittedValue.current = externalValue;
+  }, [externalValue]);
+
+  function update(nextDraft: string, normalize: boolean): void {
+    setDraft(nextDraft);
+    try {
+      const argv = parseCommandLine(nextDraft);
+      if (argv.length === 0) {
+        throw new Error("Enter a command to run");
+      }
+      const formatted = editableCommandLine(argv);
+      setParseError(null);
+      submittedValue.current = formatted;
+      if (normalize) {
+        setDraft(formatted);
+      }
+      onChange(argv);
+    } catch (caught) {
+      setParseError(
+        caught instanceof Error ? caught.message : "Enter a valid command"
+      );
+      submittedValue.current = "";
+      onChange([]);
+    }
+  }
+
+  return (
+    <Field data-invalid={invalid}>
+      <FieldLabel htmlFor={`${id}-command-line`}>Command</FieldLabel>
+      <InputGroup>
+        <InputGroupAddon>
+          <TerminalSquareIcon />
+        </InputGroupAddon>
+        <InputGroupInput
+          aria-invalid={invalid}
+          aria-label={`${label} command`}
+          className="font-mono"
+          id={`${id}-command-line`}
+          onBlur={() => update(draft, true)}
+          onChange={(event) => update(event.target.value, false)}
+          placeholder="bun run dev"
+          value={draft}
+        />
+      </InputGroup>
+      <FieldDescription>
+        Parsed into executable arguments without invoking a shell. Templates
+        include <code>{"{port}"}</code>, <code>{"{slot}"}</code>, and{" "}
+        <code>{"{apps.api.url}"}</code>.
+      </FieldDescription>
+      <FieldError>{parseError ?? error}</FieldError>
+    </Field>
+  );
+}
+
 function CommandEditor({
   description,
   error,
@@ -218,109 +302,65 @@ function CommandEditor({
   const enabled = value !== undefined;
   const command = value ?? { argv: [""] };
 
-  function updateArgument(index: number, argument: string): void {
-    const argv = [...command.argv];
-    argv[index] = argument;
-    onChange({ ...command, argv });
-  }
-
   return (
-    <FieldSet>
-      <FieldLegend variant="label">{label}</FieldLegend>
-      <FieldDescription>{description}</FieldDescription>
-      <Field orientation="horizontal">
-        <Checkbox
-          checked={enabled}
-          id={`${id}-enabled`}
-          onCheckedChange={(checked) =>
-            onChange(checked === true ? command : undefined)
-          }
-        />
-        <FieldLabel htmlFor={`${id}-enabled`}>Enabled</FieldLabel>
-      </Field>
+    <Card>
+      <CardHeader>
+        <CardTitle>{label}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+        <CardAction>
+          <Field orientation="horizontal">
+            <FieldLabel htmlFor={`${id}-enabled`}>Configured</FieldLabel>
+            <Switch
+              checked={enabled}
+              id={`${id}-enabled`}
+              onCheckedChange={(checked) =>
+                onChange(checked ? command : undefined)
+              }
+            />
+          </Field>
+        </CardAction>
+      </CardHeader>
       {enabled ? (
-        <FieldGroup>
-          <Field data-invalid={Boolean(error)}>
-            <FieldLabel>Arguments</FieldLabel>
-            <FieldDescription>
-              One executable or argument per row. Supports {"{port}"},{" "}
-              {"{slot}"}, {"{url}"}, and cross-app templates such as{" "}
-              <code>{"{apps.api.url}"}</code>.
-            </FieldDescription>
-            {command.argv.map((argument, index) => (
-              <div
-                className="flex items-center gap-2"
-                // biome-ignore lint/suspicious/noArrayIndexKey: argv is an ordered string array with no stable row identifier.
-                key={`${id}-arg-${index}`}
-              >
-                <Input
-                  aria-invalid={Boolean(error)}
-                  aria-label={`Argument ${index + 1}`}
-                  className="font-mono"
-                  onChange={(event) =>
-                    updateArgument(index, event.target.value)
-                  }
-                  value={argument}
-                />
-                <Button
-                  aria-label={`Remove argument ${index + 1}`}
-                  disabled={command.argv.length === 1}
-                  onClick={() =>
-                    onChange({
-                      ...command,
-                      argv: command.argv.filter(
-                        (_, argumentIndex) => argumentIndex !== index
-                      ),
-                    })
-                  }
-                  size="icon"
-                  type="button"
-                  variant="ghost"
-                >
-                  <Trash2Icon />
-                </Button>
-              </div>
-            ))}
-            <Button
-              onClick={() =>
-                onChange({ ...command, argv: [...command.argv, ""] })
-              }
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              <PlusIcon data-icon="inline-start" />
-              Add argument
-            </Button>
-            <FieldError>{error}</FieldError>
-          </Field>
-          <Field>
-            <FieldLabel htmlFor={`${id}-cwd`}>Working directory</FieldLabel>
-            <Input
-              className="font-mono"
-              id={`${id}-cwd`}
-              onChange={(event) =>
-                onChange({
-                  ...command,
-                  cwd: event.target.value || undefined,
-                })
-              }
-              placeholder="Optional, relative to the worktree"
-              value={command.cwd ?? ""}
+        <CardContent>
+          <FieldGroup className="gap-4">
+            <CommandLineField
+              command={command}
+              error={error}
+              id={id}
+              label={label}
+              onChange={(argv) => onChange({ ...command, argv })}
             />
-          </Field>
-          <Field>
-            <FieldLabel>Command environment</FieldLabel>
-            <KeyValueEditor
-              addLabel="Add variable"
-              id={`${id}-environment`}
-              onChange={(env) => onChange({ ...command, env })}
-              value={command.env}
-            />
-          </Field>
-        </FieldGroup>
+            <Field>
+              <FieldLabel htmlFor={`${id}-cwd`}>Working directory</FieldLabel>
+              <Input
+                className="font-mono"
+                id={`${id}-cwd`}
+                onChange={(event) =>
+                  onChange({
+                    ...command,
+                    cwd: event.target.value || undefined,
+                  })
+                }
+                placeholder="Optional, relative to the worktree"
+                value={command.cwd ?? ""}
+              />
+              <FieldDescription>
+                Optional path relative to each worktree root.
+              </FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel>Environment variables</FieldLabel>
+              <KeyValueEditor
+                addLabel="Add variable"
+                id={`${id}-environment`}
+                onChange={(env) => onChange({ ...command, env })}
+                value={command.env}
+              />
+            </Field>
+          </FieldGroup>
+        </CardContent>
       ) : null}
-    </FieldSet>
+    </Card>
   );
 }
 

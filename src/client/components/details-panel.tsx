@@ -127,7 +127,13 @@ export function DetailsPanel({
   const end = useRef<HTMLSpanElement>(null);
   const [copied, setCopied] = useState(false);
   const running = appsAreRunning(worktree);
-  useEffect(() => end.current?.scrollIntoView({ block: "end" }));
+  const logCount = logs.length;
+  const latestLog = logs.at(-1);
+  useEffect(() => {
+    if (logCount > 0 && latestLog !== undefined) {
+      end.current?.scrollIntoView({ block: "end" });
+    }
+  }, [latestLog, logCount]);
   async function copy() {
     await navigator.clipboard.writeText(logs.join("\n"));
     setCopied(true);

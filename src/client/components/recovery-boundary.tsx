@@ -1,0 +1,88 @@
+import { AlertTriangleIcon, RotateCcwIcon, XIcon } from "lucide-react";
+import { Component, type ErrorInfo, type ReactNode } from "react";
+
+import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
+import { Button } from "./ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "./ui/card";
+
+interface RecoveryBoundaryProps {
+  children: ReactNode;
+  description: string;
+  dismissLabel?: string;
+  onDismiss?: () => void;
+  title: string;
+}
+
+interface RecoveryBoundaryState {
+  error: Error | null;
+}
+
+export class RecoveryBoundary extends Component<
+  RecoveryBoundaryProps,
+  RecoveryBoundaryState
+> {
+  state: RecoveryBoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): RecoveryBoundaryState {
+    return { error };
+  }
+
+  componentDidCatch(_error: Error, _info: ErrorInfo): void {
+    // React reports the component stack in development. The recovery UI keeps
+    // the rest of the dashboard usable in production.
+  }
+
+  private readonly reset = (): void => {
+    this.setState({ error: null });
+  };
+
+  render(): ReactNode {
+    if (!this.state.error) {
+      return this.props.children;
+    }
+
+    return (
+      <div className="grid h-full min-h-0 place-items-center bg-background p-6">
+        <Card className="w-full max-w-lg">
+          <CardHeader>
+            <CardTitle>{this.props.title}</CardTitle>
+            <CardDescription>{this.props.description}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Alert variant="destructive">
+              <AlertTriangleIcon />
+              <AlertTitle>Unexpected application error</AlertTitle>
+              <AlertDescription>{this.state.error.message}</AlertDescription>
+            </Alert>
+          </CardContent>
+          <CardFooter className="justify-end gap-2">
+            {this.props.onDismiss ? (
+              <Button onClick={this.props.onDismiss} variant="outline">
+                <XIcon data-icon="inline-start" />
+                {this.props.dismissLabel ?? "Dismiss"}
+              </Button>
+            ) : (
+              <Button
+                onClick={() => window.location.reload()}
+                variant="outline"
+              >
+                Reload page
+              </Button>
+            )}
+            <Button onClick={this.reset}>
+              <RotateCcwIcon data-icon="inline-start" />
+              Try again
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
+    );
+  }
+}
