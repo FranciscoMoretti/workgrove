@@ -1,14 +1,14 @@
 {
   "name": "workgrove",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Run and manage apps across Git worktrees without terminal juggling.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/franciscomoretti/workgrove.git"
+    "url": "git+https://github.com/FranciscoMoretti/workgrove.git"
   },
-  "homepage": "https://github.com/franciscomoretti/workgrove",
-  "bugs": "https://github.com/franciscomoretti/workgrove/issues",
+  "homepage": "https://github.com/FranciscoMoretti/workgrove",
+  "bugs": "https://github.com/FranciscoMoretti/workgrove/issues",
   "bin": {
     "workgrove": "scripts/daemon.ts"
   },
@@ -42,6 +42,7 @@
     "dev": "bun src/server/server.ts",
     "lint": "bunx ultracite@7.4.3 check",
     "prepack": "bun run build",
+    "schema:generate": "bun scripts/generate-config-schema.ts && bunx biome format --write schema/workgrove.schema.json",
     "test": "bun test src/**/*.test.ts",
     "test:pack": "bun scripts/test-packed-artifact.ts",
     "test:types": "tsc --noEmit"
@@ -52,12 +53,14 @@
   "dependencies": {
     "@base-ui/react": "^1.6.0",
     "@fontsource-variable/geist": "^5.2.9",
+    "@hookform/resolvers": "^5.4.0",
     "@tanstack/react-query": "^5.80.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "0.553.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-hook-form": "^7.81.0",
     "react-resizable-panels": "^4.12.1",
     "shadcn": "^4.13.0",
     "tailwind-merge": "^3.6.0",

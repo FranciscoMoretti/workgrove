@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   existsSync,
   readFileSync,
@@ -8,62 +9,38 @@ import {
 import { join } from "node:path";
 
 import { z } from "zod";
-import {
-  type RepositoryCommandProfile,
-  type WorkgroveCommand,
-  WorkgroveCommandSchema,
+import type {
+  RepositoryCommandProfile,
+  WorkgroveCommand,
 } from "./workgrove-command";
+import { resolveWorkgroveAppEndpoints } from "./workgrove-editor";
+import {
+  canonicalizeWorkgroveConfig,
+  MAX_WORKGROVE_PORT,
+  MIN_WORKGROVE_PORT,
+  type WorkgroveConfig,
+  WorkgroveConfigSchema,
+} from "./workgrove-schema";
+import {
+  renderWorkgroveTemplate,
+  type WorkgroveTemplateContext,
+} from "./workgrove-template";
+
+// biome-ignore lint/performance/noBarrelFile: preserve the existing internal config-module type exports during the browser-safe schema split.
+export {
+  maximumWorkgroveSlot,
+  resolveWorkgroveAppPort,
+  type WorkgroveApp,
+  WorkgroveAppIdSchema,
+  type WorkgroveAppPort,
+  WorkgroveAppPortSchema,
+  WorkgroveAppSchema,
+  type WorkgroveConfig,
+  WorkgroveConfigSchema,
+  type WorktreeEnvConfig,
+} from "./workgrove-schema";
 
 const SLOT_PATTERN = /^\d+$/;
-const TEMPLATE_PATTERN = /\{([^}]+)\}/g;
-const APP_TEMPLATE_PATTERN = /^apps\.([a-zA-Z0-9_-]+)\.(port|url)$/;
-const MIN_PORT = 1024;
-const MAX_PORT = 65_535;
-
-const WorkgroveAppSchema = z.object({
-  control: z
-    .object({
-      label: z.string().min(1).optional(),
-      open: z.boolean().optional(),
-      probe: z.enum(["none", "tcp"]).optional(),
-      required: z.boolean().optional(),
-    })
-    .optional(),
-  exports: z.record(z.string(), z.string()).optional(),
-  offset: z.number().int().nonnegative(),
-  start: WorkgroveCommandSchema.optional(),
-});
-
-const WorkgroveControlSchema = z
-  .object({
-    postCreate: WorkgroveCommandSchema.optional(),
-    setup: WorkgroveCommandSchema.optional(),
-    start: WorkgroveCommandSchema.optional(),
-  })
-  .refine((control) => !(control.setup && control.postCreate), {
-    message: "Configure control.setup or legacy control.postCreate, not both",
-  });
-
-export const WorkgroveConfigSchema = z.object({
-  $schema: z.string().optional(),
-  version: z.literal(1),
-  apps: z.record(z.string().regex(/^[A-Za-z0-9_-]+$/), WorkgroveAppSchema),
-  control: WorkgroveControlSchema.optional(),
-  range: z.object({
-    base: z.number().int().min(MIN_PORT).max(MAX_PORT),
-    stride: z.number().int().positive().max(MAX_PORT),
-  }),
-  slot: z.object({
-    default: z.number().int().nonnegative(),
-    env: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
-    file: z.string().min(1).optional(),
-  }),
-  url: z.string().min(1),
-});
-
-export type WorkgroveConfig = z.infer<typeof WorkgroveConfigSchema>;
-export type WorktreeEnvConfig = WorkgroveConfig;
-
 export interface ResolvedWorkgroveApp {
   env: Record<string, string>;
   port: number;
@@ -82,67 +59,19 @@ export interface ResolvedWorkgroveCommand {
   env: Record<string, string>;
 }
 
-interface TemplateContext {
-  apps: Record<string, { port: number; url: string }>;
-  port: number;
-  slot: number;
-  url?: string;
-}
-
-function validateStartMode(config: WorkgroveConfig): void {
-  const perAppEntries = Object.entries(config.apps).filter(
-    ([, app]) => app.start !== undefined
-  );
-  if (perAppEntries.length === 0) {
-    return;
-  }
-  if (config.control?.start) {
-    throw new Error(
-      "Configure either per-app start commands or control.start, not both"
-    );
-  }
-  const missing = Object.entries(config.apps)
-    .filter(([, app]) => {
-      const probe = app.control?.probe ?? "tcp";
-      const required = app.control?.required ?? probe === "tcp";
-      return probe === "tcp" && required && !app.start;
-    })
-    .map(([id]) => id);
-  if (missing.length > 0) {
-    throw new Error(
-      `Required apps need start commands in per-app mode: ${missing.join(", ")}`
-    );
-  }
-}
-
-function renderTemplate(template: string, context: TemplateContext): string {
-  return template.replace(TEMPLATE_PATTERN, (_, token: string) => {
-    if (token === "slot") {
-      return String(context.slot);
-    }
-    if (token === "port") {
-      return String(context.port);
-    }
-    if (token === "url" && context.url) {
-      return context.url;
-    }
-    const match = APP_TEMPLATE_PATTERN.exec(token);
-    const app = match ? context.apps[match[1]] : null;
-    if (match && app) {
-      return String(app[match[2] as "port" | "url"]);
-    }
-    throw new Error(`Unknown Workgrove template variable "${token}"`);
-  });
+export interface WorkgroveConfigDocument {
+  config: WorkgroveConfig;
+  revision: string;
 }
 
 export function renderCommandEnvironment(
   values: Record<string, string> | undefined,
-  context: TemplateContext
+  context: WorkgroveTemplateContext
 ): Record<string, string> {
   return Object.fromEntries(
     Object.entries(values ?? {}).map(([name, value]) => [
       name,
-      renderTemplate(value, context),
+      renderWorkgroveTemplate(value, context),
     ])
   );
 }
@@ -151,36 +80,19 @@ export function resolveWorkgroveRuntime(
   config: WorkgroveConfig,
   environment: Record<string, string | undefined>
 ): ResolvedWorkgroveRuntime {
-  validateStartMode(config);
+  WorkgroveConfigSchema.parse(config);
   const rawSlot = environment[config.slot.env] ?? String(config.slot.default);
   if (!SLOT_PATTERN.test(rawSlot)) {
     throw new Error(`Invalid ${config.slot.env} "${rawSlot}"`);
   }
   const slot = Number(rawSlot);
   const entries = Object.entries(config.apps);
-  if (entries.length === 0) {
-    throw new Error("Workgrove config requires at least one app");
-  }
-  const seenOffsets = new Set<number>();
-  for (const [id, app] of entries) {
-    if (app.offset >= config.range.stride) {
-      throw new Error(`App "${id}" offset must be below range.stride`);
-    }
-    if (seenOffsets.has(app.offset)) {
-      throw new Error(`App offset ${app.offset} is assigned more than once`);
-    }
-    seenOffsets.add(app.offset);
-  }
-  const endpoints: Record<string, { port: number; url: string }> = {};
-  for (const [id, app] of entries) {
-    const port = config.range.base + slot * config.range.stride + app.offset;
-    if (port < MIN_PORT || port > MAX_PORT) {
+  const endpoints = resolveWorkgroveAppEndpoints(config, slot);
+  for (const [id, endpoint] of Object.entries(endpoints)) {
+    const port = endpoint.port;
+    if (port < MIN_WORKGROVE_PORT || port > MAX_WORKGROVE_PORT) {
       throw new Error(`App "${id}" computed invalid port ${port}`);
     }
-    endpoints[id] = {
-      port,
-      url: renderTemplate(config.url, { apps: endpoints, port, slot }),
-    };
   }
   const apps = Object.fromEntries(
     entries.map(([id, app]) => {
@@ -212,8 +124,15 @@ export function findWorkgroveConfig(root: string): string | null {
   return null;
 }
 
-export function loadWorkgroveConfig(path: string): WorkgroveConfig {
-  const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+function contentRevision(content: string): string {
+  return createHash("sha256").update(content).digest("base64url");
+}
+
+export function loadWorkgroveConfigDocument(
+  path: string
+): WorkgroveConfigDocument {
+  const content = readFileSync(path, "utf8");
+  const raw = JSON.parse(content) as Record<string, unknown>;
   const candidate = raw.version === undefined ? { ...raw, version: 1 } : raw;
   const result = WorkgroveConfigSchema.safeParse(candidate);
   if (!result.success) {
@@ -222,7 +141,38 @@ export function loadWorkgroveConfig(path: string): WorkgroveConfig {
     );
   }
   resolveWorkgroveRuntime(result.data, {});
-  return result.data;
+  return { config: result.data, revision: contentRevision(content) };
+}
+
+export function loadWorkgroveConfig(path: string): WorkgroveConfig {
+  return loadWorkgroveConfigDocument(path).config;
+}
+
+export function updateWorkgroveConfig(
+  configPath: string,
+  config: WorkgroveConfig,
+  expectedRevision: string
+): WorkgroveConfigDocument {
+  const currentContent = readFileSync(configPath, "utf8");
+  if (contentRevision(currentContent) !== expectedRevision) {
+    throw new Error(
+      "The configuration changed on disk. Reload it before saving your changes."
+    );
+  }
+  const validated = WorkgroveConfigSchema.parse(
+    canonicalizeWorkgroveConfig(config)
+  );
+  resolveWorkgroveRuntime(validated, {});
+  const content = `${JSON.stringify(validated, null, 2)}\n`;
+  const temporaryPath = `${configPath}.tmp-${process.pid}-${Date.now()}`;
+  writeFileSync(temporaryPath, content, { flag: "wx" });
+  try {
+    renameSync(temporaryPath, configPath);
+  } catch (error) {
+    rmSync(temporaryPath, { force: true });
+    throw error;
+  }
+  return { config: validated, revision: contentRevision(content) };
 }
 
 export const resolveWorktreeRuntime = resolveWorkgroveRuntime;
@@ -259,8 +209,8 @@ export function updateRepositoryCommandProfile(
     start?: WorkgroveCommand | null;
   }
 ): WorkgroveConfig {
-  const current = loadWorkgroveConfig(configPath);
-  const next = structuredClone(current);
+  const current = loadWorkgroveConfigDocument(configPath);
+  const next = structuredClone(current.config);
   next.control ??= {};
   next.control.postCreate = undefined;
   if (update.setup) {
@@ -280,19 +230,7 @@ export function updateRepositoryCommandProfile(
       next.control.start = undefined;
     }
   }
-  const validated = WorkgroveConfigSchema.parse(next);
-  resolveWorkgroveRuntime(validated, {});
-  const temporaryPath = `${configPath}.tmp-${process.pid}`;
-  writeFileSync(temporaryPath, `${JSON.stringify(validated, null, 2)}\n`, {
-    flag: "wx",
-  });
-  try {
-    renameSync(temporaryPath, configPath);
-  } catch (error) {
-    rmSync(temporaryPath, { force: true });
-    throw error;
-  }
-  return validated;
+  return updateWorkgroveConfig(configPath, next, current.revision).config;
 }
 
 export function resolveStartCommands(
@@ -316,7 +254,7 @@ export function resolveStartCommands(
       {
         appId,
         argv: app.start.argv.map((value) =>
-          renderTemplate(value, {
+          renderWorkgroveTemplate(value, {
             apps: endpoints,
             port: resolved.port,
             slot,
@@ -324,7 +262,7 @@ export function resolveStartCommands(
           })
         ),
         cwd: app.start.cwd
-          ? renderTemplate(app.start.cwd, {
+          ? renderWorkgroveTemplate(app.start.cwd, {
               apps: endpoints,
               port: resolved.port,
               slot,
@@ -356,7 +294,7 @@ export function resolveStartCommands(
     {
       appId: null,
       argv: aggregate.argv.map((value) =>
-        renderTemplate(value, {
+        renderWorkgroveTemplate(value, {
           apps: endpoints,
           port: first.port,
           slot,
@@ -364,7 +302,7 @@ export function resolveStartCommands(
         })
       ),
       cwd: aggregate.cwd
-        ? renderTemplate(aggregate.cwd, {
+        ? renderWorkgroveTemplate(aggregate.cwd, {
             apps: endpoints,
             port: first.port,
             slot,
@@ -404,7 +342,7 @@ export function resolveSetupCommand(
   return {
     appId: null,
     argv: command.argv.map((value) =>
-      renderTemplate(value, {
+      renderWorkgroveTemplate(value, {
         apps: endpoints,
         port: first.port,
         slot,
@@ -412,7 +350,7 @@ export function resolveSetupCommand(
       })
     ),
     cwd: command.cwd
-      ? renderTemplate(command.cwd, {
+      ? renderWorkgroveTemplate(command.cwd, {
           apps: endpoints,
           port: first.port,
           slot,

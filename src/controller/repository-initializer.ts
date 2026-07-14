@@ -165,10 +165,10 @@ export function planRepositoryInitialization(
           required: true,
         },
         exports: { PORT: "{port}" },
-        offset: 0,
+        port: { base: stableBasePort(root) },
       },
     },
-    range: { base: stableBasePort(root), stride: 10 },
+    ports: { slotStride: 10 },
     slot: { default: 0, env: "WORKGROVE_SLOT", file: ".env.worktree.local" },
     url: "http://localhost:{port}",
   };
@@ -199,6 +199,6 @@ export function initializeRepository(
     plan.repoPath,
     plan.config.slot.file ?? ".env.worktree.local"
   );
-  trustRepository(plan.repoPath);
+  trustRepository(plan.repoPath, plan.config);
   return plan;
 }

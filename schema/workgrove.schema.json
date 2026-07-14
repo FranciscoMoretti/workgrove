@@ -1,90 +1,227 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/franciscomoretti/workgrove/main/schema/workgrove.schema.json",
-  "title": "Workgrove configuration",
-  "description": "Choose one start mode: either control.start for aggregate orchestration, or per-app start commands. In per-app mode every required TCP app must declare start; Workgrove enforces these cross-field rules at runtime.",
   "type": "object",
-  "additionalProperties": false,
-  "required": ["version", "slot", "range", "url", "apps"],
   "properties": {
-    "$schema": { "type": "string" },
-    "version": { "const": 1 },
-    "slot": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["env", "default"],
-      "properties": {
-        "env": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
-        "default": { "type": "integer", "minimum": 0 },
-        "file": { "type": "string", "minLength": 1 }
-      }
+    "$schema": {
+      "type": "string"
     },
-    "range": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["base", "stride"],
-      "properties": {
-        "base": { "type": "integer", "minimum": 1024, "maximum": 65535 },
-        "stride": { "type": "integer", "minimum": 1, "maximum": 65535 }
-      }
+    "version": {
+      "type": "number",
+      "const": 1
     },
-    "url": { "type": "string", "minLength": 1 },
     "apps": {
       "type": "object",
-      "minProperties": 1,
-      "propertyNames": { "pattern": "^[A-Za-z0-9_-]+$" },
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_-]+$"
+      },
       "additionalProperties": {
         "type": "object",
-        "additionalProperties": false,
-        "required": ["offset"],
         "properties": {
-          "offset": { "type": "integer", "minimum": 0 },
-          "exports": {
-            "type": "object",
-            "additionalProperties": { "type": "string" }
-          },
-          "start": { "$ref": "#/$defs/command" },
           "control": {
             "type": "object",
-            "additionalProperties": false,
             "properties": {
-              "label": { "type": "string", "minLength": 1 },
-              "open": { "type": "boolean" },
-              "probe": { "enum": ["none", "tcp"] },
-              "required": { "type": "boolean" }
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
+              "open": {
+                "type": "boolean"
+              },
+              "probe": {
+                "type": "string",
+                "enum": ["none", "tcp"]
+              },
+              "required": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
+          "exports": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
             }
+          },
+          "port": {
+            "type": "object",
+            "properties": {
+              "base": {
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 65535
+              }
+            },
+            "required": ["base"],
+            "additionalProperties": false
+          },
+          "start": {
+            "type": "object",
+            "properties": {
+              "argv": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "cwd": {
+                "type": "string",
+                "minLength": 1
+              },
+              "env": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["argv"],
+            "additionalProperties": false
           }
-        }
+        },
+        "required": ["port"],
+        "additionalProperties": false
       }
     },
     "control": {
       "type": "object",
-      "additionalProperties": false,
-      "not": { "required": ["setup", "postCreate"] },
       "properties": {
-        "start": { "$ref": "#/$defs/command" },
-        "setup": { "$ref": "#/$defs/command" },
-        "postCreate": { "$ref": "#/$defs/command" }
-      }
+        "postCreate": {
+          "type": "object",
+          "properties": {
+            "argv": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "cwd": {
+              "type": "string",
+              "minLength": 1
+            },
+            "env": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["argv"],
+          "additionalProperties": false
+        },
+        "setup": {
+          "type": "object",
+          "properties": {
+            "argv": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "cwd": {
+              "type": "string",
+              "minLength": 1
+            },
+            "env": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["argv"],
+          "additionalProperties": false
+        },
+        "start": {
+          "type": "object",
+          "properties": {
+            "argv": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "cwd": {
+              "type": "string",
+              "minLength": 1
+            },
+            "env": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["argv"],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "ports": {
+      "type": "object",
+      "properties": {
+        "slotStride": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 65535
+        }
+      },
+      "required": ["slotStride"],
+      "additionalProperties": false
+    },
+    "slot": {
+      "type": "object",
+      "properties": {
+        "default": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "env": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["default", "env"],
+      "additionalProperties": false
+    },
+    "url": {
+      "type": "string",
+      "minLength": 1
     }
   },
-  "$defs": {
-    "command": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["argv"],
-      "properties": {
-        "argv": {
-          "type": "array",
-          "minItems": 1,
-          "items": { "type": "string", "minLength": 1 }
-        },
-        "cwd": { "type": "string", "minLength": 1 },
-        "env": {
-          "type": "object",
-          "additionalProperties": { "type": "string" }
-        }
-      }
-    }
-  }
+  "required": ["version", "apps", "ports", "slot", "url"],
+  "additionalProperties": false,
+  "$id": "https://raw.githubusercontent.com/franciscomoretti/workgrove/main/schema/workgrove.schema.json",
+  "title": "Workgrove configuration",
+  "description": "Choose one start mode: either control.start for aggregate orchestration, or per-app start commands. Each app declares its slot-zero base port, and Workgrove applies the shared slot stride."
 }

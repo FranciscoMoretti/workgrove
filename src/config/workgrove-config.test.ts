@@ -2,13 +2,18 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { repositoryRequiresTrust } from "./repository-trust";
 import {
+  repositoryCommandFingerprint,
+  repositoryRequiresTrust,
+} from "./repository-trust";
+import {
+  loadWorkgroveConfigDocument,
   repositoryCommandProfile,
   resolveSetupCommand,
   resolveStartCommands,
   resolveWorkgroveRuntime,
   updateRepositoryCommandProfile,
+  updateWorkgroveConfig,
   type WorkgroveConfig,
 } from "./workgrove-config";
 
@@ -18,7 +23,7 @@ const config: WorkgroveConfig = {
     api: {
       control: { label: "API", open: false, probe: "tcp", required: true },
       exports: { API_PORT: "{port}" },
-      offset: 1,
+      port: { base: 8000 },
       start: {
         argv: ["python", "-m", "api", "--port", "{port}"],
         env: { PORT: "{port}" },
@@ -27,11 +32,11 @@ const config: WorkgroveConfig = {
     web: {
       control: { label: "Web", open: true, probe: "tcp", required: true },
       exports: { PORT: "{port}", API_URL: "{apps.api.url}" },
-      offset: 0,
+      port: { base: 3000 },
       start: { argv: ["npm", "run", "dev"], env: { PORT: "{port}" } },
     },
   },
-  range: { base: 4000, stride: 10 },
+  ports: { slotStride: 10 },
   slot: { default: 0, env: "WORKGROVE_SLOT", file: ".env.worktree.local" },
   url: "http://localhost:{port}",
 };
@@ -42,30 +47,30 @@ describe("generic Workgrove configuration", () => {
       resolveWorkgroveRuntime(config, { WORKGROVE_SLOT: "3" }).apps
     ).toEqual({
       api: {
-        env: { API_PORT: "4031" },
-        port: 4031,
-        url: "http://localhost:4031",
+        env: { API_PORT: "8030" },
+        port: 8030,
+        url: "http://localhost:8030",
       },
       web: {
-        env: { API_URL: "http://localhost:4031", PORT: "4030" },
-        port: 4030,
-        url: "http://localhost:4030",
+        env: { API_URL: "http://localhost:8030", PORT: "3030" },
+        port: 3030,
+        url: "http://localhost:3030",
       },
     });
     expect(resolveStartCommands(config, 3)).toEqual([
       {
         appId: "api",
-        argv: ["python", "-m", "api", "--port", "4031"],
+        argv: ["python", "-m", "api", "--port", "8030"],
         cwd: null,
-        env: { API_PORT: "4031", PORT: "4031", WORKGROVE_SLOT: "3" },
+        env: { API_PORT: "8030", PORT: "8030", WORKGROVE_SLOT: "3" },
       },
       {
         appId: "web",
         argv: ["npm", "run", "dev"],
         cwd: null,
         env: {
-          API_URL: "http://localhost:4031",
-          PORT: "4030",
+          API_URL: "http://localhost:8030",
+          PORT: "3030",
           WORKGROVE_SLOT: "3",
         },
       },
@@ -85,6 +90,57 @@ describe("generic Workgrove configuration", () => {
         ),
       })
     ).toBe(false);
+  });
+
+  it("binds repository trust to the exact configured commands", () => {
+    const fingerprint = repositoryCommandFingerprint(config);
+    const apiArgv = config.apps.api.start?.argv;
+    if (!apiArgv) {
+      throw new Error("Test config requires an API start command");
+    }
+    expect(
+      repositoryCommandFingerprint({
+        ...config,
+        apps: {
+          ...config.apps,
+          api: {
+            ...config.apps.api,
+            start: {
+              argv: apiArgv,
+              env: { B: "two", A: "one" },
+            },
+          },
+        },
+      })
+    ).not.toBe(fingerprint);
+    const orderedEnvironment = {
+      ...config,
+      apps: {
+        ...config.apps,
+        api: {
+          ...config.apps.api,
+          start: {
+            argv: apiArgv,
+            env: { B: "two", A: "one" },
+          },
+        },
+      },
+    };
+    expect(repositoryCommandFingerprint(orderedEnvironment)).toBe(
+      repositoryCommandFingerprint({
+        ...orderedEnvironment,
+        apps: {
+          ...orderedEnvironment.apps,
+          api: {
+            ...orderedEnvironment.apps.api,
+            start: {
+              argv: apiArgv,
+              env: { A: "one", B: "two" },
+            },
+          },
+        },
+      })
+    );
   });
 
   it("rejects incomplete or ambiguous per-app command modes", () => {
@@ -125,9 +181,9 @@ describe("generic Workgrove configuration", () => {
       )
     ).toEqual({
       appId: null,
-      argv: ["tool", "--port", "4020"],
+      argv: ["tool", "--port", "3020"],
       cwd: "packages/2",
-      env: { TARGET: "http://localhost:4021", WORKGROVE_SLOT: "2" },
+      env: { TARGET: "http://localhost:8020", WORKGROVE_SLOT: "2" },
     });
   });
 
@@ -190,6 +246,27 @@ describe("generic Workgrove configuration", () => {
         startMode: "per-app",
       });
       expect(saved.apps.web.start?.argv).toEqual(["npm", "run", "dev"]);
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects stale visual-editor saves without overwriting newer changes", () => {
+    const directory = mkdtempSync(join(tmpdir(), "workgrove-config-"));
+    const path = join(directory, ".workgrove.json");
+    writeFileSync(path, `${JSON.stringify(config)}\n`);
+    try {
+      const firstRead = loadWorkgroveConfigDocument(path);
+      writeFileSync(
+        path,
+        `${JSON.stringify({ ...config, url: "http://127.0.0.1:{port}" })}\n`
+      );
+      expect(() =>
+        updateWorkgroveConfig(path, config, firstRead.revision)
+      ).toThrow("configuration changed on disk");
+      expect(loadWorkgroveConfigDocument(path).config.url).toBe(
+        "http://127.0.0.1:{port}"
+      );
     } finally {
       rmSync(directory, { force: true, recursive: true });
     }

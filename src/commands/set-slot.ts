@@ -32,6 +32,14 @@ export function setSlot(
   if (!option) {
     throw new Error(`Slot ${slot} is outside the supported range`);
   }
+  const collisionOwner = option.collisionOwners.find(
+    (owner) => owner.id !== worktreeId
+  );
+  if (collisionOwner) {
+    throw new Error(
+      `Slot ${slot} has a port collision with ${collisionOwner.name}`
+    );
+  }
   const file = resolveSlotFilePath(worktree.path, workspace.slotFile);
   const content = existsSync(file) ? readFileSync(file, "utf8") : "";
   const temporary = `${file}.workgrove-${process.pid}`;

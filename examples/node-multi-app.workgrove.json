@@ -6,11 +6,11 @@
     "default": 0,
     "file": ".env.worktree.local"
   },
-  "range": { "base": 4000, "stride": 10 },
+  "ports": { "slotStride": 10 },
   "url": "http://localhost:{port}",
   "apps": {
     "web": {
-      "offset": 0,
+      "port": { "base": 3000 },
       "control": {
         "label": "Web",
         "open": true,
@@ -23,7 +23,7 @@
       }
     },
     "api": {
-      "offset": 1,
+      "port": { "base": 8000 },
       "control": {
         "label": "API",
         "open": false,

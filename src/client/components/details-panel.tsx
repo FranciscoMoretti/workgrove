@@ -34,7 +34,7 @@ function indicatorClass(app: WorktreeSnapshot["apps"][number]): string {
 
 function endpointStatus(app: WorktreeSnapshot["apps"][number]): string {
   if (app.probe === "none") {
-    return "Reserved · not probed";
+    return "Port reserved · no health check";
   }
   if (app.ownership === "foreign") {
     return "Occupied by another process";
@@ -57,9 +57,10 @@ function terminalContent({
 }) {
   if (loading) {
     return (
-      <p className="flex items-center gap-2">
-        <Spinner /> Connecting to managed logs…
-      </p>
+      <div className="terminal-state">
+        <Spinner />
+        <span>Connecting to managed logs…</span>
+      </div>
     );
   }
   if (error) {
@@ -80,9 +81,10 @@ function terminalContent({
   }
   if (logs.length === 0) {
     return (
-      <p>
-        No managed output yet. Start apps from Workgrove to capture logs here.
-      </p>
+      <div className="terminal-state terminal-empty">
+        <strong>No output yet</strong>
+        <span>Start apps to stream their managed output here.</span>
+      </div>
     );
   }
   return (
@@ -134,10 +136,10 @@ export function DetailsPanel({
   return (
     <aside className="details-panel flex h-full min-w-0 flex-col overflow-hidden bg-background">
       <header>
-        <div>
+        <div className="min-w-0">
           <h2>{worktree.name}</h2>
           <p>{worktree.path}</p>
-          <div className="flex flex-wrap gap-2">
+          <div className="detail-metadata flex flex-wrap gap-1.5">
             <Badge variant="outline">
               <GitBranchIcon />
               {worktree.branch}
@@ -158,9 +160,9 @@ export function DetailsPanel({
           <XIcon />
         </Button>
       </header>
-      <section>
-        <h3>Configured apps</h3>
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-2">
+      <section className="apps-section">
+        <h3>Apps</h3>
+        <div className="apps-grid grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-2">
           {worktree.apps.map((app) => (
             <Card key={app.id} size="sm">
               <CardHeader>
@@ -210,7 +212,7 @@ export function DetailsPanel({
       </div>
       <section className="terminal-section">
         <div className="section-title">
-          <h3>Managed terminal</h3>
+          <h3>Managed logs</h3>
           <div className="terminal-actions">
             <Button
               disabled={logs.length === 0}

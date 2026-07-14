@@ -36,8 +36,8 @@ export function useCommands(repoPath: string) {
   const setSlot = useCommand("set-slot", repoPath);
   const stopAllApps = useCommand("stop-all-apps", repoPath);
   const trustRepository = useCommand("trust-repository", repoPath);
-  const updateRepositoryCommands = useCommand(
-    "update-repository-commands",
+  const updateRepositoryConfig = useCommand(
+    "update-repository-config",
     repoPath
   );
   const createWorktree = useCommand("create-worktree", repoPath);
@@ -55,7 +55,7 @@ export function useCommands(repoPath: string) {
     stopAllApps,
     stopApps,
     trustRepository,
-    updateRepositoryCommands,
+    updateRepositoryConfig,
   };
   const errors = Object.values(mutations)
     .map((mutation) => mutation.error)

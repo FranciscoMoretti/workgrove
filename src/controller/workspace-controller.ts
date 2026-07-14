@@ -17,6 +17,7 @@ import { stopAllApps } from "../commands/stop-all-apps";
 import { stopApps } from "../commands/stop-apps";
 import { trustRepository } from "../commands/trust-repository";
 import { updateRepositoryCommands } from "../commands/update-repository-commands";
+import { updateRepositoryConfig } from "../commands/update-repository-config";
 import {
   repositoryIsTrusted,
   repositoryRequiresTrust,
@@ -26,9 +27,15 @@ import {
   configuredSetupCommand,
   findWorkgroveConfig,
   loadWorkgroveConfig,
+  loadWorkgroveConfigDocument,
   repositoryCommandProfile,
+  updateWorkgroveConfig,
   type WorktreeEnvConfig,
 } from "../config/workgrove-config";
+import {
+  maximumWorkgroveSlot,
+  type WorkgroveConfig,
+} from "../config/workgrove-schema";
 import { parseWorktreeList } from "../git/discover-worktrees";
 import { appHealth, resolveControlledApps } from "../runtime/app-health";
 import { commandEnvironment } from "../runtime/command-environment";
@@ -53,6 +60,10 @@ import {
   type WorkgroveCommandName,
   type WorkgroveCommandResult,
 } from "./command-contract";
+import {
+  conflictingWorkgroveSlotIndexes,
+  workgroveSlotCollisionOwners,
+} from "./slot-collisions";
 import type { WorkspaceSnapshot } from "./workspace-snapshot";
 
 type CommandHandler = (
@@ -77,6 +88,7 @@ const COMMAND_HANDLERS: Record<WorkgroveCommandName, CommandHandler> = {
   "stop-apps": stopApps,
   "trust-repository": trustRepository,
   "update-repository-commands": updateRepositoryCommands,
+  "update-repository-config": updateRepositoryConfig,
 };
 
 export class MissingWorktreeConfigError extends Error {
@@ -132,7 +144,8 @@ function commandSummary(
 function slotState(
   parsed: ParsedSlot,
   slot: number | null,
-  slotOwners: ReadonlyMap<number, number[]>
+  index: number,
+  conflictingIndexes: ReadonlySet<number>
 ): "assigned" | "conflicting" | "invalid" | "unassigned" {
   if (parsed.kind === "invalid") {
     return "invalid";
@@ -140,7 +153,7 @@ function slotState(
   if (slot === null) {
     return "unassigned";
   }
-  return (slotOwners.get(slot)?.length ?? 0) > 1 ? "conflicting" : "assigned";
+  return conflictingIndexes.has(index) ? "conflicting" : "assigned";
 }
 
 function worktreeSetupState(
@@ -180,7 +193,8 @@ export class WorkspaceController {
         join(selectedRoot, ".workgrove.json")
       );
     }
-    const config = loadWorkgroveConfig(configPath);
+    const configDocument = loadWorkgroveConfigDocument(configPath);
+    const config = configDocument.config;
     const setupCommand = configuredSetupCommand(config);
     const discovered = parseWorktreeList(
       git(selectedRoot, ["worktree", "list", "--porcelain"])
@@ -188,12 +202,7 @@ export class WorkspaceController {
     if (discovered.length === 0) {
       throw new Error("No Git worktrees were discovered");
     }
-    const greatestOffset = Math.max(
-      ...Object.values(config.apps).map((app) => app.offset)
-    );
-    const maxSlot = Math.floor(
-      (65_535 - config.range.base - greatestOffset) / config.range.stride
-    );
+    const maxSlot = maximumWorkgroveSlot(config);
     const slotFile = config.slot.file ?? ".env.worktree.local";
     const parsedSlots = discovered.map((item) => {
       const file = resolveSlotFilePath(item.path, slotFile);
@@ -205,15 +214,10 @@ export class WorkspaceController {
     const rawSlots = parsedSlots.map((parsed) =>
       parsed.kind === "value" ? parsed.slot : null
     );
-    const slotOwners = new Map<number, number[]>();
-    rawSlots.forEach((slot, index) => {
-      if (slot === null) {
-        return;
-      }
-      const owners = slotOwners.get(slot) ?? [];
-      owners.push(index);
-      slotOwners.set(slot, owners);
-    });
+    const conflictingSlotIndexes = conflictingWorkgroveSlotIndexes(
+      config,
+      rawSlots
+    );
     const ports = inspectListeningPorts();
     const appLabel = resolveControlledApps(config, config.slot.default)
       .filter((app) => app.probe === "tcp" && app.required)
@@ -248,7 +252,12 @@ export class WorkspaceController {
         ].some((processId) => managedPid(processId, path) !== null),
         setupState: worktreeSetupState(id, path, setupCommand !== null),
         slot,
-        slotState: slotState(parsedSlots[index], slot, slotOwners),
+        slotState: slotState(
+          parsedSlots[index],
+          slot,
+          index,
+          conflictingSlotIndexes
+        ),
       };
     });
     const occupied = new Map<number, string>();
@@ -269,19 +278,36 @@ export class WorkspaceController {
     ) {
       visibleSlots.add(slot);
     }
+    const assignedSlots = worktrees.flatMap((worktree) =>
+      worktree.slot === null
+        ? []
+        : [{ id: worktree.id, name: worktree.name, slot: worktree.slot }]
+    );
     const slotOptions = [...visibleSlots]
       .sort((left, right) => left - right)
-      .map((slot) => ({
-        apps: resolveControlledApps(config, slot)
-          .filter((app) => app.probe === "tcp")
-          .map((app) => ({ label: app.label, port: app.port })),
-        occupiedBy: occupied.get(slot) ?? null,
-        slot,
-      }));
+      .map((slot) => {
+        const collisionOwners = workgroveSlotCollisionOwners(
+          config,
+          slot,
+          assignedSlots
+        );
+        return {
+          apps: resolveControlledApps(config, slot)
+            .filter((app) => app.probe === "tcp")
+            .map((app) => ({ label: app.label, port: app.port })),
+          collisionOwners: collisionOwners.map(({ id, name }) => ({
+            id,
+            name,
+          })),
+          slot,
+        };
+      });
     const globalProcesses = listManagedProcesses();
     return {
       commandProfile: repositoryCommandProfile(config),
+      config,
       configPath,
+      configRevision: configDocument.revision,
       globalProcesses,
       globalRunningCount: globalProcesses.length,
       defaultSlot: config.slot.default,
@@ -317,6 +343,37 @@ export class WorkspaceController {
       throw new MissingWorktreeConfigError(join(root, ".workgrove.json"));
     }
     return loadWorkgroveConfig(path);
+  }
+
+  updateConfiguration(
+    repoPath: string,
+    config: WorkgroveConfig,
+    revision: string
+  ): void {
+    const workspace = this.inspect(repoPath);
+    const topology = (value: WorkgroveConfig) => ({
+      apps: Object.fromEntries(
+        Object.entries(value.apps).map(([id, app]) => [id, app.port])
+      ),
+      ports: value.ports,
+      slot: value.slot,
+      url: value.url,
+    });
+    const topologyChanged =
+      JSON.stringify(topology(workspace.config)) !==
+      JSON.stringify(topology(config));
+    const hasRunningProcesses = workspace.worktrees.some(
+      (worktree) =>
+        worktree.processRunning ||
+        worktree.health !== "not-running" ||
+        worktree.setupState === "running"
+    );
+    if (topologyChanged && hasRunningProcesses) {
+      throw new Error(
+        "Stop repository apps and setup processes before changing app ports, slots, or URLs."
+      );
+    }
+    updateWorkgroveConfig(workspace.configPath, config, revision);
   }
 
   environment(repoPath: string, slot: number): Record<string, string> {

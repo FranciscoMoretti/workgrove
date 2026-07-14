@@ -26,7 +26,8 @@ describe("repository initialization", () => {
       expect(preview.detectedStartCommand).toBe("bun dev");
       expect(preview.config.control?.start?.argv).toEqual(["bun", "dev"]);
       expect(preview.config.control?.setup?.argv).toEqual(["bun", "install"]);
-      expect(preview.config.range.base).toBeGreaterThanOrEqual(10_000);
+      expect(preview.config.apps.app.port.base).toBeGreaterThanOrEqual(10_000);
+      expect(preview.config.ports).toEqual({ slotStride: 10 });
       expect(() => readFileSync(preview.configPath)).toThrow();
 
       const created = initializeRepository(root);

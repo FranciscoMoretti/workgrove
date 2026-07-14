@@ -51,7 +51,7 @@ export function CreateWorktreeDialog({
   slots: SlotOption[];
 }) {
   const available = useMemo(
-    () => slots.filter((slot) => slot.occupiedBy === null),
+    () => slots.filter((slot) => slot.collisionOwners.length === 0),
     [slots]
   );
   const [branch, setBranch] = useState("");

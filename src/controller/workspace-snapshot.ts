@@ -1,4 +1,5 @@
 import type { RepositoryCommandProfile } from "../config/workgrove-command";
+import type { WorkgroveConfig } from "../config/workgrove-schema";
 import type { AppHealth, ControlledApp } from "../runtime/app-health";
 
 export type AppEndpointSnapshot = ControlledApp & {
@@ -8,7 +9,7 @@ export type AppEndpointSnapshot = ControlledApp & {
 
 export interface SlotOption {
   apps: Array<{ label: string; port: number }>;
-  occupiedBy: string | null;
+  collisionOwners: Array<{ id: string; name: string }>;
   slot: number;
 }
 
@@ -56,7 +57,9 @@ export function appsCanRestart(
 
 export interface WorkspaceSnapshot {
   commandProfile: RepositoryCommandProfile;
+  config: WorkgroveConfig;
   configPath: string;
+  configRevision: string;
   defaultSlot: number;
   globalProcesses: GlobalProcessSnapshot[];
   globalRunningCount: number;

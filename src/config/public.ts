@@ -6,9 +6,23 @@ export {
 export {
   findWorkgroveConfig,
   loadWorkgroveConfig,
+  loadWorkgroveConfigDocument,
   type ResolvedWorkgroveApp,
   type ResolvedWorkgroveRuntime,
   resolveWorkgroveRuntime,
+  type WorkgroveConfigDocument,
+} from "./workgrove-config";
+export {
+  canonicalizeWorkgroveConfig,
+  maximumWorkgroveSlot,
+  resolveWorkgroveAppPort,
+  type WorkgroveApp,
+  WorkgroveAppIdSchema,
+  type WorkgroveAppPort,
+  WorkgroveAppPortSchema,
+  WorkgroveAppSchema,
   type WorkgroveConfig,
   WorkgroveConfigSchema,
-} from "./workgrove-config";
+  type WorktreeEnvConfig,
+  workgroveSlotsHavePortCollision,
+} from "./workgrove-schema";

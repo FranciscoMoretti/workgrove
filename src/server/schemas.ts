@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { WorkgroveCommandSchema } from "../config/workgrove-command";
+import { WorkgroveConfigSchema } from "../config/workgrove-schema";
 
 export const WorkspaceQuerySchema = z.object({ repoPath: z.string().min(1) });
 export const LogsQuerySchema = WorkspaceQuerySchema.extend({
@@ -24,7 +25,9 @@ export const WorkspaceSnapshotSchema = z.object({
     start: WorkgroveCommandSchema.nullable(),
     startMode: z.enum(["aggregate", "none", "per-app"]),
   }),
+  config: WorkgroveConfigSchema,
   configPath: z.string(),
+  configRevision: z.string().min(1),
   globalProcesses: z.array(
     z.object({
       argv: z.array(z.string()),
@@ -46,7 +49,7 @@ export const WorkspaceSnapshotSchema = z.object({
   slotOptions: z.array(
     z.object({
       apps: z.array(z.object({ label: z.string(), port: z.number().int() })),
-      occupiedBy: z.string().nullable(),
+      collisionOwners: z.array(z.object({ id: z.string(), name: z.string() })),
       slot: z.number().int().nonnegative(),
     })
   ),
