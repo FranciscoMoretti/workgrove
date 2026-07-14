@@ -42,15 +42,15 @@ app's environment itself.
         "probe": "tcp",
         "required": true
       },
-      "exports": { "PORT": "{port}" }
+      "exports": { "PORT": "{port}" },
+      "start": {
+        "argv": ["bun", "dev"],
+        "env": { "PORT": "{port}" }
+      }
     }
   },
   "control": {
-    "setup": { "argv": ["bun", "install"] },
-    "start": {
-      "argv": ["bun", "dev"],
-      "env": { "PORT": "{port}" }
-    }
+    "setup": { "argv": ["bun", "install"] }
   }
 }
 ```
