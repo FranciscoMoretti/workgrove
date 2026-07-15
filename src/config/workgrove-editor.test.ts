@@ -9,7 +9,6 @@ import type { WorkgroveConfig } from "./workgrove-schema";
 
 const config: WorkgroveConfig = {
   version: 1,
-  start: { argv: ["dev", "--port", "{apps.api.port}"] },
   apps: {
     api: { basePort: 8000 },
     web: { basePort: 3000 },
@@ -23,15 +22,10 @@ describe("configuration builder domain operations", () => {
     );
   });
 
-  it("renames an app and its command templates without changing its base port", () => {
+  it("renames an app without changing its base port", () => {
     const renamed = renameWorkgroveApp(config, "api", "backend");
     expect(renamed.apps.api).toBeUndefined();
     expect(renamed.apps.backend).toEqual({ basePort: 8000 });
-    expect(renamed.start?.argv).toEqual([
-      "dev",
-      "--port",
-      "{apps.backend.port}",
-    ]);
   });
 
   it("resolves endpoint previews from product port conventions", () => {

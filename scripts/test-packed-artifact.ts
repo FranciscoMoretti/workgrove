@@ -116,7 +116,7 @@ try {
     "bun",
     [
       "-e",
-      'import { resolveWorkgroveRuntime } from "workgrove/config"; const runtime = resolveWorkgroveRuntime({ version: 1, apps: { web: { basePort: 4000 } } }, {}); if (runtime.apps.web.port !== 4000) process.exit(1);',
+      'import { resolveWorkgroveAppGroup } from "workgrove/config"; const appGroup = resolveWorkgroveAppGroup({ version: 1, apps: { web: { basePort: 4000 } } }, {}); if (appGroup.apps.web.port !== 4000) process.exit(1);',
     ],
     { cwd: installDirectory }
   );

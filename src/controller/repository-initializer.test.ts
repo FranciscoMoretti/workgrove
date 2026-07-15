@@ -50,19 +50,15 @@ describe("repository initialization", () => {
     }
   });
 
-  it("creates a runnable starter for a detected Django repository", () => {
+  it("does not guess a port-bound Django start command", () => {
     const root = mkdtempSync(join(tmpdir(), "workgrove-django-"));
     try {
       spawnSync("git", ["init", "-q"], { cwd: root });
       writeFileSync(join(root, "manage.py"), "");
       const preview = planRepositoryInitialization(root);
       expect(preview.detectedSetupCommand).toBeNull();
-      expect(preview.config.start?.argv).toEqual([
-        "python",
-        "manage.py",
-        "runserver",
-        "127.0.0.1:{port}",
-      ]);
+      expect(preview.detectedStartCommand).toBeNull();
+      expect(preview.config.start).toBeUndefined();
     } finally {
       rmSync(root, { force: true, recursive: true });
     }

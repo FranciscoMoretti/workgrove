@@ -2,9 +2,7 @@
   "$schema": "../schema/workgrove.schema.json",
   "version": 1,
   "setup": { "argv": ["uv", "sync"] },
-  "start": {
-    "argv": ["uv", "run", "fastapi", "dev", "--port", "{port}"]
-  },
+  "start": { "argv": ["uv", "run", "python", "-m", "app"] },
   "apps": {
     "api": { "basePort": 8000 }
   }

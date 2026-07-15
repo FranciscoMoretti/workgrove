@@ -1,10 +1,6 @@
 import { z } from "zod";
 
 import { WorkgroveCommandSchema } from "./workgrove-command";
-import {
-  workgroveTemplateTokenAppReference,
-  workgroveTemplateTokens,
-} from "./workgrove-template";
 
 export const MIN_WORKGROVE_PORT = 1024;
 export const MAX_WORKGROVE_PORT = 65_535;
@@ -75,29 +71,6 @@ function validateWorkgroveConfig(
       environmentNames.set(environmentName, id);
     }
   }
-  for (const [name, command] of [
-    ["setup", config.setup],
-    ["start", config.start],
-  ] as const) {
-    command?.argv.forEach((value, index) => {
-      for (const token of workgroveTemplateTokens(value)) {
-        const appId = workgroveTemplateTokenAppReference(token);
-        const validGlobal = token === "slot";
-        const validSingleApp =
-          apps.length === 1 && (token === "port" || token === "url");
-        if (!(validGlobal || validSingleApp || (appId && config.apps[appId]))) {
-          context.addIssue({
-            code: "custom",
-            message:
-              apps.length > 1 && (token === "port" || token === "url")
-                ? `Use an explicit app template such as {apps.${apps[0][0]}.${token}}`
-                : `Unknown Workgrove template variable "${token}"`,
-            path: [name, "argv", index],
-          });
-        }
-      }
-    });
-  }
 }
 
 export type WorkgroveConfig = z.infer<typeof WorkgroveConfigSchema>;
@@ -139,8 +112,6 @@ export function workgroveSlotsHavePortCollision(
   );
 }
 
-export function canonicalizeWorkgroveConfig(
-  config: WorkgroveConfig
-): WorkgroveConfig {
+export function cloneWorkgroveConfig(config: WorkgroveConfig): WorkgroveConfig {
   return structuredClone(config);
 }

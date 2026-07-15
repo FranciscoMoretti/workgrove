@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
-  resolveWorkgroveRuntime,
+  resolveWorkgroveAppGroup,
   type WorkgroveConfig,
 } from "workgrove/config";
 
@@ -11,7 +11,7 @@ describe("public config contract", () => {
       apps: { web: { basePort: 3000 } },
     };
     expect(
-      resolveWorkgroveRuntime(config, { WORKGROVE_SLOT: "3" }).apps.web.port
+      resolveWorkgroveAppGroup(config, { WORKGROVE_SLOT: "3" }).apps.web.port
     ).toBe(3030);
   });
 });

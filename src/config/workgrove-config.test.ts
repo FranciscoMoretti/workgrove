@@ -10,7 +10,7 @@ import {
   loadWorkgroveConfigDocument,
   resolveSetupCommand,
   resolveStartCommand,
-  resolveWorkgroveRuntime,
+  resolveWorkgroveAppGroup,
   updateWorkgroveConfig,
   type WorkgroveConfig,
 } from "./workgrove-config";
@@ -27,7 +27,7 @@ const config: WorkgroveConfig = {
 
 describe("generic Workgrove configuration", () => {
   it("resolves one app-group start command with every app port", () => {
-    expect(resolveWorkgroveRuntime(config, { WORKGROVE_SLOT: "3" })).toEqual({
+    expect(resolveWorkgroveAppGroup(config, { WORKGROVE_SLOT: "3" })).toEqual({
       apps: {
         api: { port: 8030, url: "http://localhost:8030" },
         web: { port: 3030, url: "http://localhost:3030" },
@@ -96,7 +96,7 @@ describe("generic Workgrove configuration", () => {
 
   it("rejects malformed worktree slots", () => {
     expect(() =>
-      resolveWorkgroveRuntime(config, { WORKGROVE_SLOT: "invalid" })
+      resolveWorkgroveAppGroup(config, { WORKGROVE_SLOT: "invalid" })
     ).toThrow('Invalid WORKGROVE_SLOT "invalid"');
   });
 });

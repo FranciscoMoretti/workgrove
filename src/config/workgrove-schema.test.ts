@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { workgroveJsonSchema } from "./workgrove-json-schema";
 import {
-  canonicalizeWorkgroveConfig,
+  cloneWorkgroveConfig,
   maximumWorkgroveSlot,
   type WorkgroveConfig,
   WorkgroveConfigSchema,
@@ -79,10 +79,10 @@ describe("shared Workgrove schema", () => {
     );
   });
 
-  it("canonicalizes through an independent configuration value", () => {
+  it("clones to an independent configuration value", () => {
     const parsed = WorkgroveConfigSchema.parse(validConfig);
-    const canonical = canonicalizeWorkgroveConfig(parsed);
-    expect(canonical).toEqual(parsed);
-    expect(canonical).not.toBe(parsed);
+    const clone = cloneWorkgroveConfig(parsed);
+    expect(clone).toEqual(parsed);
+    expect(clone).not.toBe(parsed);
   });
 });

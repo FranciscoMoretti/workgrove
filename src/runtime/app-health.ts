@@ -1,5 +1,5 @@
 import {
-  resolveWorktreeRuntime,
+  resolveWorkgroveAppGroup,
   type WorktreeEnvConfig,
 } from "../config/workgrove-config";
 import { WORKGROVE_SLOT_ENV } from "../config/workgrove-schema";
@@ -26,10 +26,10 @@ export function resolveControlledApps(
   config: WorktreeEnvConfig,
   slot: number
 ): ControlledApp[] {
-  const runtime = resolveWorktreeRuntime(config, {
+  const appGroup = resolveWorkgroveAppGroup(config, {
     [WORKGROVE_SLOT_ENV]: String(slot),
   });
-  return Object.entries(runtime.apps).map(([id, app]) => ({
+  return Object.entries(appGroup.apps).map(([id, app]) => ({
     id,
     label: displayName(id),
     open: true,

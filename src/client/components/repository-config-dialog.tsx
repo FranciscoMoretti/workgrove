@@ -14,7 +14,7 @@ import {
   resolveWorkgroveAppEndpoints,
 } from "../../config/workgrove-editor";
 import {
-  canonicalizeWorkgroveConfig,
+  cloneWorkgroveConfig,
   WorkgroveAppIdSchema,
   type WorkgroveConfig,
   WorkgroveConfigSchema,
@@ -226,7 +226,7 @@ export function RepositoryConfigDialog({
   open: boolean;
   pending: boolean;
 }) {
-  const [sourceConfig] = useState(() => canonicalizeWorkgroveConfig(config));
+  const [sourceConfig] = useState(() => cloneWorkgroveConfig(config));
   const [draft, setDraft] = useState<WorkgroveConfig>(
     () => loadConfigDraft(configPath, sourceConfig) ?? sourceConfig
   );

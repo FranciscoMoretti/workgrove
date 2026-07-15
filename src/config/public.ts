@@ -8,12 +8,12 @@ export {
   loadWorkgroveConfig,
   loadWorkgroveConfigDocument,
   type ResolvedWorkgroveApp,
-  type ResolvedWorkgroveRuntime,
-  resolveWorkgroveRuntime,
+  type ResolvedWorkgroveAppGroup,
+  resolveWorkgroveAppGroup,
   type WorkgroveConfigDocument,
 } from "./workgrove-config";
 export {
-  canonicalizeWorkgroveConfig,
+  cloneWorkgroveConfig,
   maximumWorkgroveSlot,
   resolveWorkgroveAppPort,
   WORKGROVE_DEFAULT_SLOT,

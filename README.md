@@ -54,11 +54,6 @@ Environment names are derived from app identifiers. For example, `api-v1`
 becomes `WORKGROVE_API_V1_PORT`. App identifiers must not normalize to the same
 environment name, and base ports must be unique.
 
-Command arguments may use `{slot}` and explicit app templates such as
-`{apps.api.port}` or `{apps.api.url}`. A single-app repository can also use the
-short `{port}` and `{url}` forms. This supports tools that require their port as
-a command-line argument; environment variables are the default integration.
-
 Workgrove asks you to review and trust the setup and start commands whenever
 their command fingerprint changes. When a repository has no configuration, the
 initialization dialog can detect conservative setup and start commands for
@@ -72,7 +67,7 @@ Bun-based scripts can share Workgrove's checked-in configuration contract:
 import {
   findWorkgroveConfig,
   loadWorkgroveConfig,
-  resolveWorkgroveRuntime,
+  resolveWorkgroveAppGroup,
   type WorkgroveConfig,
 } from "workgrove/config";
 ```

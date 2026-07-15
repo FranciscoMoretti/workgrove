@@ -210,6 +210,7 @@ export function startManagedProcess(input: {
     }
     if (processes.get(input.worktreeId)?.record.pid === child.pid) {
       processes.delete(input.worktreeId);
+      rmSync(pidPath(input.worktreeId), { force: true });
     }
   });
   child.unref();
@@ -283,8 +284,6 @@ export function stopManagedProcess(
   } catch {
     process.kill(pid, "SIGTERM");
   }
-  writeFileSync(pidPath(worktreeId), "");
-  processes.delete(worktreeId);
   return pid;
 }
 

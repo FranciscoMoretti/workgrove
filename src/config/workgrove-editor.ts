@@ -5,21 +5,6 @@ import {
   type WorkgroveApp,
   type WorkgroveConfig,
 } from "./workgrove-schema";
-import { renameWorkgroveTemplateAppReference } from "./workgrove-template";
-
-function renameCommandAppReference(
-  command: WorkgroveConfig["start"],
-  previousId: string,
-  nextId: string
-): WorkgroveConfig["start"] {
-  return command
-    ? {
-        argv: command.argv.map((value) =>
-          renameWorkgroveTemplateAppReference(value, previousId, nextId)
-        ),
-      }
-    : undefined;
-}
 
 export function nextAvailableWorkgroveAppBasePort(
   apps: Record<string, WorkgroveApp>
@@ -45,8 +30,6 @@ export function renameWorkgroveApp(
 ): WorkgroveConfig {
   return {
     ...config,
-    setup: renameCommandAppReference(config.setup, previousId, nextId),
-    start: renameCommandAppReference(config.start, previousId, nextId),
     apps: Object.fromEntries(
       Object.entries(config.apps).map(([id, app]) => [
         id === previousId ? nextId : id,

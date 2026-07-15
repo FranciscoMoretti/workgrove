@@ -10,7 +10,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { trustRepository } from "../config/repository-trust";
 import type { WorkgroveCommand } from "../config/workgrove-command";
 import {
-  resolveWorktreeRuntime,
+  resolveWorkgroveAppGroup,
   type WorktreeEnvConfig,
 } from "../config/workgrove-config";
 import { WORKGROVE_SLOT_FILE } from "../config/workgrove-schema";
@@ -91,12 +91,7 @@ function projectDefaults(root: string): ProjectDefaults {
     };
   }
   if (existsSync(join(root, "manage.py"))) {
-    return {
-      label: "Python · Django",
-      start: {
-        argv: ["python", "manage.py", "runserver", "127.0.0.1:{port}"],
-      },
-    };
+    return { label: "Python · Django" };
   }
   if (existsSync(join(root, "pyproject.toml"))) {
     const content = readFileSync(join(root, "pyproject.toml"), "utf8");
@@ -105,15 +100,6 @@ function projectDefaults(root: string): ProjectDefaults {
       return {
         label: "Python · FastAPI",
         ...(usesUv ? { setup: { argv: ["uv", "sync"] } } : {}),
-        start: {
-          argv: [
-            ...(usesUv ? ["uv", "run"] : []),
-            "fastapi",
-            "dev",
-            "--port",
-            "{port}",
-          ],
-        },
       };
     }
     return { label: "Python" };
@@ -165,7 +151,7 @@ export function planRepositoryInitialization(
       },
     },
   };
-  resolveWorktreeRuntime(config, {});
+  resolveWorkgroveAppGroup(config, {});
   return {
     config,
     configPath,
