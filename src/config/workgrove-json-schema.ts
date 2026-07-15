@@ -11,6 +11,6 @@ export function workgroveJsonSchema(): Record<string, unknown> {
     $id: SCHEMA_ID,
     title: "Workgrove configuration",
     description:
-      "Configure one repository setup command, one app-group start command, and the base port of each observable app.",
+      "Configure repository commands, worktree port allocation, observable apps, and their exposed environment.",
   };
 }

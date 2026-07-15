@@ -8,6 +8,7 @@ describe("public config contract", () => {
   it("resolves repository app ports through the package subpath", () => {
     const config: WorkgroveConfig = {
       version: 1,
+      stride: 10,
       apps: { web: { basePort: 3000 } },
     };
     expect(

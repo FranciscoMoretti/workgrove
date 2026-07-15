@@ -4,7 +4,7 @@ import {
 } from "../config/workgrove-schema";
 
 export function conflictingWorkgroveSlotIndexes(
-  config: Pick<WorkgroveConfig, "apps">,
+  config: Pick<WorkgroveConfig, "apps" | "stride">,
   slots: Array<number | null>
 ): Set<number> {
   const conflicting = new Set<number>();
@@ -32,7 +32,7 @@ export function conflictingWorkgroveSlotIndexes(
 }
 
 export function workgroveSlotCollisionOwners<Owner extends { slot: number }>(
-  config: Pick<WorkgroveConfig, "apps">,
+  config: Pick<WorkgroveConfig, "apps" | "stride">,
   candidateSlot: number,
   assigned: Owner[]
 ): Owner[] {

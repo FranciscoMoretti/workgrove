@@ -33,6 +33,7 @@ describe("repository initialization", () => {
         "apps",
         "setup",
         "start",
+        "stride",
         "version",
       ]);
       expect(() => readFileSync(preview.configPath)).toThrow();

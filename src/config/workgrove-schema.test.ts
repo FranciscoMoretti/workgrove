@@ -13,11 +13,16 @@ import {
 
 const validConfig = {
   version: 1,
+  stride: 25,
   setup: { argv: ["bun", "install"] },
   start: { argv: ["bun", "run", "dev"] },
   apps: {
     api: { basePort: 8000 },
     web: { basePort: 3000 },
+  },
+  env: {
+    API_PORT: "{apps.api.port}",
+    WEB_URL: "{apps.web.url}",
   },
 } satisfies WorkgroveConfig;
 
@@ -32,7 +37,7 @@ describe("shared Workgrove schema", () => {
     ).toBe(false);
   });
 
-  it("rejects duplicate ports and colliding automatic environment names", () => {
+  it("rejects duplicate ports", () => {
     const result = WorkgroveConfigSchema.safeParse({
       ...validConfig,
       apps: {
@@ -47,23 +52,54 @@ describe("shared Workgrove schema", () => {
         "api_v1",
         "basePort",
       ]);
+    }
+  });
+
+  it("rejects invalid and reserved environment names", () => {
+    const result = WorkgroveConfigSchema.safeParse({
+      ...validConfig,
+      env: {
+        "NOT-AN-ENV": "literal",
+        WORKGROVE_SLOT: "literal",
+      },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
       expect(result.error.issues.map((issue) => issue.path)).toContainEqual([
-        "apps",
-        "api_v1",
+        "env",
+        "NOT-AN-ENV",
+      ]);
+      expect(result.error.issues.map((issue) => issue.path)).toContainEqual([
+        "env",
+        "WORKGROVE_SLOT",
+      ]);
+    }
+  });
+
+  it("rejects environment templates that reference an unknown app", () => {
+    const result = WorkgroveConfigSchema.safeParse({
+      ...validConfig,
+      env: { UNKNOWN_PORT: "{apps.missing.port}" },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.map((issue) => issue.path)).toContainEqual([
+        "env",
+        "UNKNOWN_PORT",
       ]);
     }
   });
 
   it("limits slots using the highest app base port", () => {
     expect(maximumWorkgroveSlot(WorkgroveConfigSchema.parse(validConfig))).toBe(
-      5753
+      2301
     );
   });
 
   it("detects collisions from exact computed app ports", () => {
     const config = WorkgroveConfigSchema.parse(validConfig);
     expect(workgroveSlotsHavePortCollision(config, 0, 1)).toBe(false);
-    expect(workgroveSlotsHavePortCollision(config, 0, 500)).toBe(true);
+    expect(workgroveSlotsHavePortCollision(config, 0, 200)).toBe(true);
   });
 
   it("keeps the published JSON Schema generated from the Zod schema", () => {

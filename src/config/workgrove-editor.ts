@@ -5,6 +5,7 @@ import {
   type WorkgroveApp,
   type WorkgroveConfig,
 } from "./workgrove-schema";
+import { renameWorkgroveAppTemplateReferences } from "./workgrove-template";
 
 export function nextAvailableWorkgroveAppBasePort(
   apps: Record<string, WorkgroveApp>
@@ -36,6 +37,61 @@ export function renameWorkgroveApp(
         app,
       ])
     ),
+    env: config.env
+      ? Object.fromEntries(
+          Object.entries(config.env).map(([name, template]) => [
+            name,
+            renameWorkgroveAppTemplateReferences(template, previousId, nextId),
+          ])
+        )
+      : undefined,
+  };
+}
+
+export function addWorkgroveEnvironment(
+  config: WorkgroveConfig
+): WorkgroveConfig {
+  let name = "APP_PORT";
+  let suffix = 2;
+  while (Object.hasOwn(config.env ?? {}, name)) {
+    name = `APP_PORT_${suffix}`;
+    suffix += 1;
+  }
+  const firstApp = Object.keys(config.apps)[0];
+  return {
+    ...config,
+    env: {
+      ...config.env,
+      [name]: firstApp ? `{apps.${firstApp}.port}` : "",
+    },
+  };
+}
+
+export function renameWorkgroveEnvironment(
+  config: WorkgroveConfig,
+  previousName: string,
+  nextName: string
+): WorkgroveConfig {
+  return {
+    ...config,
+    env: Object.fromEntries(
+      Object.entries(config.env ?? {}).map(([name, template]) => [
+        name === previousName ? nextName : name,
+        template,
+      ])
+    ),
+  };
+}
+
+export function deleteWorkgroveEnvironment(
+  config: WorkgroveConfig,
+  name: string
+): WorkgroveConfig {
+  return {
+    ...config,
+    env: Object.fromEntries(
+      Object.entries(config.env ?? {}).filter(([key]) => key !== name)
+    ),
   };
 }
 
@@ -45,7 +101,7 @@ export function resolveWorkgroveAppEndpoints(
 ): Record<string, { port: number; url: string }> {
   return Object.fromEntries(
     Object.entries(config.apps).map(([id, app]) => {
-      const port = resolveWorkgroveAppPort(app, slot);
+      const port = resolveWorkgroveAppPort(app, slot, config.stride);
       return [id, { port, url: `http://localhost:${port}` }];
     })
   );

@@ -8,6 +8,7 @@ import {
 
 const config: WorkgroveConfig = {
   version: 1,
+  stride: 10,
   apps: {
     api: { basePort: 8000 },
     web: { basePort: 3000 },

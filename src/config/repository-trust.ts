@@ -45,6 +45,11 @@ function fingerprintCommand(command: WorkgroveCommand | null) {
 
 export function repositoryCommandFingerprint(config: WorkgroveConfig): string {
   const commands = {
+    environment: {
+      apps: config.apps,
+      env: config.env ?? {},
+      stride: config.stride,
+    },
     setup: fingerprintCommand(configuredSetupCommand(config)),
     start: fingerprintCommand(config.start ?? null),
   };

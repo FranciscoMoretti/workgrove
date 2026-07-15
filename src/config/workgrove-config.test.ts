@@ -17,11 +17,17 @@ import {
 
 const config: WorkgroveConfig = {
   version: 1,
+  stride: 20,
   setup: { argv: ["bun", "install"] },
   start: { argv: ["bun", "run", "dev"] },
   apps: {
     api: { basePort: 8000 },
     web: { basePort: 3000 },
+  },
+  env: {
+    API_PORT: "{apps.api.port}",
+    WEB_ORIGIN: "{apps.web.url}",
+    WORKTREE_NUMBER: "{slot}",
   },
 };
 
@@ -29,17 +35,18 @@ describe("generic Workgrove configuration", () => {
   it("resolves one app-group start command with every app port", () => {
     expect(resolveWorkgroveAppGroup(config, { WORKGROVE_SLOT: "3" })).toEqual({
       apps: {
-        api: { port: 8030, url: "http://localhost:8030" },
-        web: { port: 3030, url: "http://localhost:3030" },
+        api: { port: 8060, url: "http://localhost:8060" },
+        web: { port: 3060, url: "http://localhost:3060" },
       },
       slot: 3,
     });
     expect(resolveStartCommand(config, 3)).toEqual({
       argv: ["bun", "run", "dev"],
       env: {
-        WORKGROVE_API_PORT: "8030",
+        API_PORT: "8060",
         WORKGROVE_SLOT: "3",
-        WORKGROVE_WEB_PORT: "3030",
+        WEB_ORIGIN: "http://localhost:3060",
+        WORKTREE_NUMBER: "3",
       },
     });
   });
@@ -48,9 +55,10 @@ describe("generic Workgrove configuration", () => {
     expect(resolveSetupCommand(config, 2)).toEqual({
       argv: ["bun", "install"],
       env: {
-        WORKGROVE_API_PORT: "8020",
+        API_PORT: "8040",
         WORKGROVE_SLOT: "2",
-        WORKGROVE_WEB_PORT: "3020",
+        WEB_ORIGIN: "http://localhost:3040",
+        WORKTREE_NUMBER: "2",
       },
     });
   });
@@ -71,6 +79,12 @@ describe("generic Workgrove configuration", () => {
         start: { argv: ["bun", "run", "dev:all"] },
       })
     ).not.toBe(repositoryCommandFingerprint(config));
+    expect(
+      repositoryCommandFingerprint({
+        ...config,
+        env: { ...config.env, NODE_OPTIONS: "--inspect" },
+      })
+    ).not.toBe(repositoryCommandFingerprint(config));
   });
 
   it("rejects stale visual-editor saves without overwriting newer changes", () => {
@@ -81,7 +95,10 @@ describe("generic Workgrove configuration", () => {
       const firstRead = loadWorkgroveConfigDocument(path);
       writeFileSync(
         path,
-        `${JSON.stringify({ ...config, apps: { web: { basePort: 4000 } } })}\n`
+        `${JSON.stringify({
+          ...config,
+          apps: { ...config.apps, web: { basePort: 4000 } },
+        })}\n`
       );
       expect(() =>
         updateWorkgroveConfig(path, config, firstRead.revision)

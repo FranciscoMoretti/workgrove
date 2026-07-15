@@ -23,11 +23,17 @@ import { appsCanRestart } from "./workspace-snapshot";
 
 const config = {
   version: 1,
+  stride: 10,
   start: { argv: ["bun", "run", "dev:all"] },
   apps: {
     chat: { basePort: 3000 },
     electron: { basePort: 3001 },
     site: { basePort: 3002 },
+  },
+  env: {
+    CHAT_PORT: "{apps.chat.port}",
+    ELECTRON_PORT: "{apps.electron.port}",
+    SITE_PORT: "{apps.site.port}",
   },
 } satisfies WorktreeEnvConfig;
 
@@ -64,19 +70,20 @@ describe("controlled app configuration", () => {
     ]);
   });
 
-  it("injects automatic app port environment variables", () => {
+  it("injects explicitly configured repository environment variables", () => {
     const singleAppConfig = {
       ...config,
       apps: { app: config.apps.chat },
+      env: { APP_PORT: "{apps.app.port}" },
     } satisfies WorktreeEnvConfig;
     expect(commandEnvironment(singleAppConfig, 4)).toEqual({
-      WORKGROVE_APP_PORT: "3040",
+      APP_PORT: "3040",
       WORKGROVE_SLOT: "4",
     });
     expect(commandEnvironment(config, 4)).toEqual({
-      WORKGROVE_CHAT_PORT: "3040",
-      WORKGROVE_ELECTRON_PORT: "3041",
-      WORKGROVE_SITE_PORT: "3042",
+      CHAT_PORT: "3040",
+      ELECTRON_PORT: "3041",
+      SITE_PORT: "3042",
       WORKGROVE_SLOT: "4",
     });
   });

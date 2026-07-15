@@ -1,6 +1,5 @@
 import {
   CircleAlertIcon,
-  InfoIcon,
   PlusIcon,
   TerminalSquareIcon,
   Trash2Icon,
@@ -9,8 +8,11 @@ import { useEffect, useRef, useState } from "react";
 
 import type { WorkgroveCommand } from "../../config/workgrove-command";
 import {
+  addWorkgroveEnvironment,
+  deleteWorkgroveEnvironment,
   nextAvailableWorkgroveAppBasePort,
   renameWorkgroveApp,
+  renameWorkgroveEnvironment,
   resolveWorkgroveAppEndpoints,
 } from "../../config/workgrove-editor";
 import {
@@ -18,7 +20,7 @@ import {
   WorkgroveAppIdSchema,
   type WorkgroveConfig,
   WorkgroveConfigSchema,
-  workgroveAppPortEnvironmentName,
+  WorkgroveEnvironmentNameSchema,
 } from "../../config/workgrove-schema";
 import { formatCommandLine, parseCommandLine } from "../command-line";
 import {
@@ -29,13 +31,6 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { Button } from "./ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "./ui/card";
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -43,16 +38,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "./ui/dialog";
-import {
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-} from "./ui/field";
+import { Field, FieldError, FieldLabel } from "./ui/field";
 import { Input } from "./ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "./ui/input-group";
+import { Separator } from "./ui/separator";
 import { Switch } from "./ui/switch";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "./ui/table";
 
 function editableCommandLine(argv: string[]): string {
   return argv.length === 1 && argv[0] === "" ? "" : formatCommandLine(argv);
@@ -145,10 +143,10 @@ function CommandEditor({
 }) {
   const command = value ?? { argv: [""] };
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{label}</CardTitle>
-        <CardDescription>{description}</CardDescription>
+    <section className="space-y-4">
+      <div className="space-y-1">
+        <h3 className="font-medium text-sm">{label}</h3>
+        <p className="text-muted-foreground text-sm">{description}</p>
         <Field orientation="horizontal">
           <Switch
             aria-label={`Configure ${label.toLowerCase()}`}
@@ -160,19 +158,17 @@ function CommandEditor({
           />
           <FieldLabel htmlFor={`${id}-enabled`}>Configured</FieldLabel>
         </Field>
-      </CardHeader>
+      </div>
       {value ? (
-        <CardContent>
-          <CommandLineField
-            command={value}
-            id={id}
-            label="Command"
-            onChange={(argv) => onChange({ argv })}
-            placeholder={placeholder}
-          />
-        </CardContent>
+        <CommandLineField
+          command={value}
+          id={id}
+          label="Command"
+          onChange={(argv) => onChange({ argv })}
+          placeholder={placeholder}
+        />
       ) : null}
-    </Card>
+    </section>
   );
 }
 
@@ -189,10 +185,10 @@ function AppIdInput({
   useEffect(() => setDraft(id), [id]);
 
   return (
-    <Field data-invalid={Boolean(error)}>
-      <FieldLabel htmlFor={`app-${id}-id`}>App identifier</FieldLabel>
+    <div className="space-y-1">
       <Input
         aria-invalid={Boolean(error)}
+        aria-label={`App identifier ${id}`}
         id={`app-${id}-id`}
         onBlur={() => setError(onRename(draft))}
         onChange={(event) => {
@@ -201,11 +197,52 @@ function AppIdInput({
         }}
         value={draft}
       />
-      <FieldDescription>
-        Used for the automatic port environment variable.
-      </FieldDescription>
-      <FieldError>{error}</FieldError>
-    </Field>
+      {error ? <p className="text-destructive text-xs">{error}</p> : null}
+    </div>
+  );
+}
+
+function EnvironmentNameInput({
+  name,
+  onRename,
+}: {
+  name: string;
+  onRename: (nextName: string) => string | null;
+}) {
+  const [draft, setDraft] = useState(name);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => setDraft(name), [name]);
+
+  return (
+    <div className="space-y-1">
+      <Input
+        aria-invalid={Boolean(error)}
+        aria-label={`Environment variable ${name}`}
+        onBlur={() => setError(onRename(draft))}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          setError(null);
+        }}
+        value={draft}
+      />
+      {error ? <p className="text-destructive text-xs">{error}</p> : null}
+    </div>
+  );
+}
+
+function SectionHeading({
+  description,
+  title,
+}: {
+  description: string;
+  title: string;
+}) {
+  return (
+    <div className="space-y-1">
+      <h2 className="font-medium text-base">{title}</h2>
+      <p className="text-muted-foreground text-sm">{description}</p>
+    </div>
   );
 }
 
@@ -294,6 +331,28 @@ export function RepositoryConfigDialog({
     }));
   }
 
+  function renameEnvironment(name: string, nextName: string): string | null {
+    if (nextName === name) {
+      return null;
+    }
+    if (!WorkgroveEnvironmentNameSchema.safeParse(nextName).success) {
+      return "Use a valid environment variable name";
+    }
+    if (Object.hasOwn(draft.env ?? {}, nextName)) {
+      return `${nextName} already exists`;
+    }
+    setDraft((current) => renameWorkgroveEnvironment(current, name, nextName));
+    return null;
+  }
+
+  function addEnvironment(): void {
+    setDraft(addWorkgroveEnvironment);
+  }
+
+  function deleteEnvironment(name: string): void {
+    setDraft((current) => deleteWorkgroveEnvironment(current, name));
+  }
+
   function deleteApp(id: string): void {
     setDraft((current) => ({
       ...current,
@@ -338,61 +397,100 @@ export function RepositoryConfigDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="flex flex-col gap-6 p-6">
-            <Alert>
-              <InfoIcon />
-              <AlertTitle>One implicit app group</AlertTitle>
-              <AlertDescription>
-                Start launches every app as one managed process tree. Each app
-                receives an automatic WORKGROVE_*_PORT environment variable.
-              </AlertDescription>
-            </Alert>
+          <div className="flex flex-col gap-7 p-6">
+            <p className="max-w-3xl text-muted-foreground text-sm">
+              Workgrove allocates endpoints and starts one repository command.
+              Your repository owns how that command orchestrates its apps.
+            </p>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <CommandEditor
-                description="A finite command that prepares each worktree."
-                id="repository-setup"
-                label="Setup"
-                onChange={(setup) =>
-                  setDraft((current) => ({ ...current, setup }))
-                }
-                placeholder="bun install"
-                value={draft.setup}
+            <section className="space-y-5">
+              <SectionHeading
+                description="Commands run from the repository root and share the environment configured below."
+                title="Commands"
               />
-              <CommandEditor
-                description="A foreground command that starts all apps together."
-                id="repository-start"
-                label="Start"
-                onChange={(start) =>
-                  setDraft((current) => ({ ...current, start }))
-                }
-                placeholder="bun run dev"
-                value={draft.start}
-              />
-            </div>
+              <div className="grid gap-6 md:grid-cols-2">
+                <CommandEditor
+                  description="A finite command that prepares each worktree."
+                  id="repository-setup"
+                  label="Setup"
+                  onChange={(setup) =>
+                    setDraft((current) => ({ ...current, setup }))
+                  }
+                  placeholder="bun install"
+                  value={draft.setup}
+                />
+                <CommandEditor
+                  description="A foreground command that starts all apps together."
+                  id="repository-start"
+                  label="Start"
+                  onChange={(start) =>
+                    setDraft((current) => ({ ...current, start }))
+                  }
+                  placeholder="bun run dev"
+                  value={draft.start}
+                />
+              </div>
+            </section>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Apps</CardTitle>
-                <CardDescription>
-                  Apps are observable endpoints in the group. Workgrove derives
-                  worktree ports and localhost URLs from each base port.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <FieldGroup>
-                  {Object.entries(draft.apps).map(([id, app]) => (
-                    <Card key={id}>
-                      <CardContent className="grid gap-4 pt-6 md:grid-cols-[1fr_12rem_auto] md:items-start">
-                        <AppIdInput
-                          id={id}
-                          onRename={(nextId) => renameApp(id, nextId)}
-                        />
-                        <Field>
-                          <FieldLabel htmlFor={`app-${id}-port`}>
-                            Base port
-                          </FieldLabel>
+            <Separator />
+
+            <section className="grid gap-5 md:grid-cols-[1fr_14rem]">
+              <SectionHeading
+                description="The stride is the port offset between worktree slots. Slot 2 with stride 10 adds 20 to every base port."
+                title="Port allocation"
+              />
+              <Field>
+                <FieldLabel htmlFor="repository-stride">Stride</FieldLabel>
+                <Input
+                  id="repository-stride"
+                  max={65_535}
+                  min={1}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      stride:
+                        event.target.value === ""
+                          ? Number.NaN
+                          : Number(event.target.value),
+                    }))
+                  }
+                  type="number"
+                  value={Number.isNaN(draft.stride) ? "" : draft.stride}
+                />
+              </Field>
+            </section>
+
+            <Separator />
+
+            <section className="space-y-5">
+              <SectionHeading
+                description="Each app is an observable local endpoint. Its port is base port + slot × stride."
+                title="Apps"
+              />
+              <div className="overflow-hidden rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Identifier</TableHead>
+                      <TableHead className="w-40">Base port</TableHead>
+                      <TableHead>Slot 0 endpoint</TableHead>
+                      <TableHead className="w-12">
+                        <span className="sr-only">Actions</span>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {Object.entries(draft.apps).map(([id, app]) => (
+                      <TableRow key={id}>
+                        <TableCell className="min-w-48 whitespace-normal align-top">
+                          <AppIdInput
+                            id={id}
+                            onRename={(nextId) => renameApp(id, nextId)}
+                          />
+                        </TableCell>
+                        <TableCell className="align-top">
                           <Input
+                            aria-label={`Base port for ${id}`}
                             id={`app-${id}-port`}
                             max={65_535}
                             min={1024}
@@ -415,36 +513,109 @@ export function RepositoryConfigDialog({
                               Number.isNaN(app.basePort) ? "" : app.basePort
                             }
                           />
-                          <FieldDescription>
-                            {workgroveAppPortEnvironmentName(id)}
-                            {endpoints[id] ? ` · ${endpoints[id].url}` : ""}
-                          </FieldDescription>
-                        </Field>
-                        <Button
-                          aria-label={`Delete ${id}`}
-                          disabled={Object.keys(draft.apps).length === 1}
-                          onClick={() => deleteApp(id)}
-                          size="icon"
-                          type="button"
-                          variant="ghost"
+                        </TableCell>
+                        <TableCell className="align-top text-muted-foreground">
+                          {endpoints[id]?.url ?? "Invalid port"}
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <Button
+                            aria-label={`Delete ${id}`}
+                            disabled={Object.keys(draft.apps).length === 1}
+                            onClick={() => deleteApp(id)}
+                            size="icon"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <Trash2Icon />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <Button onClick={addApp} type="button" variant="outline">
+                <PlusIcon data-icon="inline-start" />
+                Add app
+              </Button>
+            </section>
+
+            <Separator />
+
+            <section className="space-y-5">
+              <SectionHeading
+                description="Expose only the values your repository start script needs. Values may use {slot}, {apps.<id>.port}, or {apps.<id>.url}."
+                title="Environment"
+              />
+              <div className="overflow-hidden rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-64">Variable</TableHead>
+                      <TableHead>Value</TableHead>
+                      <TableHead className="w-12">
+                        <span className="sr-only">Actions</span>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {Object.entries(draft.env ?? {}).length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          className="py-6 text-center text-muted-foreground"
+                          colSpan={3}
                         >
-                          <Trash2Icon />
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  ))}
-                  <Button
-                    className="self-start"
-                    onClick={addApp}
-                    type="button"
-                    variant="outline"
-                  >
-                    <PlusIcon data-icon="inline-start" />
-                    Add app
-                  </Button>
-                </FieldGroup>
-              </CardContent>
-            </Card>
+                          No repository environment variables exposed.
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                    {Object.entries(draft.env ?? {}).map(([name, value]) => (
+                      <TableRow key={name}>
+                        <TableCell className="align-top">
+                          <EnvironmentNameInput
+                            name={name}
+                            onRename={(nextName) =>
+                              renameEnvironment(name, nextName)
+                            }
+                          />
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <Input
+                            aria-label={`Value for ${name}`}
+                            onChange={(event) =>
+                              setDraft((current) => ({
+                                ...current,
+                                env: {
+                                  ...current.env,
+                                  [name]: event.target.value,
+                                },
+                              }))
+                            }
+                            placeholder={`{apps.${Object.keys(draft.apps)[0] ?? "app"}.port}`}
+                            value={value}
+                          />
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <Button
+                            aria-label={`Delete ${name}`}
+                            onClick={() => deleteEnvironment(name)}
+                            size="icon"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <Trash2Icon />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <Button onClick={addEnvironment} type="button" variant="outline">
+                <PlusIcon data-icon="inline-start" />
+                Add variable
+              </Button>
+            </section>
 
             {issues.length > 0 ? (
               <Alert variant="destructive">

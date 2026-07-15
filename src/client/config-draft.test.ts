@@ -10,6 +10,7 @@ import {
 
 function createConfig(): WorkgroveConfig {
   return {
+    stride: 10,
     apps: {
       web: {
         basePort: 3000,

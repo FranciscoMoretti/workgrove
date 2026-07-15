@@ -17,6 +17,12 @@ _Avoid_: Runtime
 **App**:
 An observable endpoint in an app group, identified by a base port from which Workgrove derives its worktree-specific port.
 
+**Stride**:
+The repository-wide port offset between consecutive worktree slots.
+
+**Repository environment**:
+The explicit environment variables Workgrove derives from slots and app endpoints and supplies to Setup and Start. A repository-owned Start script may translate these values for its child processes.
+
 **Start**:
 The repository command that launches an app group for a worktree.
 

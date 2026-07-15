@@ -7,6 +7,7 @@ describe("workspace snapshot transport schema", () => {
     const snapshot = WorkspaceSnapshotSchema.parse({
       config: {
         version: 1,
+        stride: 10,
         apps: { web: { basePort: 3000 } },
       },
       configPath: "/repo/.workgrove.json",

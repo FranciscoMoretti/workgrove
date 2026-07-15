@@ -143,6 +143,7 @@ export function planRepositoryInitialization(
     $schema:
       "https://raw.githubusercontent.com/franciscomoretti/workgrove/main/schema/workgrove.schema.json",
     version: 1,
+    stride: 10,
     ...(defaults.setup ? { setup: defaults.setup } : {}),
     ...(defaults.start ? { start: defaults.start } : {}),
     apps: {

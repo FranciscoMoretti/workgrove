@@ -19,8 +19,8 @@ import {
   WORKGROVE_SLOT_ENV,
   type WorkgroveConfig,
   WorkgroveConfigSchema,
-  workgroveAppPortEnvironmentName,
 } from "./workgrove-schema";
+import { renderWorkgroveTemplate } from "./workgrove-template";
 
 // biome-ignore lint/performance/noBarrelFile: preserve the package's internal config-module exports.
 export {
@@ -32,7 +32,6 @@ export {
   type WorkgroveConfig,
   WorkgroveConfigSchema,
   type WorktreeEnvConfig,
-  workgroveAppPortEnvironmentName,
 } from "./workgrove-schema";
 
 const SLOT_PATTERN = /^\d+$/;
@@ -70,7 +69,7 @@ export function resolveWorkgroveAppGroup(
   const slot = Number(rawSlot);
   const apps = Object.fromEntries(
     Object.entries(config.apps).map(([id, app]) => {
-      const port = resolveWorkgroveAppPort(app, slot);
+      const port = resolveWorkgroveAppPort(app, slot, config.stride);
       if (port < MIN_WORKGROVE_PORT || port > MAX_WORKGROVE_PORT) {
         throw new Error(`App "${id}" computed invalid port ${port}`);
       }
@@ -90,9 +89,9 @@ export function workgroveCommandEnvironment(
   return {
     [WORKGROVE_SLOT_ENV]: String(slot),
     ...Object.fromEntries(
-      Object.entries(appGroup.apps).map(([id, app]) => [
-        workgroveAppPortEnvironmentName(id),
-        String(app.port),
+      Object.entries(config.env ?? {}).map(([name, template]) => [
+        name,
+        renderWorkgroveTemplate(template, appGroup),
       ])
     ),
   };

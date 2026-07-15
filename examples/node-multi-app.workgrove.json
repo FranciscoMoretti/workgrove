@@ -1,10 +1,15 @@
 {
   "$schema": "../schema/workgrove.schema.json",
   "version": 1,
+  "stride": 10,
   "setup": { "argv": ["bun", "install"] },
-  "start": { "argv": ["bun", "run", "dev"] },
+  "start": { "argv": ["bun", "run", "dev:workgrove"] },
   "apps": {
     "web": { "basePort": 3000 },
     "api": { "basePort": 8000 }
+  },
+  "env": {
+    "WEB_PORT": "{apps.web.port}",
+    "API_PORT": "{apps.api.port}"
   }
 }
