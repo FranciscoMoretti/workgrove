@@ -73,14 +73,10 @@ export function RepositoryInitializeDialog({
                   <dd>{preview.data.detectedSetupCommand ?? "Not detected"}</dd>
                 </div>
                 <div>
-                  <dt>Start command</dt>
+                  <dt>Dev command</dt>
                   <dd>{preview.data.detectedStartCommand ?? "Not detected"}</dd>
                 </div>
               </dl>
-              <p>
-                These are starting values. You can replace either command in
-                Repository configuration after creating the file.
-              </p>
               {preview.data.detectedStartCommand ? null : (
                 <p className="setup-warning">
                   No safe start command was detected. Add an app
