@@ -100,7 +100,11 @@ function Onboarding({
     picker.clearError();
     onDraftChange(path);
   }
-  const picker = useRepositoryPicker(changeDraft);
+  async function openSelected(path: string) {
+    changeDraft(path);
+    await opener.open(path);
+  }
+  const picker = useRepositoryPicker(openSelected);
   const setup = useRepositorySetup({
     error: opener.error,
     onCreated: () => opener.open(repoDraft.trim()),
@@ -188,7 +192,7 @@ function Onboarding({
                 className="w-full justify-start truncate"
                 disabled={opener.pending || picker.pending}
                 key={path}
-                onClick={() => changeDraft(path)}
+                onClick={() => openSelected(path)}
                 variant="ghost"
               >
                 <FolderGit2Icon data-icon="inline-start" />

@@ -38,7 +38,11 @@ export function RepositoryDialog({
     picker.clearError();
     setDraft(path);
   }
-  const picker = useRepositoryPicker(changeDraft);
+  async function openSelected(path: string) {
+    changeDraft(path);
+    await opener.open(path);
+  }
+  const picker = useRepositoryPicker(openSelected);
   const setup = useRepositorySetup({
     error: opener.error,
     onCreated: () => opener.open(draft.trim()),
@@ -97,7 +101,7 @@ export function RepositoryDialog({
                   variant="outline"
                 >
                   <FolderOpenIcon data-icon="inline-start" />
-                  Browse
+                  {picker.pending ? "Opening…" : "Browse"}
                 </Button>
               </div>
             </Field>
