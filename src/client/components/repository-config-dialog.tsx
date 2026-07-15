@@ -212,14 +212,12 @@ function CommandLineField({
   id,
   label,
   onChange,
-  placeholder,
 }: {
   command: WorkgroveCommand;
   error?: string;
   id: string;
   label: string;
   onChange: (argv: string[]) => void;
-  placeholder: string;
 }) {
   const externalValue = editableCommandLine(command.argv);
   const [draft, setDraft] = useState(() => externalValue);
@@ -272,7 +270,7 @@ function CommandLineField({
           id={`${id}-command-line`}
           onBlur={() => update(draft, true)}
           onChange={(event) => update(event.target.value, false)}
-          placeholder={placeholder}
+          placeholder="bun run dev"
           value={draft}
         />
       </InputGroup>
@@ -292,7 +290,6 @@ function CommandEditor({
   id,
   label,
   onChange,
-  placeholder,
   value,
 }: {
   description: string;
@@ -300,7 +297,6 @@ function CommandEditor({
   id: string;
   label: string;
   onChange: (value: WorkgroveCommand | undefined) => void;
-  placeholder: string;
   value: WorkgroveCommand | undefined;
 }) {
   const enabled = value !== undefined;
@@ -333,12 +329,9 @@ function CommandEditor({
               id={id}
               label={label}
               onChange={(argv) => onChange({ ...command, argv })}
-              placeholder={placeholder}
             />
             <Field>
-              <FieldLabel htmlFor={`${id}-cwd`}>
-                Working directory (optional)
-              </FieldLabel>
+              <FieldLabel htmlFor={`${id}-cwd`}>Working directory</FieldLabel>
               <Input
                 className="font-mono"
                 id={`${id}-cwd`}
@@ -352,9 +345,7 @@ function CommandEditor({
                 value={command.cwd ?? ""}
               />
               <FieldDescription>
-                Leave blank to run from the worktree root. Set a relative path
-                only when this command belongs to a subdirectory, such as an app
-                in a monorepo.
+                Optional path relative to each worktree root.
               </FieldDescription>
             </Field>
             <Field>
@@ -736,7 +727,6 @@ function AppEditor({
                   id={`app-${id}-start`}
                   label="Start command"
                   onChange={field.onChange}
-                  placeholder="bun run dev"
                   value={field.value}
                 />
               )}
@@ -1177,7 +1167,6 @@ export function RepositoryConfigDialog({
                 id="config-setup"
                 label="Setup command"
                 onChange={field.onChange}
-                placeholder="bun install"
                 value={field.value}
               />
             )}
@@ -1193,7 +1182,6 @@ export function RepositoryConfigDialog({
                   id="config-start"
                   label="Aggregate start command"
                   onChange={field.onChange}
-                  placeholder="bun run dev"
                   value={field.value}
                 />
               )}

@@ -67,16 +67,11 @@ as an alternate filename when it uses the current configuration contract.
 
 When a repository has no configuration, the initialization dialog can prepare
 conservative starters for Node.js, Django, FastAPI, Rust, Go, and Docker
-Compose projects. Detected setup commands are stored as repository-wide
-`control.setup`; detected single-app development commands are stored on the
-app as `apps.<id>.start`. Aggregate orchestrators such as Docker Compose use
-`control.start`. Review the generated commands before creating the file;
+Compose projects. Review the generated command before creating the file;
 unknown layouts receive an editable config without an executable command.
 
 Command `argv`, `cwd`, and `env` strings support `{slot}`, `{port}`, `{url}`,
-and cross-app templates such as `{apps.api.port}`. `cwd` is optional: commands
-run from the worktree root by default, while monorepos can set a relative app
-directory.
+and cross-app templates such as `{apps.api.port}`.
 
 Use exactly one launch mode: either the repository-level `control.start`, or
 per-app `start` commands when apps need separate processes. In per-app mode

@@ -69,10 +69,6 @@ export function RepositoryInitializeDialog({
                   <dd>{preview.data.detectedRuntime}</dd>
                 </div>
                 <div>
-                  <dt>Setup command</dt>
-                  <dd>{preview.data.detectedSetupCommand ?? "Not detected"}</dd>
-                </div>
-                <div>
                   <dt>Dev command</dt>
                   <dd>{preview.data.detectedStartCommand ?? "Not detected"}</dd>
                 </div>

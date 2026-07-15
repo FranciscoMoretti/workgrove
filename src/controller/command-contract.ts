@@ -25,7 +25,6 @@ export const RepositoryInitializationPlanSchema = z.object({
   config: z.record(z.string(), z.unknown()),
   configPath: z.string(),
   detectedRuntime: z.string(),
-  detectedSetupCommand: z.string().nullable(),
   detectedStartCommand: z.string().nullable(),
   repoPath: z.string(),
 });

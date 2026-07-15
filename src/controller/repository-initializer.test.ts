@@ -23,10 +23,8 @@ describe("repository initialization", () => {
       );
       const preview = planRepositoryInitialization(root);
       expect(preview.detectedRuntime).toBe("Node.js · bun");
-      expect(preview.detectedSetupCommand).toBe("bun install");
       expect(preview.detectedStartCommand).toBe("bun dev");
-      expect(preview.config.apps.app.start?.argv).toEqual(["bun", "dev"]);
-      expect(preview.config.control?.start).toBeUndefined();
+      expect(preview.config.control?.start?.argv).toEqual(["bun", "dev"]);
       expect(preview.config.control?.setup?.argv).toEqual(["bun", "install"]);
       expect(preview.config.apps.app.port.base).toBeGreaterThanOrEqual(10_000);
       expect(preview.config.ports).toEqual({ slotStride: 10 });
@@ -52,8 +50,7 @@ describe("repository initialization", () => {
       writeFileSync(join(root, "manage.py"), "");
       const preview = planRepositoryInitialization(root);
       expect(preview.detectedRuntime).toBe("Python · Django");
-      expect(preview.detectedSetupCommand).toBeNull();
-      expect(preview.config.apps.app.start?.argv).toEqual([
+      expect(preview.config.control?.start?.argv).toEqual([
         "python",
         "manage.py",
         "runserver",
@@ -75,7 +72,6 @@ describe("repository initialization", () => {
       );
       const preview = planRepositoryInitialization(root);
       expect(preview.detectedRuntime).toBe("Docker Compose");
-      expect(preview.detectedSetupCommand).toBeNull();
       expect(preview.config.control?.start?.argv).toEqual([
         "docker",
         "compose",
