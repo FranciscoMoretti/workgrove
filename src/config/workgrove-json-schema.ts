@@ -11,6 +11,6 @@ export function workgroveJsonSchema(): Record<string, unknown> {
     $id: SCHEMA_ID,
     title: "Workgrove configuration",
     description:
-      "Choose one start mode: either control.start for aggregate orchestration, or per-app start commands. Each app declares its slot-zero base port, and Workgrove applies the shared slot stride.",
+      "Configure one repository setup command, one app-group start command, and the base port of each observable app.",
   };
 }

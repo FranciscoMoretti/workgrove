@@ -9,12 +9,9 @@ import {
 const config: WorkgroveConfig = {
   version: 1,
   apps: {
-    api: { port: { base: 8000 } },
-    web: { port: { base: 3000 } },
+    api: { basePort: 8000 },
+    web: { basePort: 3000 },
   },
-  ports: { slotStride: 10 },
-  slot: { default: 0, env: "WORKGROVE_SLOT" },
-  url: "http://localhost:{port}",
 };
 
 describe("worktree slot collisions", () => {

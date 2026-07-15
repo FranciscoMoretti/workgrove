@@ -5,13 +5,9 @@ import { WorkspaceSnapshotSchema } from "./schemas";
 describe("workspace snapshot transport schema", () => {
   it("preserves the slot collision owner identity", () => {
     const snapshot = WorkspaceSnapshotSchema.parse({
-      commandProfile: { setup: null, start: null, startMode: "none" },
       config: {
         version: 1,
-        apps: { web: { port: { base: 3000 } } },
-        ports: { slotStride: 10 },
-        slot: { default: 0, env: "WORKGROVE_SLOT" },
-        url: "http://localhost:{port}",
+        apps: { web: { basePort: 3000 } },
       },
       configPath: "/repo/.workgrove.json",
       configRevision: "revision",

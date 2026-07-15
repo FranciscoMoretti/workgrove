@@ -256,10 +256,6 @@ export function listManagedProcesses(): ManagedProcessSummary[] {
     });
 }
 
-export function appProcessId(worktreeId: string, appId: string): string {
-  return `${worktreeId}--app-${appId}`;
-}
-
 export function setupProcessId(worktreeId: string): string {
   return `${worktreeId}--setup`;
 }

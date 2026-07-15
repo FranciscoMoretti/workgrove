@@ -33,9 +33,6 @@ function indicatorClass(app: WorktreeSnapshot["apps"][number]): string {
 }
 
 function endpointStatus(app: WorktreeSnapshot["apps"][number]): string {
-  if (app.probe === "none") {
-    return "Port reserved · no health check";
-  }
   if (app.ownership === "foreign") {
     return "Occupied by another process";
   }

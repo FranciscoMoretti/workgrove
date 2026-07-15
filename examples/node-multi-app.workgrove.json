@@ -1,40 +1,10 @@
 {
   "$schema": "../schema/workgrove.schema.json",
   "version": 1,
-  "slot": {
-    "env": "WORKGROVE_SLOT",
-    "default": 0,
-    "file": ".env.worktree.local"
-  },
-  "ports": { "slotStride": 10 },
-  "url": "http://localhost:{port}",
+  "setup": { "argv": ["bun", "install"] },
+  "start": { "argv": ["bun", "run", "dev"] },
   "apps": {
-    "web": {
-      "port": { "base": 3000 },
-      "control": {
-        "label": "Web",
-        "open": true,
-        "probe": "tcp",
-        "required": true
-      },
-      "start": {
-        "argv": ["npm", "run", "dev:web"],
-        "env": { "PORT": "{port}" }
-      }
-    },
-    "api": {
-      "port": { "base": 8000 },
-      "control": {
-        "label": "API",
-        "open": false,
-        "probe": "tcp",
-        "required": true
-      },
-      "start": {
-        "argv": ["npm", "run", "dev:api"],
-        "env": { "PORT": "{port}" }
-      }
-    }
-  },
-  "control": { "setup": { "argv": ["bun", "install"] } }
+    "web": { "basePort": 3000 },
+    "api": { "basePort": 8000 }
+  }
 }

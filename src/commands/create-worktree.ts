@@ -95,7 +95,7 @@ export function createWorktree(
     );
     startManagedProcess({
       argv: setup.argv,
-      cwd: setup.cwd ? join(target, setup.cwd) : target,
+      cwd: target,
       env: setup.env,
       label: "Setup",
       logId: created.id,

@@ -16,7 +16,6 @@ import { startApps } from "../commands/start-apps";
 import { stopAllApps } from "../commands/stop-all-apps";
 import { stopApps } from "../commands/stop-apps";
 import { trustRepository } from "../commands/trust-repository";
-import { updateRepositoryCommands } from "../commands/update-repository-commands";
 import { updateRepositoryConfig } from "../commands/update-repository-config";
 import {
   repositoryIsTrusted,
@@ -28,12 +27,14 @@ import {
   findWorkgroveConfig,
   loadWorkgroveConfig,
   loadWorkgroveConfigDocument,
-  repositoryCommandProfile,
   updateWorkgroveConfig,
   type WorktreeEnvConfig,
 } from "../config/workgrove-config";
 import {
   maximumWorkgroveSlot,
+  WORKGROVE_DEFAULT_SLOT,
+  WORKGROVE_SLOT_ENV,
+  WORKGROVE_SLOT_FILE,
   type WorkgroveConfig,
 } from "../config/workgrove-schema";
 import { parseWorktreeList } from "../git/discover-worktrees";
@@ -41,7 +42,6 @@ import { appHealth, resolveControlledApps } from "../runtime/app-health";
 import { commandEnvironment } from "../runtime/command-environment";
 import { inspectListeningPorts, portOwnership } from "../runtime/ports";
 import {
-  appProcessId,
   listManagedProcesses,
   managedFailure,
   managedPid,
@@ -87,7 +87,6 @@ const COMMAND_HANDLERS: Record<WorkgroveCommandName, CommandHandler> = {
   "stop-all-apps": stopAllApps,
   "stop-apps": stopApps,
   "trust-repository": trustRepository,
-  "update-repository-commands": updateRepositoryCommands,
   "update-repository-config": updateRepositoryConfig,
 };
 
@@ -120,25 +119,8 @@ function slotContent(path: string): string {
   return existsSync(path) ? readFileSync(path, "utf8") : "";
 }
 
-function commandSummary(
-  label: string,
-  command: WorkgroveCommand,
-  inheritedEnvironment: Record<string, string> = {}
-): string {
-  const parts = [`${label}: ${command.argv.join(" ")}`];
-  if (command.cwd) {
-    parts.push(`cwd=${command.cwd}`);
-  }
-  const environment = { ...inheritedEnvironment, ...command.env };
-  const entries = Object.entries(environment).sort(([left], [right]) =>
-    left.localeCompare(right)
-  );
-  if (entries.length > 0) {
-    parts.push(
-      `env ${entries.map(([name, value]) => `${name}=${value}`).join(" ")}`
-    );
-  }
-  return parts.join(" · ");
+function commandSummary(label: string, command: WorkgroveCommand): string {
+  return `${label}: ${command.argv.join(" ")}`;
 }
 
 function slotState(
@@ -203,10 +185,13 @@ export class WorkspaceController {
       throw new Error("No Git worktrees were discovered");
     }
     const maxSlot = maximumWorkgroveSlot(config);
-    const slotFile = config.slot.file ?? ".env.worktree.local";
+    const slotFile = WORKGROVE_SLOT_FILE;
     const parsedSlots = discovered.map((item) => {
       const file = resolveSlotFilePath(item.path, slotFile);
-      const parsed = parseSlotFromContent(slotContent(file), config.slot.env);
+      const parsed = parseSlotFromContent(
+        slotContent(file),
+        WORKGROVE_SLOT_ENV
+      );
       return parsed.kind === "value" && parsed.slot > maxSlot
         ? ({ kind: "invalid", raw: String(parsed.slot) } as const)
         : parsed;
@@ -219,8 +204,7 @@ export class WorkspaceController {
       rawSlots
     );
     const ports = inspectListeningPorts();
-    const appLabel = resolveControlledApps(config, config.slot.default)
-      .filter((app) => app.probe === "tcp" && app.required)
+    const appLabel = resolveControlledApps(config, WORKGROVE_DEFAULT_SLOT)
       .map((app) => app.label)
       .join(" + ");
     const worktrees = discovered.map((item, index) => {
@@ -246,10 +230,7 @@ export class WorkspaceController {
         isMain: index === 0,
         name: basename(item.path),
         path,
-        processRunning: [
-          id,
-          ...Object.keys(config.apps).map((appId) => appProcessId(id, appId)),
-        ].some((processId) => managedPid(processId, path) !== null),
+        processRunning: managedPid(id, path) !== null,
         setupState: worktreeSetupState(id, path, setupCommand !== null),
         slot,
         slotState: slotState(
@@ -304,30 +285,22 @@ export class WorkspaceController {
       });
     const globalProcesses = listManagedProcesses();
     return {
-      commandProfile: repositoryCommandProfile(config),
       config,
       configPath,
       configRevision: configDocument.revision,
       globalProcesses,
       globalRunningCount: globalProcesses.length,
-      defaultSlot: config.slot.default,
+      defaultSlot: WORKGROVE_DEFAULT_SLOT,
       mainWorktreePath: worktrees[0].path,
       repoName: basename(worktrees[0].path),
       repoPath: selectedRoot,
       setupAvailable: setupCommand !== null,
-      slotEnv: config.slot.env,
+      slotEnv: WORKGROVE_SLOT_ENV,
       slotFile,
       slotOptions,
       trustCommands: [
         setupCommand ? commandSummary("Setup", setupCommand) : null,
-        config.control?.start
-          ? commandSummary("Apps", config.control.start)
-          : null,
-        ...Object.entries(config.apps).map(([id, app]) =>
-          app.start
-            ? commandSummary(app.control?.label ?? id, app.start, app.exports)
-            : null
-        ),
+        config.start ? commandSummary("Apps", config.start) : null,
       ].filter((summary): summary is string => summary !== null),
       trustRequired: repositoryRequiresTrust(config),
       trusted: repositoryIsTrusted(selectedRoot, config),
@@ -353,11 +326,8 @@ export class WorkspaceController {
     const workspace = this.inspect(repoPath);
     const topology = (value: WorkgroveConfig) => ({
       apps: Object.fromEntries(
-        Object.entries(value.apps).map(([id, app]) => [id, app.port])
+        Object.entries(value.apps).map(([id, app]) => [id, app.basePort])
       ),
-      ports: value.ports,
-      slot: value.slot,
-      url: value.url,
     });
     const topologyChanged =
       JSON.stringify(topology(workspace.config)) !==
@@ -370,7 +340,7 @@ export class WorkspaceController {
     );
     if (topologyChanged && hasRunningProcesses) {
       throw new Error(
-        "Stop repository apps and setup processes before changing app ports, slots, or URLs."
+        "Stop repository apps and setup processes before changing app ports."
       );
     }
     updateWorkgroveConfig(workspace.configPath, config, revision);

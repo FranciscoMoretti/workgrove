@@ -13,6 +13,7 @@ import {
   resolveWorktreeRuntime,
   type WorktreeEnvConfig,
 } from "../config/workgrove-config";
+import { WORKGROVE_SLOT_FILE } from "../config/workgrove-schema";
 
 const LINE_BREAK = /\r?\n/;
 const FASTAPI_DEPENDENCY = /\bfastapi\b/i;
@@ -27,6 +28,7 @@ export interface RepositoryInitializationPlan {
   config: WorktreeEnvConfig;
   configPath: string;
   detectedRuntime: string;
+  detectedSetupCommand: string | null;
   detectedStartCommand: string | null;
   repoPath: string;
 }
@@ -78,7 +80,6 @@ function projectDefaults(root: string): ProjectDefaults {
       label: "Docker Compose",
       start: {
         argv: ["docker", "compose", "up"],
-        env: { PORT: "{port}" },
       },
     };
   }
@@ -121,13 +122,13 @@ function projectDefaults(root: string): ProjectDefaults {
     return {
       label: "Rust · Cargo",
       setup: { argv: ["cargo", "fetch"] },
-      start: { argv: ["cargo", "run"], env: { PORT: "{port}" } },
+      start: { argv: ["cargo", "run"] },
     };
   }
   if (existsSync(join(root, "go.mod"))) {
     return {
       label: "Go",
-      start: { argv: ["go", "run", "."], env: { PORT: "{port}" } },
+      start: { argv: ["go", "run", "."] },
     };
   }
   return { label: "Unknown" };
@@ -156,33 +157,20 @@ export function planRepositoryInitialization(
     $schema:
       "https://raw.githubusercontent.com/franciscomoretti/workgrove/main/schema/workgrove.schema.json",
     version: 1,
+    ...(defaults.setup ? { setup: defaults.setup } : {}),
+    ...(defaults.start ? { start: defaults.start } : {}),
     apps: {
       app: {
-        control: {
-          label: "App",
-          open: true,
-          probe: "tcp",
-          required: true,
-        },
-        exports: { PORT: "{port}" },
-        port: { base: stableBasePort(root) },
+        basePort: stableBasePort(root),
       },
     },
-    ports: { slotStride: 10 },
-    slot: { default: 0, env: "WORKGROVE_SLOT", file: ".env.worktree.local" },
-    url: "http://localhost:{port}",
   };
-  if (defaults.setup || defaults.start) {
-    config.control = {
-      ...(defaults.setup ? { setup: defaults.setup } : {}),
-      ...(defaults.start ? { start: defaults.start } : {}),
-    };
-  }
   resolveWorktreeRuntime(config, {});
   return {
     config,
     configPath,
     detectedRuntime: defaults.label,
+    detectedSetupCommand: defaults.setup?.argv.join(" ") ?? null,
     detectedStartCommand: defaults.start?.argv.join(" ") ?? null,
     repoPath: root,
   };
@@ -195,10 +183,7 @@ export function initializeRepository(
   writeFileSync(plan.configPath, `${JSON.stringify(plan.config, null, 2)}\n`, {
     flag: "wx",
   });
-  excludeLocalSlotFile(
-    plan.repoPath,
-    plan.config.slot.file ?? ".env.worktree.local"
-  );
+  excludeLocalSlotFile(plan.repoPath, WORKGROVE_SLOT_FILE);
   trustRepository(plan.repoPath, plan.config);
   return plan;
 }

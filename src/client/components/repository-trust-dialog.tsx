@@ -40,7 +40,7 @@ function reviewedCommand(value: string): {
   const description =
     label === "Setup"
       ? "Prepares a newly created worktree."
-      : "Starts the managed development runtime.";
+      : "Starts the app group as one managed process tree.";
   return { command, description, label };
 }
 
@@ -112,8 +112,8 @@ export function RepositoryTrustDialog({
           })}
         </div>
         <p className="text-muted-foreground">
-          Trust is saved for this repository. You can change its configured
-          commands later without another prompt.
+          Trust is saved for this command fingerprint. Workgrove asks again if
+          the configured commands change.
         </p>
         {error ? (
           <Alert variant="destructive">

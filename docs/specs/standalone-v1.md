@@ -9,9 +9,9 @@ Git worktrees and the development applications running in them.
 - Use a checked-in, versioned `.workgrove.json` and an ignored
   `.env.worktree.local` slot assignment.
 - Resolve and inject each configured app's environment inside Workgrove.
-- Support repository-level Setup and Start commands, with optional per-app Start
-  commands when applications need separate processes.
-- Require explicit trust for repository-supplied commands once per repository.
+- Support one repository-level Setup command and one Start command. Start owns
+  the repository's apps as one app group and one managed process tree.
+- Require explicit trust for each repository command fingerprint.
 - Track managed processes globally across repositories and reject foreign port
   collisions before spawning.
 - Keep loopback transport and UI concerns outside the controller interface.
@@ -40,5 +40,5 @@ adapter and its own ownership tests.
 The initial distribution is the public `workgrove` npm package, installed with
 `bun add --global workgrove`. Its Bun-powered CLI serves the packaged production
 UI. The `workgrove/config` export is the supported seam for Bun-based repository
-tooling to load the config and resolve slots, app ports, URLs, and exports. A
+tooling to load the config and resolve slots, app ports, and URLs. A
 compiled binary/Homebrew formula remains a follow-up.

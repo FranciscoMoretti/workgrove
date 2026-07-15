@@ -1,9 +1,8 @@
-import { resolve } from "node:path";
-
 import {
   configuredSetupCommand,
   resolveSetupCommand,
 } from "../config/workgrove-config";
+import { WORKGROVE_DEFAULT_SLOT } from "../config/workgrove-schema";
 import type { WorkspaceController } from "../controller/workspace-controller";
 import type { CommandReceipt } from "../controller/workspace-snapshot";
 import {
@@ -22,14 +21,14 @@ export function setupAllApps(
   const workspace = controller.inspect(repoPath);
   const config = controller.config(repoPath);
   if (!configuredSetupCommand(config)) {
-    throw new Error("Missing control.setup argv in .workgrove.json");
+    throw new Error("Missing setup command in .workgrove.json");
   }
   const targets = selectRequestedWorktrees(
     workspace.worktrees,
     input.worktreeIds
   );
   for (const worktree of targets) {
-    const slot = worktree.slot ?? config.slot.default;
+    const slot = worktree.slot ?? WORKGROVE_DEFAULT_SLOT;
     const setup = resolveSetupCommand(config, slot);
     if (!setup) {
       continue;
@@ -40,7 +39,7 @@ export function setupAllApps(
     );
     startManagedProcess({
       argv: setup.argv,
-      cwd: setup.cwd ? resolve(worktree.path, setup.cwd) : worktree.path,
+      cwd: worktree.path,
       env: setup.env,
       label: "Setup",
       logId: worktree.id,

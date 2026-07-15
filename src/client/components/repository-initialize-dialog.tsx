@@ -65,17 +65,21 @@ export function RepositoryInitializeDialog({
             <>
               <dl className="detection-grid">
                 <div>
-                  <dt>Detected runtime</dt>
+                  <dt>Detected project</dt>
                   <dd>{preview.data.detectedRuntime}</dd>
                 </div>
                 <div>
-                  <dt>Dev command</dt>
+                  <dt>Setup command</dt>
+                  <dd>{preview.data.detectedSetupCommand ?? "Not detected"}</dd>
+                </div>
+                <div>
+                  <dt>Start command</dt>
                   <dd>{preview.data.detectedStartCommand ?? "Not detected"}</dd>
                 </div>
               </dl>
               {preview.data.detectedStartCommand ? null : (
                 <p className="setup-warning">
-                  No safe start command was detected. Add an app
+                  No safe start command was detected. Add the repository
                   <code> start</code> command before using Start.
                 </p>
               )}

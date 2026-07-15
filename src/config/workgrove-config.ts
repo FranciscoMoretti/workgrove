@@ -9,40 +9,36 @@ import {
 import { join } from "node:path";
 
 import { z } from "zod";
-import type {
-  RepositoryCommandProfile,
-  WorkgroveCommand,
-} from "./workgrove-command";
-import { resolveWorkgroveAppEndpoints } from "./workgrove-editor";
+import type { WorkgroveCommand } from "./workgrove-command";
 import {
   canonicalizeWorkgroveConfig,
   MAX_WORKGROVE_PORT,
   MIN_WORKGROVE_PORT,
+  resolveWorkgroveAppPort,
+  WORKGROVE_DEFAULT_SLOT,
+  WORKGROVE_SLOT_ENV,
   type WorkgroveConfig,
   WorkgroveConfigSchema,
+  workgroveAppPortEnvironmentName,
 } from "./workgrove-schema";
-import {
-  renderWorkgroveTemplate,
-  type WorkgroveTemplateContext,
-} from "./workgrove-template";
+import { renderWorkgroveTemplate } from "./workgrove-template";
 
-// biome-ignore lint/performance/noBarrelFile: preserve the existing internal config-module type exports during the browser-safe schema split.
+// biome-ignore lint/performance/noBarrelFile: preserve the package's internal config-module exports.
 export {
   maximumWorkgroveSlot,
   resolveWorkgroveAppPort,
   type WorkgroveApp,
   WorkgroveAppIdSchema,
-  type WorkgroveAppPort,
-  WorkgroveAppPortSchema,
   WorkgroveAppSchema,
   type WorkgroveConfig,
   WorkgroveConfigSchema,
   type WorktreeEnvConfig,
+  workgroveAppPortEnvironmentName,
 } from "./workgrove-schema";
 
 const SLOT_PATTERN = /^\d+$/;
+
 export interface ResolvedWorkgroveApp {
-  env: Record<string, string>;
   port: number;
   url: string;
 }
@@ -53,9 +49,7 @@ export interface ResolvedWorkgroveRuntime {
 }
 
 export interface ResolvedWorkgroveCommand {
-  appId: string | null;
   argv: string[];
-  cwd: string | null;
   env: Record<string, string>;
 }
 
@@ -64,64 +58,50 @@ export interface WorkgroveConfigDocument {
   revision: string;
 }
 
-export function renderCommandEnvironment(
-  values: Record<string, string> | undefined,
-  context: WorkgroveTemplateContext
-): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(values ?? {}).map(([name, value]) => [
-      name,
-      renderWorkgroveTemplate(value, context),
-    ])
-  );
-}
-
 export function resolveWorkgroveRuntime(
   config: WorkgroveConfig,
   environment: Record<string, string | undefined>
 ): ResolvedWorkgroveRuntime {
   WorkgroveConfigSchema.parse(config);
-  const rawSlot = environment[config.slot.env] ?? String(config.slot.default);
+  const rawSlot =
+    environment[WORKGROVE_SLOT_ENV] ?? String(WORKGROVE_DEFAULT_SLOT);
   if (!SLOT_PATTERN.test(rawSlot)) {
-    throw new Error(`Invalid ${config.slot.env} "${rawSlot}"`);
+    throw new Error(`Invalid ${WORKGROVE_SLOT_ENV} "${rawSlot}"`);
   }
   const slot = Number(rawSlot);
-  const entries = Object.entries(config.apps);
-  const endpoints = resolveWorkgroveAppEndpoints(config, slot);
-  for (const [id, endpoint] of Object.entries(endpoints)) {
-    const port = endpoint.port;
-    if (port < MIN_WORKGROVE_PORT || port > MAX_WORKGROVE_PORT) {
-      throw new Error(`App "${id}" computed invalid port ${port}`);
-    }
-  }
   const apps = Object.fromEntries(
-    entries.map(([id, app]) => {
-      const endpoint = endpoints[id];
-      return [
-        id,
-        {
-          ...endpoint,
-          env: renderCommandEnvironment(app.exports, {
-            apps: endpoints,
-            port: endpoint.port,
-            slot,
-            url: endpoint.url,
-          }),
-        },
-      ];
+    Object.entries(config.apps).map(([id, app]) => {
+      const port = resolveWorkgroveAppPort(app, slot);
+      if (port < MIN_WORKGROVE_PORT || port > MAX_WORKGROVE_PORT) {
+        throw new Error(`App "${id}" computed invalid port ${port}`);
+      }
+      return [id, { port, url: `http://localhost:${port}` }];
     })
   );
   return { apps, slot };
 }
 
+export function workgroveCommandEnvironment(
+  config: WorkgroveConfig,
+  slot: number
+): Record<string, string> {
+  const runtime = resolveWorkgroveRuntime(config, {
+    [WORKGROVE_SLOT_ENV]: String(slot),
+  });
+  return {
+    [WORKGROVE_SLOT_ENV]: String(slot),
+    ...Object.fromEntries(
+      Object.entries(runtime.apps).map(([id, app]) => [
+        workgroveAppPortEnvironmentName(id),
+        String(app.port),
+      ])
+    ),
+  };
+}
+
 export function findWorkgroveConfig(root: string): string | null {
-  for (const name of [".workgrove.json", ".worktree-env.json"]) {
-    const path = join(root, name);
-    if (existsSync(path)) {
-      return path;
-    }
-  }
-  return null;
+  const path = join(root, ".workgrove.json");
+  return existsSync(path) ? path : null;
 }
 
 function contentRevision(content: string): string {
@@ -180,193 +160,44 @@ export const resolveWorktreeRuntime = resolveWorkgroveRuntime;
 export function configuredSetupCommand(
   config: WorkgroveConfig
 ): WorkgroveCommand | null {
-  return config.control?.setup ?? config.control?.postCreate ?? null;
+  return config.setup ?? null;
 }
 
-export function repositoryCommandProfile(
-  config: WorkgroveConfig
-): RepositoryCommandProfile {
-  const hasPerAppStart = Object.values(config.apps).some(
-    (app) => app.start !== undefined
-  );
-  let startMode: RepositoryCommandProfile["startMode"] = "none";
-  if (hasPerAppStart) {
-    startMode = "per-app";
-  } else if (config.control?.start) {
-    startMode = "aggregate";
+function resolveCommand(
+  config: WorkgroveConfig,
+  command: WorkgroveCommand | undefined,
+  slot: number
+): ResolvedWorkgroveCommand | null {
+  if (!command) {
+    return null;
   }
+  const runtime = resolveWorkgroveRuntime(config, {
+    [WORKGROVE_SLOT_ENV]: String(slot),
+  });
+  const first = Object.values(runtime.apps)[0];
   return {
-    setup: configuredSetupCommand(config),
-    start: hasPerAppStart ? null : (config.control?.start ?? null),
-    startMode,
+    argv: command.argv.map((value) =>
+      renderWorkgroveTemplate(value, {
+        apps: runtime.apps,
+        port: first.port,
+        slot,
+        url: first.url,
+      })
+    ),
+    env: workgroveCommandEnvironment(config, slot),
   };
 }
 
-export function updateRepositoryCommandProfile(
-  configPath: string,
-  update: {
-    setup: WorkgroveCommand | null;
-    start?: WorkgroveCommand | null;
-  }
-): WorkgroveConfig {
-  const current = loadWorkgroveConfigDocument(configPath);
-  const next = structuredClone(current.config);
-  next.control ??= {};
-  next.control.postCreate = undefined;
-  if (update.setup) {
-    next.control.setup = update.setup;
-  } else {
-    next.control.setup = undefined;
-  }
-  if (update.start !== undefined) {
-    if (Object.values(next.apps).some((app) => app.start !== undefined)) {
-      throw new Error(
-        "Start is configured per app; edit the app start commands in .workgrove.json"
-      );
-    }
-    if (update.start) {
-      next.control.start = update.start;
-    } else {
-      next.control.start = undefined;
-    }
-  }
-  return updateWorkgroveConfig(configPath, next, current.revision).config;
-}
-
-export function resolveStartCommands(
+export function resolveStartCommand(
   config: WorkgroveConfig,
   slot: number
-): ResolvedWorkgroveCommand[] {
-  const slotEnvironment = { [config.slot.env]: String(slot) };
-  const runtime = resolveWorkgroveRuntime(config, slotEnvironment);
-  const endpoints = Object.fromEntries(
-    Object.entries(runtime.apps).map(([id, app]) => [
-      id,
-      { port: app.port, url: app.url },
-    ])
-  );
-  const perApp = Object.entries(config.apps).flatMap(([appId, app]) => {
-    if (!app.start) {
-      return [];
-    }
-    const resolved = runtime.apps[appId];
-    return [
-      {
-        appId,
-        argv: app.start.argv.map((value) =>
-          renderWorkgroveTemplate(value, {
-            apps: endpoints,
-            port: resolved.port,
-            slot,
-            url: resolved.url,
-          })
-        ),
-        cwd: app.start.cwd
-          ? renderWorkgroveTemplate(app.start.cwd, {
-              apps: endpoints,
-              port: resolved.port,
-              slot,
-              url: resolved.url,
-            })
-          : null,
-        env: {
-          ...slotEnvironment,
-          ...resolved.env,
-          ...renderCommandEnvironment(app.start.env, {
-            apps: endpoints,
-            port: resolved.port,
-            slot,
-            url: resolved.url,
-          }),
-        },
-      },
-    ];
-  });
-  if (perApp.length > 0) {
-    return perApp;
-  }
-  const aggregate = config.control?.start;
-  if (!aggregate) {
-    return [];
-  }
-  const first = Object.values(runtime.apps)[0];
-  return [
-    {
-      appId: null,
-      argv: aggregate.argv.map((value) =>
-        renderWorkgroveTemplate(value, {
-          apps: endpoints,
-          port: first.port,
-          slot,
-          url: first.url,
-        })
-      ),
-      cwd: aggregate.cwd
-        ? renderWorkgroveTemplate(aggregate.cwd, {
-            apps: endpoints,
-            port: first.port,
-            slot,
-            url: first.url,
-          })
-        : null,
-      env: {
-        ...slotEnvironment,
-        ...renderCommandEnvironment(aggregate.env, {
-          apps: endpoints,
-          port: first.port,
-          slot,
-          url: first.url,
-        }),
-      },
-    },
-  ];
+): ResolvedWorkgroveCommand | null {
+  return resolveCommand(config, config.start, slot);
 }
 
 export function resolveSetupCommand(
   config: WorkgroveConfig,
   slot: number
 ): ResolvedWorkgroveCommand | null {
-  const command = configuredSetupCommand(config);
-  if (!command) {
-    return null;
-  }
-  const slotEnvironment = { [config.slot.env]: String(slot) };
-  const runtime = resolveWorkgroveRuntime(config, slotEnvironment);
-  const endpoints = Object.fromEntries(
-    Object.entries(runtime.apps).map(([id, app]) => [
-      id,
-      { port: app.port, url: app.url },
-    ])
-  );
-  const first = Object.values(runtime.apps)[0];
-  return {
-    appId: null,
-    argv: command.argv.map((value) =>
-      renderWorkgroveTemplate(value, {
-        apps: endpoints,
-        port: first.port,
-        slot,
-        url: first.url,
-      })
-    ),
-    cwd: command.cwd
-      ? renderWorkgroveTemplate(command.cwd, {
-          apps: endpoints,
-          port: first.port,
-          slot,
-          url: first.url,
-        })
-      : null,
-    env: {
-      ...slotEnvironment,
-      ...renderCommandEnvironment(command.env, {
-        apps: endpoints,
-        port: first.port,
-        slot,
-        url: first.url,
-      }),
-    },
-  };
+  return resolveCommand(config, config.setup, slot);
 }
-
-export const resolvePostCreateCommand = resolveSetupCommand;

@@ -3,7 +3,6 @@ import type { CommandReceipt } from "../controller/workspace-snapshot";
 import { inspectListeningPorts, ownedPortPids } from "../runtime/ports";
 import {
   appendManagedLog,
-  appProcessId,
   stopManagedProcess,
 } from "../runtime/process-supervisor";
 import { requiredString } from "./command";
@@ -16,15 +15,9 @@ export function stopApps(
   const worktreeId = requiredString(input.worktreeId, "Worktree");
   const { worktree } = controller.worktree(repoPath, worktreeId);
   const killed = new Set<number>();
-  const config = controller.config(repoPath);
-  for (const id of [
-    worktreeId,
-    ...Object.keys(config.apps).map((appId) => appProcessId(worktreeId, appId)),
-  ]) {
-    const managed = stopManagedProcess(id, worktree.path);
-    if (managed) {
-      killed.add(managed);
-    }
+  const managed = stopManagedProcess(worktreeId, worktree.path);
+  if (managed) {
+    killed.add(managed);
   }
   for (const pid of ownedPortPids(
     inspectListeningPorts(),

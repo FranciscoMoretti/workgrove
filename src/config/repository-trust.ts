@@ -32,23 +32,13 @@ function trustStore(): Record<string, boolean | string> {
 }
 
 export function repositoryRequiresTrust(config: WorkgroveConfig): boolean {
-  return Boolean(
-    config.control?.start ||
-      configuredSetupCommand(config) ||
-      Object.values(config.apps).some((app) => app.start)
-  );
+  return Boolean(config.start || configuredSetupCommand(config));
 }
 
 function fingerprintCommand(command: WorkgroveCommand | null) {
   return command
     ? {
         argv: command.argv,
-        cwd: command.cwd ?? null,
-        env: Object.fromEntries(
-          Object.entries(command.env ?? {}).sort(([left], [right]) =>
-            left.localeCompare(right)
-          )
-        ),
       }
     : null;
 }
@@ -56,12 +46,7 @@ function fingerprintCommand(command: WorkgroveCommand | null) {
 export function repositoryCommandFingerprint(config: WorkgroveConfig): string {
   const commands = {
     setup: fingerprintCommand(configuredSetupCommand(config)),
-    start: fingerprintCommand(config.control?.start ?? null),
-    apps: Object.fromEntries(
-      Object.entries(config.apps)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([id, app]) => [id, fingerprintCommand(app.start ?? null)])
-    ),
+    start: fingerprintCommand(config.start ?? null),
   };
   return createHash("sha256")
     .update(JSON.stringify(commands))
