@@ -38,8 +38,9 @@ Commit `.workgrove.json` at the repository root:
 }
 ```
 
-`setup` is an optional finite command that prepares a worktree. `start` is an
-optional foreground command that launches every app as one app group. Workgrove
+`setup` is the finite command that prepares a worktree. `start` is the
+foreground command that launches every app as one app group. Both commands are
+required; new configurations default to `npm install` and `npm run dev`. Workgrove
 manages the resulting process tree as a unit, so Stop terminates the whole group
 and Restart waits for Stop before launching it again. Commands always run from
 the worktree root.

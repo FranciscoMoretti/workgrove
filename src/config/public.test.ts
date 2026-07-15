@@ -9,6 +9,8 @@ describe("public config contract", () => {
     const config: WorkgroveConfig = {
       version: 1,
       stride: 10,
+      setup: { argv: ["npm", "install"] },
+      start: { argv: ["npm", "run", "dev"] },
       apps: { web: { basePort: 3000 } },
     };
     expect(

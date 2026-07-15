@@ -6,18 +6,22 @@ import {
   TreesIcon,
 } from "lucide-react";
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
   WorkspaceSnapshot,
   WorktreeSnapshot,
 } from "../controller/workspace-snapshot";
-import { repositoryPathFromSearch, repositoryUrl } from "../repository-context";
+import {
+  repositoryPageFromSearch,
+  repositoryPathFromSearch,
+  repositoryUrl,
+} from "../repository-context";
 import { CreateWorktreeDialog } from "./components/create-worktree-dialog";
 import { DeleteWorktreeDialog } from "./components/delete-worktree-dialog";
 import { DetailsPanel } from "./components/details-panel";
 import { RecoveryBoundary } from "./components/recovery-boundary";
-import { RepositoryConfigDialog } from "./components/repository-config-dialog";
+import { RepositoryConfigPage } from "./components/repository-config-page";
 import { RepositoryDialog } from "./components/repository-dialog";
 import { RepositoryTrustDialog } from "./components/repository-trust-dialog";
 import { Toolbar } from "./components/toolbar";
@@ -218,10 +222,18 @@ export function App() {
       localStorage.getItem(REPO_STORAGE_KEY) ??
       ""
   );
+  const [repositoryPage, setRepositoryPage] = useState(() =>
+    repositoryPageFromSearch(window.location.search)
+  );
+  const repositoryPageRef = useRef(repositoryPage);
+  repositoryPageRef.current = repositoryPage;
+  const repoPathRef = useRef(repoPath);
+  repoPathRef.current = repoPath;
+  const repositorySettingsDirtyRef = useRef(false);
+  const [repositoryCloseRequest, setRepositoryCloseRequest] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [repositoryOpen, setRepositoryOpen] = useState(false);
-  const [repositoryConfigOpen, setRepositoryConfigOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<WorktreeSnapshot | null>(
     null
   );
@@ -242,11 +254,39 @@ export function App() {
     onSelectWorktree: setSelectedId,
     repoPath,
     requestRepositoryTrust: repositoryTrust.requestTrust,
-    setupAvailable: workspace.data?.setupAvailable ?? false,
     worktrees: visibleWorktrees,
   });
   const { commandActions, commands, pendingIds, toggleApps, visibleActions } =
     worktreeActions;
+
+  useEffect(() => {
+    function syncLocation(): void {
+      const path = repositoryPathFromSearch(window.location.search) ?? "";
+      const page = repositoryPageFromSearch(window.location.search);
+      if (
+        repositoryPageRef.current === "settings" &&
+        page !== "settings" &&
+        repositorySettingsDirtyRef.current
+      ) {
+        window.history.pushState(
+          null,
+          "",
+          repositoryUrl(window.location.href, repoPathRef.current, "settings")
+        );
+        setRepositoryCloseRequest((current) => current + 1);
+        return;
+      }
+      setRepoPath(path);
+      setRepoDraft(path);
+      setRepositoryPage(page);
+    }
+    window.addEventListener("popstate", syncLocation);
+    return () => window.removeEventListener("popstate", syncLocation);
+  }, []);
+
+  const handleRepositorySettingsDirtyChange = useCallback((dirty: boolean) => {
+    repositorySettingsDirtyRef.current = dirty;
+  }, []);
 
   function selectRepository(path: string) {
     const nextRecents = [
@@ -263,6 +303,7 @@ export function App() {
     );
     setRepoDraft(path);
     setRepoPath(path);
+    setRepositoryPage("workspace");
   }
   function openRepository(path: string, snapshot: WorkspaceSnapshot) {
     queryClient.setQueryData(["workspace", path], snapshot);
@@ -297,6 +338,44 @@ export function App() {
     );
   }
   const data = workspace.data;
+  function openRepositorySettings(): void {
+    window.history.pushState(
+      null,
+      "",
+      repositoryUrl(window.location.href, repoPath, "settings")
+    );
+    setRepositoryPage("settings");
+  }
+  function closeRepositorySettings(): void {
+    window.history.replaceState(
+      null,
+      "",
+      repositoryUrl(window.location.href, repoPath, "workspace")
+    );
+    setRepositoryPage("workspace");
+  }
+  if (repositoryPage === "settings") {
+    return (
+      <RepositoryConfigPage
+        config={data.config}
+        configPath={data.configPath}
+        error={commands.updateRepositoryConfig.error}
+        key={`config-${data.configRevision}`}
+        navigationRequest={repositoryCloseRequest}
+        onClose={closeRepositorySettings}
+        onDirtyChange={handleRepositorySettingsDirtyChange}
+        onSave={async (config) => {
+          await commands.updateRepositoryConfig.mutateAsync({
+            config,
+            repoPath,
+            revision: data.configRevision,
+          });
+          closeRepositorySettings();
+        }}
+        pending={commands.updateRepositoryConfig.isPending}
+      />
+    );
+  }
   function worktreeTable() {
     return (
       <WorktreeTable
@@ -326,7 +405,7 @@ export function App() {
         activeRepoPath={repoPath}
         isFetching={workspace.isFetching}
         mainWorktreePath={data.mainWorktreePath}
-        onConfigure={() => setRepositoryConfigOpen(true)}
+        onConfigure={openRepositorySettings}
         onCreate={() => setCreateOpen(true)}
         onOpenRepository={() => setRepositoryOpen(true)}
         onRefresh={() =>
@@ -429,27 +508,6 @@ export function App() {
           setSelectedId(null);
         }}
         open={repositoryOpen}
-      />
-      <RepositoryConfigDialog
-        config={data.config}
-        configPath={data.configPath}
-        error={commands.updateRepositoryConfig.error}
-        key={
-          repositoryConfigOpen
-            ? `config-${data.configRevision}`
-            : "config-closed"
-        }
-        onClose={() => setRepositoryConfigOpen(false)}
-        onSave={async (config) => {
-          await commands.updateRepositoryConfig.mutateAsync({
-            config,
-            repoPath,
-            revision: data.configRevision,
-          });
-          setRepositoryConfigOpen(false);
-        }}
-        open={repositoryConfigOpen}
-        pending={commands.updateRepositoryConfig.isPending}
       />
       <DeleteWorktreeDialog
         key={deleteTarget?.id ?? "no-delete"}

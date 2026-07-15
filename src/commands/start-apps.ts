@@ -31,9 +31,6 @@ export function startApps(
     );
   }
   const command = resolveStartCommand(config, worktree.slot);
-  if (!command) {
-    throw new Error("No start command is configured in .workgrove.json");
-  }
   startManagedProcess({
     argv: command.argv,
     cwd: worktree.path,

@@ -16,13 +16,11 @@ export function useWorktreeCommandActions({
   onSelectWorktree,
   repoPath,
   requestRepositoryTrust,
-  setupAvailable,
   worktrees,
 }: {
   onSelectWorktree: (worktreeId: string) => void;
   repoPath: string;
   requestRepositoryTrust: RequestRepositoryTrust;
-  setupAvailable: boolean;
   worktrees: WorktreeSnapshot[];
 }) {
   const commands = useCommands(repoPath);
@@ -113,9 +111,8 @@ export function useWorktreeCommandActions({
       onSetup: setupApps,
       onStart: startApps,
       onStop: stopApps,
-      setupAvailable,
     }),
-    [restartApps, setupApps, setupAvailable, startApps, stopApps]
+    [restartApps, setupApps, startApps, stopApps]
   );
 
   const toggleApps = useCallback(
@@ -151,7 +148,6 @@ export function useWorktreeCommandActions({
         ),
       onStop: () => commands.stopAllApps.mutate({ repoPath, worktreeIds }),
       pending,
-      setupAvailable,
     };
   }, [
     commands.restartRunningApps,
@@ -160,7 +156,6 @@ export function useWorktreeCommandActions({
     commands.stopAllApps,
     repoPath,
     requestRepositoryTrust,
-    setupAvailable,
     worktrees,
   ]);
 

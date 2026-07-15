@@ -8,7 +8,11 @@ import {
 } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { trustRepository } from "../config/repository-trust";
-import type { WorkgroveCommand } from "../config/workgrove-command";
+import {
+  defaultWorkgroveSetupCommand,
+  defaultWorkgroveStartCommand,
+  type WorkgroveCommand,
+} from "../config/workgrove-command";
 import {
   resolveWorkgroveAppGroup,
   type WorktreeEnvConfig,
@@ -23,7 +27,6 @@ const COMPOSE_FILES = [
   "docker-compose.yaml",
   "docker-compose.yml",
 ] as const;
-
 export interface RepositoryInitializationPlan {
   config: WorktreeEnvConfig;
   configPath: string;
@@ -85,9 +88,9 @@ function projectDefaults(root: string): ProjectDefaults {
   }
   if (existsSync(join(root, "package.json"))) {
     return {
-      label: "Node.js · bun",
-      setup: { argv: ["bun", "install"] },
-      start: { argv: ["bun", "dev"] },
+      label: "Node.js · npm",
+      setup: defaultWorkgroveSetupCommand(),
+      start: defaultWorkgroveStartCommand(),
     };
   }
   if (existsSync(join(root, "manage.py"))) {
@@ -139,13 +142,15 @@ export function planRepositoryInitialization(
     );
   }
   const defaults = projectDefaults(root);
+  const setup = defaults.setup ?? defaultWorkgroveSetupCommand();
+  const start = defaults.start ?? defaultWorkgroveStartCommand();
   const config: WorktreeEnvConfig = {
     $schema:
       "https://raw.githubusercontent.com/franciscomoretti/workgrove/main/schema/workgrove.schema.json",
     version: 1,
     stride: 10,
-    ...(defaults.setup ? { setup: defaults.setup } : {}),
-    ...(defaults.start ? { start: defaults.start } : {}),
+    setup,
+    start,
     apps: {
       app: {
         basePort: stableBasePort(root),
@@ -157,8 +162,8 @@ export function planRepositoryInitialization(
     config,
     configPath,
     detectedRuntime: defaults.label,
-    detectedSetupCommand: defaults.setup?.argv.join(" ") ?? null,
-    detectedStartCommand: defaults.start?.argv.join(" ") ?? null,
+    detectedSetupCommand: setup.argv.join(" "),
+    detectedStartCommand: start.argv.join(" "),
     repoPath: root,
   };
 }

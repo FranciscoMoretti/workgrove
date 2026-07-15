@@ -1,16 +1,35 @@
 const REPOSITORY_QUERY_PARAM = "repo";
+const REPOSITORY_PAGE_QUERY_PARAM = "view";
+
+export type RepositoryPage = "settings" | "workspace";
 
 export function repositoryPathFromSearch(search: string): string | null {
   const value = new URLSearchParams(search).get(REPOSITORY_QUERY_PARAM)?.trim();
   return value ? value : null;
 }
 
-export function repositoryUrl(baseUrl: string, repoPath?: string | null) {
+export function repositoryPageFromSearch(search: string): RepositoryPage {
+  return new URLSearchParams(search).get(REPOSITORY_PAGE_QUERY_PARAM) ===
+    "settings"
+    ? "settings"
+    : "workspace";
+}
+
+export function repositoryUrl(
+  baseUrl: string,
+  repoPath?: string | null,
+  page: RepositoryPage = "workspace"
+) {
   const url = new URL(baseUrl);
   if (repoPath) {
     url.searchParams.set(REPOSITORY_QUERY_PARAM, repoPath);
   } else {
     url.searchParams.delete(REPOSITORY_QUERY_PARAM);
+  }
+  if (page === "settings") {
+    url.searchParams.set(REPOSITORY_PAGE_QUERY_PARAM, "settings");
+  } else {
+    url.searchParams.delete(REPOSITORY_PAGE_QUERY_PARAM);
   }
   return url.toString();
 }

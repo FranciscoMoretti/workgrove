@@ -9,7 +9,11 @@ import {
 import { join } from "node:path";
 
 import { z } from "zod";
-import type { WorkgroveCommand } from "./workgrove-command";
+import {
+  defaultWorkgroveSetupCommand,
+  defaultWorkgroveStartCommand,
+  type WorkgroveCommand,
+} from "./workgrove-command";
 import {
   cloneWorkgroveConfig,
   MAX_WORKGROVE_PORT,
@@ -111,7 +115,21 @@ export function loadWorkgroveConfigDocument(
 ): WorkgroveConfigDocument {
   const content = readFileSync(path, "utf8");
   const raw = JSON.parse(content) as Record<string, unknown>;
-  const candidate = raw.version === undefined ? { ...raw, version: 1 } : raw;
+  const versioned = raw.version === undefined ? { ...raw, version: 1 } : raw;
+  const candidate =
+    versioned.version === 1
+      ? {
+          ...versioned,
+          setup:
+            versioned.setup === undefined
+              ? defaultWorkgroveSetupCommand()
+              : versioned.setup,
+          start:
+            versioned.start === undefined
+              ? defaultWorkgroveStartCommand()
+              : versioned.start,
+        }
+      : versioned;
   const result = WorkgroveConfigSchema.safeParse(candidate);
   if (!result.success) {
     throw new Error(
@@ -151,20 +169,11 @@ export function updateWorkgroveConfig(
   return { config: validated, revision: contentRevision(content) };
 }
 
-export function configuredSetupCommand(
-  config: WorkgroveConfig
-): WorkgroveCommand | null {
-  return config.setup ?? null;
-}
-
 function resolveCommand(
   config: WorkgroveConfig,
-  command: WorkgroveCommand | undefined,
+  command: WorkgroveCommand,
   slot: number
-): ResolvedWorkgroveCommand | null {
-  if (!command) {
-    return null;
-  }
+): ResolvedWorkgroveCommand {
   return {
     argv: [...command.argv],
     env: workgroveCommandEnvironment(config, slot),
@@ -174,13 +183,13 @@ function resolveCommand(
 export function resolveStartCommand(
   config: WorkgroveConfig,
   slot: number
-): ResolvedWorkgroveCommand | null {
+): ResolvedWorkgroveCommand {
   return resolveCommand(config, config.start, slot);
 }
 
 export function resolveSetupCommand(
   config: WorkgroveConfig,
   slot: number
-): ResolvedWorkgroveCommand | null {
+): ResolvedWorkgroveCommand {
   return resolveCommand(config, config.setup, slot);
 }

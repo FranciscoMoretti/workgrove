@@ -11,7 +11,6 @@ const actions: WorktreeCommandActions = {
   onSetup: () => undefined,
   onStart: () => undefined,
   onStop: () => undefined,
-  setupAvailable: true,
 };
 
 function worktree(
@@ -76,14 +75,5 @@ describe("worktree command menu", () => {
     expect(
       itemIds(worktree("running", { slot: null, slotState: "unassigned" }))
     ).toEqual(["setup", "stop"]);
-  });
-
-  it("keeps setup visible but disabled when no setup command is configured", () => {
-    const items = worktreeCommandMenuItems({
-      actions: { ...actions, setupAvailable: false },
-      pending: false,
-      worktree: worktree("not-running"),
-    });
-    expect(items.find((item) => item.id === "setup")?.disabled).toBe(true);
   });
 });

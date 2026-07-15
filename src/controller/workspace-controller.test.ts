@@ -24,6 +24,7 @@ import { appsCanRestart } from "./workspace-snapshot";
 const config = {
   version: 1,
   stride: 10,
+  setup: { argv: ["npm", "install"] },
   start: { argv: ["bun", "run", "dev:all"] },
   apps: {
     chat: { basePort: 3000 },

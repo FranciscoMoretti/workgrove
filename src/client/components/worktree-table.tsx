@@ -126,11 +126,10 @@ export function WorktreeTable({
     onStart: () => void;
     onStop: () => void;
     pending: boolean;
-    setupAvailable: boolean;
   };
   worktrees: WorktreeSnapshot[];
 }) {
-  const canSetupVisible = visibleActions.setupAvailable && worktrees.length > 0;
+  const canSetupVisible = worktrees.length > 0;
   const canStartVisible = worktrees.some(
     (worktree) => worktree.slotState === "assigned" && appsAreStopped(worktree)
   );

@@ -64,7 +64,6 @@ export interface WorkspaceSnapshot {
   mainWorktreePath: string;
   repoName: string;
   repoPath: string;
-  setupAvailable: boolean;
   slotEnv: string;
   slotFile: string;
   slotOptions: SlotOption[];

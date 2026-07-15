@@ -31,7 +31,6 @@ describe("details panel", () => {
           onSetup: () => undefined,
           onStart: () => undefined,
           onStop: () => undefined,
-          setupAvailable: true,
         },
         error: new Error("Failed to fetch"),
         loading: false,

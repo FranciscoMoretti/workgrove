@@ -37,6 +37,21 @@ describe("shared Workgrove schema", () => {
     ).toBe(false);
   });
 
+  it("requires both repository commands", () => {
+    expect(
+      WorkgroveConfigSchema.safeParse({
+        ...validConfig,
+        setup: undefined,
+      }).success
+    ).toBe(false);
+    expect(
+      WorkgroveConfigSchema.safeParse({
+        ...validConfig,
+        start: undefined,
+      }).success
+    ).toBe(false);
+  });
+
   it("rejects duplicate ports", () => {
     const result = WorkgroveConfigSchema.safeParse({
       ...validConfig,

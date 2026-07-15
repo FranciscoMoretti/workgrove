@@ -23,7 +23,6 @@ import {
 } from "../config/repository-trust";
 import type { WorkgroveCommand } from "../config/workgrove-command";
 import {
-  configuredSetupCommand,
   findWorkgroveConfig,
   loadWorkgroveConfig,
   loadWorkgroveConfigDocument,
@@ -140,12 +139,8 @@ function slotState(
 
 function worktreeSetupState(
   id: string,
-  path: string,
-  setupAvailable: boolean
+  path: string
 ): "failed" | "idle" | "running" {
-  if (!setupAvailable) {
-    return "idle";
-  }
   const processId = setupProcessId(id);
   if (managedPid(processId, path) !== null) {
     return "running";
@@ -177,7 +172,7 @@ export class WorkspaceController {
     }
     const configDocument = loadWorkgroveConfigDocument(configPath);
     const config = configDocument.config;
-    const setupCommand = configuredSetupCommand(config);
+    const setupCommand = config.setup;
     const discovered = parseWorktreeList(
       git(selectedRoot, ["worktree", "list", "--porcelain"])
     ).filter((item) => !item.prunable && existsSync(item.path));
@@ -231,7 +226,7 @@ export class WorkspaceController {
         name: basename(item.path),
         path,
         processRunning: managedPid(id, path) !== null,
-        setupState: worktreeSetupState(id, path, setupCommand !== null),
+        setupState: worktreeSetupState(id, path),
         slot,
         slotState: slotState(
           parsedSlots[index],
@@ -294,14 +289,13 @@ export class WorkspaceController {
       mainWorktreePath: worktrees[0].path,
       repoName: basename(worktrees[0].path),
       repoPath: selectedRoot,
-      setupAvailable: setupCommand !== null,
       slotEnv: WORKGROVE_SLOT_ENV,
       slotFile,
       slotOptions,
       trustCommands: [
-        setupCommand ? commandSummary("Setup", setupCommand) : null,
-        config.start ? commandSummary("Apps", config.start) : null,
-      ].filter((summary): summary is string => summary !== null),
+        commandSummary("Setup", setupCommand),
+        commandSummary("Apps", config.start),
+      ],
       trustRequired: repositoryRequiresTrust(config),
       trusted: repositoryIsTrusted(selectedRoot, config),
       updatedAt: new Date().toISOString(),

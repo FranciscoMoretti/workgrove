@@ -36,8 +36,8 @@ const WorkgroveConfigObjectSchema = z.strictObject({
     .min(1)
     .max(MAX_WORKGROVE_PORT)
     .default(WORKGROVE_DEFAULT_STRIDE),
-  setup: WorkgroveCommandSchema.optional(),
-  start: WorkgroveCommandSchema.optional(),
+  setup: WorkgroveCommandSchema,
+  start: WorkgroveCommandSchema,
   apps: z.record(WorkgroveAppIdSchema, WorkgroveAppSchema),
   env: z.record(WorkgroveEnvironmentNameSchema, z.string()).optional(),
 });

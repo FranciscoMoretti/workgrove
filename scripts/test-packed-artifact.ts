@@ -116,7 +116,7 @@ try {
     "bun",
     [
       "-e",
-      'import { resolveWorkgroveAppGroup } from "workgrove/config"; const appGroup = resolveWorkgroveAppGroup({ version: 1, stride: 10, apps: { web: { basePort: 4000 } } }, {}); if (appGroup.apps.web.port !== 4000) process.exit(1);',
+      'import { resolveWorkgroveAppGroup } from "workgrove/config"; const appGroup = resolveWorkgroveAppGroup({ version: 1, stride: 10, setup: { argv: ["npm", "install"] }, start: { argv: ["npm", "run", "dev"] }, apps: { web: { basePort: 4000 } } }, {}); if (appGroup.apps.web.port !== 4000) process.exit(1);',
     ],
     { cwd: installDirectory }
   );
@@ -135,6 +135,8 @@ try {
       {
         version: 1,
         stride: 10,
+        setup: { argv: ["npm", "install"] },
+        start: { argv: ["npm", "run", "dev"] },
         apps: {
           fixture: { basePort: 45_000 },
         },

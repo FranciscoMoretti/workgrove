@@ -11,6 +11,7 @@ import {
 function createConfig(): WorkgroveConfig {
   return {
     stride: 10,
+    setup: { argv: ["npm", "install"] },
     apps: {
       web: {
         basePort: 3000,
@@ -76,6 +77,25 @@ describe("configuration drafts", () => {
     };
     expect(
       loadConfigDraft("/repo/.workgrove.json", changedSource, storage)
+    ).toBeNull();
+    expect(
+      loadConfigDraft("/repo/.workgrove.json", source, storage)
+    ).toBeNull();
+  });
+
+  it("drops a legacy draft that omitted a now-required command", () => {
+    const source = createConfig();
+    const storage = createMemoryStorage();
+
+    saveConfigDraft(
+      "/repo/.workgrove.json",
+      source,
+      { ...source, setup: undefined },
+      storage
+    );
+
+    expect(
+      loadConfigDraft("/repo/.workgrove.json", source, storage)
     ).toBeNull();
     expect(
       loadConfigDraft("/repo/.workgrove.json", source, storage)

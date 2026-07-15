@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  repositoryPageFromSearch,
   repositoryPathFromArgs,
   repositoryPathFromSearch,
   repositoryUrl,
@@ -17,6 +18,21 @@ describe("repository context", () => {
     );
     expect(repositoryPathFromSearch(new URL(url).search)).toBe(
       "/Users/example/Code/project with spaces"
+    );
+  });
+
+  it("creates shareable repository settings URLs", () => {
+    const url = repositoryUrl(
+      "http://127.0.0.1:3999/?repo=%2Fold&view=settings",
+      "/Users/example/Code/project",
+      "settings"
+    );
+    expect(url).toBe(
+      "http://127.0.0.1:3999/?repo=%2FUsers%2Fexample%2FCode%2Fproject&view=settings"
+    );
+    expect(repositoryPageFromSearch(new URL(url).search)).toBe("settings");
+    expect(repositoryUrl(url, "/Users/example/Code/project", "workspace")).toBe(
+      "http://127.0.0.1:3999/?repo=%2FUsers%2Fexample%2FCode%2Fproject"
     );
   });
 

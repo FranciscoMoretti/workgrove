@@ -18,7 +18,6 @@ export interface WorktreeCommandActions {
   onSetup: (worktree: WorktreeSnapshot) => void;
   onStart: (worktree: WorktreeSnapshot) => void;
   onStop: (worktree: WorktreeSnapshot) => void;
-  setupAvailable: boolean;
 }
 
 export function worktreeCommandMenuItems({
@@ -34,7 +33,7 @@ export function worktreeCommandMenuItems({
   const stopped = appsAreStopped(worktree);
   return [
     {
-      disabled: pending || !actions.setupAvailable,
+      disabled: pending,
       icon: Settings2Icon,
       id: "setup",
       label: "Setup apps",

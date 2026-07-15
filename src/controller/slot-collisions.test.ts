@@ -9,6 +9,8 @@ import {
 const config: WorkgroveConfig = {
   version: 1,
   stride: 10,
+  setup: { argv: ["npm", "install"] },
+  start: { argv: ["npm", "run", "dev"] },
   apps: {
     api: { basePort: 8000 },
     web: { basePort: 3000 },

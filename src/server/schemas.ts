@@ -37,7 +37,6 @@ export const WorkspaceSnapshotSchema = z.object({
   mainWorktreePath: z.string(),
   repoName: z.string(),
   repoPath: z.string(),
-  setupAvailable: z.boolean(),
   slotEnv: z.string(),
   slotFile: z.string(),
   slotOptions: z.array(

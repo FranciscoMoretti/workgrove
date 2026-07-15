@@ -22,11 +22,11 @@ describe("repository initialization", () => {
         })
       );
       const preview = planRepositoryInitialization(root);
-      expect(preview.detectedRuntime).toBe("Node.js · bun");
-      expect(preview.detectedSetupCommand).toBe("bun install");
-      expect(preview.detectedStartCommand).toBe("bun dev");
-      expect(preview.config.setup?.argv).toEqual(["bun", "install"]);
-      expect(preview.config.start?.argv).toEqual(["bun", "dev"]);
+      expect(preview.detectedRuntime).toBe("Node.js · npm");
+      expect(preview.detectedSetupCommand).toBe("npm install");
+      expect(preview.detectedStartCommand).toBe("npm run dev");
+      expect(preview.config.setup.argv).toEqual(["npm", "install"]);
+      expect(preview.config.start.argv).toEqual(["npm", "run", "dev"]);
       expect(preview.config.apps.app.basePort).toBeGreaterThanOrEqual(10_000);
       expect(Object.keys(preview.config).sort()).toEqual([
         "$schema",
@@ -51,15 +51,16 @@ describe("repository initialization", () => {
     }
   });
 
-  it("does not guess a port-bound Django start command", () => {
+  it("uses safe command defaults when project detection has no commands", () => {
     const root = mkdtempSync(join(tmpdir(), "workgrove-django-"));
     try {
       spawnSync("git", ["init", "-q"], { cwd: root });
       writeFileSync(join(root, "manage.py"), "");
       const preview = planRepositoryInitialization(root);
-      expect(preview.detectedSetupCommand).toBeNull();
-      expect(preview.detectedStartCommand).toBeNull();
-      expect(preview.config.start).toBeUndefined();
+      expect(preview.detectedSetupCommand).toBe("npm install");
+      expect(preview.detectedStartCommand).toBe("npm run dev");
+      expect(preview.config.setup.argv).toEqual(["npm", "install"]);
+      expect(preview.config.start.argv).toEqual(["npm", "run", "dev"]);
     } finally {
       rmSync(root, { force: true, recursive: true });
     }

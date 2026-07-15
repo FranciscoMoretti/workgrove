@@ -9,10 +9,7 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { WorkgroveCommand } from "./workgrove-command";
-import {
-  configuredSetupCommand,
-  type WorkgroveConfig,
-} from "./workgrove-config";
+import type { WorkgroveConfig } from "./workgrove-config";
 
 const CONTROL_DIR = join(homedir(), ".workgrove");
 const TRUST_FILE = join(CONTROL_DIR, "trusted-repositories.json");
@@ -31,16 +28,12 @@ function trustStore(): Record<string, boolean | string> {
   }
 }
 
-export function repositoryRequiresTrust(config: WorkgroveConfig): boolean {
-  return Boolean(config.start || configuredSetupCommand(config));
+export function repositoryRequiresTrust(_config: WorkgroveConfig): boolean {
+  return true;
 }
 
-function fingerprintCommand(command: WorkgroveCommand | null) {
-  return command
-    ? {
-        argv: command.argv,
-      }
-    : null;
+function fingerprintCommand(command: WorkgroveCommand) {
+  return { argv: command.argv };
 }
 
 export function repositoryCommandFingerprint(config: WorkgroveConfig): string {
@@ -50,8 +43,8 @@ export function repositoryCommandFingerprint(config: WorkgroveConfig): string {
       env: config.env ?? {},
       stride: config.stride,
     },
-    setup: fingerprintCommand(configuredSetupCommand(config)),
-    start: fingerprintCommand(config.start ?? null),
+    setup: fingerprintCommand(config.setup),
+    start: fingerprintCommand(config.start),
   };
   return createHash("sha256")
     .update(JSON.stringify(commands))

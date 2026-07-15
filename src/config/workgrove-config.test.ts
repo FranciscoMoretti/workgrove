@@ -65,14 +65,6 @@ describe("generic Workgrove configuration", () => {
 
   it("requires trust only for the two repository commands", () => {
     expect(repositoryRequiresTrust(config)).toBe(true);
-    expect(repositoryRequiresTrust({ ...config, setup: undefined })).toBe(true);
-    expect(
-      repositoryRequiresTrust({
-        ...config,
-        setup: undefined,
-        start: undefined,
-      })
-    ).toBe(false);
     expect(
       repositoryCommandFingerprint({
         ...config,
@@ -85,6 +77,23 @@ describe("generic Workgrove configuration", () => {
         env: { ...config.env, NODE_OPTIONS: "--inspect" },
       })
     ).not.toBe(repositoryCommandFingerprint(config));
+  });
+
+  it("loads legacy version-one files with the required command defaults", () => {
+    const directory = mkdtempSync(join(tmpdir(), "workgrove-legacy-config-"));
+    const path = join(directory, ".workgrove.json");
+    writeFileSync(
+      path,
+      `${JSON.stringify({ version: 1, stride: 10, apps: config.apps })}\n`
+    );
+    try {
+      expect(loadWorkgroveConfigDocument(path).config).toMatchObject({
+        setup: { argv: ["npm", "install"] },
+        start: { argv: ["npm", "run", "dev"] },
+      });
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
   });
 
   it("rejects stale visual-editor saves without overwriting newer changes", () => {

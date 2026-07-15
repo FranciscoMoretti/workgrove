@@ -1,7 +1,4 @@
-import {
-  configuredSetupCommand,
-  resolveSetupCommand,
-} from "../config/workgrove-config";
+import { resolveSetupCommand } from "../config/workgrove-config";
 import { WORKGROVE_DEFAULT_SLOT } from "../config/workgrove-schema";
 import type { WorkspaceController } from "../controller/workspace-controller";
 import type { CommandReceipt } from "../controller/workspace-snapshot";
@@ -20,9 +17,6 @@ export function setupAllApps(
   controller.assertTrusted(repoPath);
   const workspace = controller.inspect(repoPath);
   const config = controller.config(repoPath);
-  if (!configuredSetupCommand(config)) {
-    throw new Error("Missing setup command in .workgrove.json");
-  }
   const targets = selectRequestedWorktrees(
     workspace.worktrees,
     input.worktreeIds
@@ -30,9 +24,6 @@ export function setupAllApps(
   for (const worktree of targets) {
     const slot = worktree.slot ?? WORKGROVE_DEFAULT_SLOT;
     const setup = resolveSetupCommand(config, slot);
-    if (!setup) {
-      continue;
-    }
     appendManagedLog(
       worktree.id,
       `[workgrove] Running setup: ${setup.argv.join(" ")}`
