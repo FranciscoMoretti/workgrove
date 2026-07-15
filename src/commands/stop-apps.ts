@@ -4,18 +4,19 @@ import { inspectListeningPorts, ownedPortPids } from "../runtime/ports";
 import {
   appendManagedLog,
   stopManagedProcess,
+  stopOwnedProcess,
 } from "../runtime/process-supervisor";
 import { requiredString } from "./command";
 
-export function stopApps(
+export async function stopApps(
   controller: WorkspaceController,
   input: Record<string, unknown>
-): CommandReceipt {
+): Promise<CommandReceipt> {
   const repoPath = requiredString(input.repoPath, "Repository path");
   const worktreeId = requiredString(input.worktreeId, "Worktree");
   const { worktree } = controller.worktree(repoPath, worktreeId);
   const killed = new Set<number>();
-  const managed = stopManagedProcess(worktreeId, worktree.path);
+  const managed = await stopManagedProcess(worktreeId, worktree.path);
   if (managed) {
     killed.add(managed);
   }
@@ -24,11 +25,8 @@ export function stopApps(
     worktree.apps.map((app) => app.port),
     worktree.path
   )) {
-    try {
-      process.kill(pid, "SIGTERM");
+    if (await stopOwnedProcess(pid, worktreeId)) {
       killed.add(pid);
-    } catch {
-      // The process may have exited with its managed root.
     }
   }
   const message =

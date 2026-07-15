@@ -4,10 +4,10 @@ import { appsAreRunning } from "../controller/workspace-snapshot";
 import { requiredString, selectRequestedWorktrees } from "./command";
 import { stopApps } from "./stop-apps";
 
-export function stopAllApps(
+export async function stopAllApps(
   controller: WorkspaceController,
   input: Record<string, unknown>
-): CommandReceipt {
+): Promise<CommandReceipt> {
   const repoPath = requiredString(input.repoPath, "Repository path");
   const workspace = controller.inspect(repoPath);
   const running = selectRequestedWorktrees(
@@ -15,7 +15,7 @@ export function stopAllApps(
     input.worktreeIds
   ).filter(appsAreRunning);
   for (const worktree of running) {
-    stopApps(controller, { repoPath, worktreeId: worktree.id });
+    await stopApps(controller, { repoPath, worktreeId: worktree.id });
   }
   return {
     command: "stop-all-apps",

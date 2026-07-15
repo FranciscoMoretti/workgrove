@@ -17,6 +17,9 @@ import { pathInside, pidOwnedByWorktree } from "./ports";
 const CONTROL_DIR = join(homedir(), ".workgrove");
 const LINE_BREAK = /\r?\n/;
 const TRAILING_LINE_BREAK = /\r?\n$/;
+const GRACEFUL_STOP_ATTEMPTS = 20;
+const FORCE_STOP_ATTEMPTS = 10;
+const STOP_POLL_MS = 100;
 interface ProcessRecord {
   argv: string[];
   cwd: string;
@@ -30,6 +33,11 @@ interface ProcessRecord {
 interface ProcessFailure {
   failedAt: string;
   message: string;
+}
+
+interface ProcessSignalTarget {
+  id: number;
+  kind: "group" | "process";
 }
 
 const processes = new Map<
@@ -63,13 +71,65 @@ function recordFailure(worktreeId: string, message: string): void {
   writeFileSync(failurePath(worktreeId), `${JSON.stringify(failure)}\n`);
 }
 
-function live(pid: number): boolean {
+function processTargetIsLive(target: ProcessSignalTarget): boolean {
   try {
-    process.kill(pid, 0);
+    process.kill(target.kind === "group" ? -target.id : target.id, 0);
     return true;
   } catch {
     return false;
   }
+}
+
+function signalProcessTarget(
+  target: ProcessSignalTarget,
+  signal: NodeJS.Signals
+): void {
+  process.kill(target.kind === "group" ? -target.id : target.id, signal);
+}
+
+async function stopProcessTarget(
+  target: ProcessSignalTarget,
+  logId?: string
+): Promise<void> {
+  try {
+    signalProcessTarget(target, "SIGTERM");
+  } catch (error) {
+    if (!processTargetIsLive(target)) {
+      return;
+    }
+    throw error;
+  }
+  for (let attempt = 0; attempt < GRACEFUL_STOP_ATTEMPTS; attempt += 1) {
+    if (!processTargetIsLive(target)) {
+      return;
+    }
+    await delay(STOP_POLL_MS);
+  }
+  if (logId) {
+    appendManagedLog(
+      logId,
+      "[workgrove] Force-stopping processes that ignored SIGTERM"
+    );
+  }
+  try {
+    signalProcessTarget(target, "SIGKILL");
+  } catch (error) {
+    if (!processTargetIsLive(target)) {
+      return;
+    }
+    throw error;
+  }
+  for (let attempt = 0; attempt < FORCE_STOP_ATTEMPTS; attempt += 1) {
+    if (!processTargetIsLive(target)) {
+      return;
+    }
+    await delay(STOP_POLL_MS);
+  }
+  throw new Error(`Managed ${target.kind} ${target.id} did not stop`);
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function startMarker(pid: number): string {
@@ -107,7 +167,7 @@ export function managedPid(
   if (
     tracked?.child.pid &&
     pathInside(tracked.record.cwd, expectedWorktreePath) &&
-    live(tracked.child.pid)
+    processTargetIsLive({ id: tracked.child.pid, kind: "process" })
   ) {
     return tracked.child.pid;
   }
@@ -116,7 +176,7 @@ export function managedPid(
     !(
       record &&
       pathInside(record.cwd, expectedWorktreePath) &&
-      live(record.pid) &&
+      processTargetIsLive({ id: record.pid, kind: "process" }) &&
       pidOwnedByWorktree(record.pid, expectedWorktreePath)
     ) ||
     startMarker(record.pid) !== record.startMarker
@@ -235,7 +295,7 @@ export function listManagedProcesses(): ManagedProcessSummary[] {
           readFileSync(join(CONTROL_DIR, name), "utf8")
         ) as ProcessRecord;
         if (
-          !live(record.pid) ||
+          !processTargetIsLive({ id: record.pid, kind: "process" }) ||
           startMarker(record.pid) !== record.startMarker ||
           !pidOwnedByWorktree(record.pid, record.cwd)
         ) {
@@ -271,20 +331,38 @@ export function managedFailure(worktreeId: string): ProcessFailure | null {
   }
 }
 
-export function stopManagedProcess(
+export async function stopManagedProcess(
   worktreeId: string,
   worktreePath: string
-): number | null {
+): Promise<number | null> {
   const pid = managedPid(worktreeId, worktreePath);
   if (!pid) {
     return null;
   }
-  try {
-    process.kill(-pid, "SIGTERM");
-  } catch {
-    process.kill(pid, "SIGTERM");
+  const groupTarget: ProcessSignalTarget = { id: pid, kind: "group" };
+  const target = processTargetIsLive(groupTarget)
+    ? groupTarget
+    : ({ id: pid, kind: "process" } satisfies ProcessSignalTarget);
+  await stopProcessTarget(target, worktreeId);
+  if (processes.get(worktreeId)?.record.pid === pid) {
+    processes.delete(worktreeId);
+  }
+  if (persistedRecord(worktreeId)?.pid === pid) {
+    rmSync(pidPath(worktreeId), { force: true });
   }
   return pid;
+}
+
+export async function stopOwnedProcess(
+  pid: number,
+  logId: string
+): Promise<boolean> {
+  const target: ProcessSignalTarget = { id: pid, kind: "process" };
+  if (!processTargetIsLive(target)) {
+    return false;
+  }
+  await stopProcessTarget(target, logId);
+  return true;
 }
 
 export function appendManagedLog(worktreeId: string, message: string): void {

@@ -28,7 +28,7 @@ export async function restartApps(
   if (current.slotState !== "assigned") {
     throw new Error("Assign a unique slot before restarting apps");
   }
-  stopApps(controller, { repoPath, worktreeId });
+  await stopApps(controller, { repoPath, worktreeId });
   for (let attempt = 0; attempt < STOP_ATTEMPTS; attempt += 1) {
     const worktree = controller.worktree(repoPath, worktreeId).worktree;
     if (appsAreStopped(worktree)) {
