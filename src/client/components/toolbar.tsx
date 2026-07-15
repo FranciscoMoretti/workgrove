@@ -9,6 +9,7 @@ import {
 import type { CSSProperties } from "react";
 
 import { REFRESH_INTERVAL } from "../queries";
+import { ThemeToggle } from "./theme-toggle";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -137,6 +138,7 @@ export function Toolbar({
             {isFetching ? "Refreshing" : "Refresh"}
           </span>
         </Button>
+        <ThemeToggle />
       </div>
     </header>
   );
