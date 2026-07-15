@@ -21,6 +21,7 @@ import { RepositoryConfigDialog } from "./components/repository-config-dialog";
 import { RepositoryDialog } from "./components/repository-dialog";
 import { RepositoryTrustDialog } from "./components/repository-trust-dialog";
 import { SlotDialog } from "./components/slot-dialog";
+import { ThemeToggle } from "./components/theme-toggle";
 import { Toolbar } from "./components/toolbar";
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
 import { Button } from "./components/ui/button";
@@ -123,7 +124,10 @@ function Onboarding({
     return message ? <FieldError>{message}</FieldError> : null;
   }
   return (
-    <main className="grid min-h-screen place-items-center bg-muted p-6">
+    <main className="relative grid min-h-screen place-items-center bg-muted p-6">
+      <div className="absolute top-6 right-6">
+        <ThemeToggle />
+      </div>
       <Card className="w-full max-w-xl">
         <CardHeader>
           <EmptyMedia variant="icon">
