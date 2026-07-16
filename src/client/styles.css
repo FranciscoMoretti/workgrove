@@ -25,6 +25,10 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-status-partial-foreground: var(--status-partial-foreground);
+  --color-status-partial: var(--status-partial);
+  --color-status-running-foreground: var(--status-running-foreground);
+  --color-status-running: var(--status-running);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -64,6 +68,10 @@
   --accent: oklch(0.966 0.005 106.5);
   --accent-foreground: oklch(0.228 0.013 107.4);
   --destructive: oklch(0.577 0.245 27.325);
+  --status-running: oklch(0.94 0.052 148);
+  --status-running-foreground: oklch(0.34 0.108 148);
+  --status-partial: oklch(0.95 0.07 88);
+  --status-partial-foreground: oklch(0.38 0.09 72);
   --border: oklch(0.93 0.007 106.5);
   --input: oklch(0.93 0.007 106.5);
   --ring: oklch(0.737 0.021 106.9);
@@ -81,6 +89,7 @@
   --sidebar-accent-foreground: oklch(0.228 0.013 107.4);
   --sidebar-border: oklch(0.93 0.007 106.5);
   --sidebar-ring: oklch(0.737 0.021 106.9);
+  color-scheme: light;
 }
 
 .dark {
@@ -99,6 +108,10 @@
   --accent: oklch(0.286 0.016 107.4);
   --accent-foreground: oklch(0.988 0.003 106.5);
   --destructive: oklch(0.704 0.191 22.216);
+  --status-running: oklch(0.3 0.058 148);
+  --status-running-foreground: oklch(0.88 0.098 148);
+  --status-partial: oklch(0.33 0.061 82);
+  --status-partial-foreground: oklch(0.9 0.105 88);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.58 0.031 107.3);
@@ -115,6 +128,7 @@
   --sidebar-accent-foreground: oklch(0.988 0.003 106.5);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.58 0.031 107.3);
+  color-scheme: dark;
 }
 
 @layer base {
@@ -175,6 +189,55 @@
 
 .worktree-table [data-slot="table-row"][data-state="selected"] {
   box-shadow: inset 2px 0 0 var(--foreground);
+}
+
+.worktree-table [data-slot="button"][data-health="running"] {
+  color: var(--status-running-foreground);
+  background: var(--status-running);
+  border-color: color-mix(
+    in oklch,
+    var(--status-running-foreground),
+    transparent 62%
+  );
+}
+
+.worktree-table
+  [data-slot="button"][data-health="running"]:not(:disabled):hover {
+  background: color-mix(
+    in oklch,
+    var(--status-running),
+    var(--status-running-foreground) 9%
+  );
+}
+
+.worktree-table [data-slot="button"][data-health="partially-running"] {
+  color: var(--status-partial-foreground);
+  background: var(--status-partial);
+  border-color: color-mix(
+    in oklch,
+    var(--status-partial-foreground),
+    transparent 60%
+  );
+}
+
+.worktree-table
+  [data-slot="button"][data-health="partially-running"]:not(:disabled):hover {
+  background: color-mix(
+    in oklch,
+    var(--status-partial),
+    var(--status-partial-foreground) 9%
+  );
+}
+
+.worktree-table [data-slot="button"][data-health="not-running"] {
+  color: var(--muted-foreground);
+  background: var(--muted);
+}
+
+.worktree-table
+  [data-slot="button"][data-health="not-running"]:not(:disabled):hover {
+  color: var(--foreground);
+  background: color-mix(in oklch, var(--muted), var(--foreground) 6%);
 }
 
 .refresh-progress {
@@ -293,13 +356,15 @@
 .terminal {
   flex: 1;
   min-height: 0;
-  padding: 0.875rem;
-  overflow: auto;
   font-size: 0.75rem;
   line-height: 1.6;
-  color: var(--background);
-  background: var(--foreground);
+  color: var(--foreground);
+  background: var(--background);
   border: 1px solid var(--border);
+}
+
+.terminal [data-slot="scroll-area-viewport"] {
+  padding: 0.875rem;
 }
 
 .terminal pre {
@@ -318,7 +383,7 @@
 }
 
 .terminal-state > span {
-  color: color-mix(in oklch, var(--background), transparent 28%);
+  color: color-mix(in oklch, var(--foreground), transparent 28%);
 }
 
 .terminal-empty strong {

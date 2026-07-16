@@ -30,6 +30,7 @@ import {
   type SlotSwitchTarget,
   SwitchSlotDialog,
 } from "./components/switch-slot-dialog";
+import { ThemeToggle } from "./components/theme-toggle";
 import { Toolbar } from "./components/toolbar";
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
 import { Button } from "./components/ui/button";
@@ -136,7 +137,10 @@ function Onboarding({
     return message ? <FieldError>{message}</FieldError> : null;
   }
   return (
-    <main className="grid min-h-screen place-items-center bg-muted p-6">
+    <main className="relative grid min-h-screen place-items-center bg-muted p-6">
+      <div className="absolute top-6 right-6">
+        <ThemeToggle />
+      </div>
       <Card className="w-full max-w-xl">
         <CardHeader>
           <EmptyMedia variant="icon">
@@ -259,7 +263,6 @@ export function App() {
     trusted: workspace.data?.trusted ?? true,
   });
   const worktreeActions = useWorktreeCommandActions({
-    onSelectWorktree: setSelectedId,
     repoPath,
     requestRepositoryTrust: repositoryTrust.requestTrust,
     worktrees: visibleWorktrees,

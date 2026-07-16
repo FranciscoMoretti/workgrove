@@ -440,6 +440,7 @@ export function RepositoryConfigPage({
             <Field>
               <FieldLabel htmlFor="repository-stride">Stride</FieldLabel>
               <Input
+                className="font-mono tabular-nums"
                 id="repository-stride"
                 max={65_535}
                 min={1}
@@ -489,6 +490,7 @@ export function RepositoryConfigPage({
                       <TableCell className="align-top">
                         <Input
                           aria-label={`Base port for ${id}`}
+                          className="font-mono tabular-nums"
                           id={`app-${id}-port`}
                           max={65_535}
                           min={1024}
@@ -511,7 +513,9 @@ export function RepositoryConfigPage({
                         />
                       </TableCell>
                       <TableCell className="align-top text-muted-foreground">
-                        {endpoints[id]?.url ?? "Invalid port"}
+                        <code className="font-mono tabular-nums">
+                          {endpoints[id]?.url ?? "Invalid port"}
+                        </code>
                       </TableCell>
                       <TableCell className="align-top">
                         <Button

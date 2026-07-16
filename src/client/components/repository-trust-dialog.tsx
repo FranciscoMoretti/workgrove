@@ -3,13 +3,6 @@ import { AlertCircleIcon, ShieldCheckIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { Button } from "./ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "./ui/card";
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -93,21 +86,22 @@ export function RepositoryTrustDialog({
         <code className="break-all bg-muted px-2 py-1.5 text-muted-foreground">
           {repoPath}
         </code>
-        <div className="flex flex-col gap-2">
+        <div className="divide-y">
           {commands.map((value) => {
             const item = reviewedCommand(value);
             return (
-              <Card key={value} size="sm">
-                <CardHeader>
-                  <CardTitle>{item.label}</CardTitle>
-                  <CardDescription>{item.description}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <code className="block break-all bg-muted px-2 py-1.5">
-                    {item.command}
-                  </code>
-                </CardContent>
-              </Card>
+              <section
+                className="space-y-2 py-3 first:pt-0 last:pb-0"
+                key={value}
+              >
+                <div className="space-y-0.5">
+                  <h3 className="font-medium">{item.label}</h3>
+                  <p className="text-muted-foreground">{item.description}</p>
+                </div>
+                <code className="block break-all bg-muted px-2 py-1.5">
+                  {item.command}
+                </code>
+              </section>
             );
           })}
         </div>

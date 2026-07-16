@@ -1,5 +1,4 @@
 import {
-  ChevronRightIcon,
   GitBranchIcon,
   MoreHorizontalIcon,
   PlayIcon,
@@ -19,6 +18,7 @@ import {
   appsCanRestart,
 } from "../../controller/workspace-snapshot";
 import type { WorktreeCommandActions } from "../worktree-command-menu";
+import { AppPort, AppPortList } from "./app-port";
 import { type CommandMenuItem, CommandMenuItems } from "./command-menu-items";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -79,7 +79,7 @@ function appActionIndicator(pending: boolean, running: boolean) {
   return running ? (
     <SquareIcon data-icon="inline-start" />
   ) : (
-    <span className="size-2 rounded-full bg-muted-foreground" />
+    <PlayIcon data-icon="inline-start" />
   );
 }
 
@@ -249,7 +249,6 @@ export function WorktreeTable({
                       {worktree.isMain ? (
                         <Badge variant="secondary">Main</Badge>
                       ) : null}
-                      <ChevronRightIcon className="text-muted-foreground" />
                     </div>
                     <span className="truncate font-mono text-muted-foreground">
                       {worktree.path}
@@ -276,7 +275,7 @@ export function WorktreeTable({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <ButtonGroup>
+                  <ButtonGroup onClick={(event) => event.stopPropagation()}>
                     <Button
                       aria-label={`${running ? "Stop" : "Start"} apps in ${slotLabel} for ${worktree.name}`}
                       className="min-w-24 justify-start"
@@ -333,10 +332,8 @@ export function WorktreeTable({
                                       )}
                                     </small>
                                   </span>
-                                  <span className="font-mono text-muted-foreground">
-                                    {option.apps
-                                      .map((app) => `${app.label} ${app.port}`)
-                                      .join(" · ")}
+                                  <span className="text-muted-foreground">
+                                    <AppPortList apps={option.apps} />
                                   </span>
                                 </span>
                               </SelectItem>
@@ -360,16 +357,16 @@ export function WorktreeTable({
                             rel="noreferrer"
                             target="_blank"
                           >
-                            {app.port}
+                            <AppPort port={app.port} />
                           </a>
                         ) : (
-                          <code className="text-right">{app.port}</code>
+                          <AppPort className="text-right" port={app.port} />
                         )}
                       </Fragment>
                     ))}
                   </div>
                 </TableCell>
-                <TableCell>
+                <TableCell onClick={(event) => event.stopPropagation()}>
                   <WorktreeActionsMenu
                     commandActions={commandActions}
                     onDelete={() => onDelete(worktree)}

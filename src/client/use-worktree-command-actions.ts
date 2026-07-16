@@ -13,12 +13,10 @@ function requestedWorktreeIds(value: unknown): string[] {
 }
 
 export function useWorktreeCommandActions({
-  onSelectWorktree,
   repoPath,
   requestRepositoryTrust,
   worktrees,
 }: {
-  onSelectWorktree: (worktreeId: string) => void;
   repoPath: string;
   requestRepositoryTrust: RequestRepositoryTrust;
   worktrees: WorktreeSnapshot[];
@@ -73,28 +71,25 @@ export function useWorktreeCommandActions({
     (worktree: WorktreeSnapshot) => {
       requestRepositoryTrust("Start apps", () => {
         commands.startApps.mutate({ repoPath, worktreeId: worktree.id });
-        onSelectWorktree(worktree.id);
       });
     },
-    [commands.startApps, onSelectWorktree, repoPath, requestRepositoryTrust]
+    [commands.startApps, repoPath, requestRepositoryTrust]
   );
 
   const stopApps = useCallback(
     (worktree: WorktreeSnapshot) => {
       commands.stopApps.mutate({ repoPath, worktreeId: worktree.id });
-      onSelectWorktree(worktree.id);
     },
-    [commands.stopApps, onSelectWorktree, repoPath]
+    [commands.stopApps, repoPath]
   );
 
   const restartApps = useCallback(
     (worktree: WorktreeSnapshot) => {
       requestRepositoryTrust("Restart apps", () => {
         commands.restartApps.mutate({ repoPath, worktreeId: worktree.id });
-        onSelectWorktree(worktree.id);
       });
     },
-    [commands.restartApps, onSelectWorktree, repoPath, requestRepositoryTrust]
+    [commands.restartApps, repoPath, requestRepositoryTrust]
   );
 
   const setupApps = useCallback(
@@ -104,10 +99,9 @@ export function useWorktreeCommandActions({
           repoPath,
           worktreeIds: [worktree.id],
         });
-        onSelectWorktree(worktree.id);
       });
     },
-    [commands.setupAllApps, onSelectWorktree, repoPath, requestRepositoryTrust]
+    [commands.setupAllApps, repoPath, requestRepositoryTrust]
   );
 
   const commandActions = useMemo<WorktreeCommandActions>(

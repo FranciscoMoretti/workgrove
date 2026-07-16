@@ -7,6 +7,7 @@ import type {
   SlotOption,
 } from "../../controller/workspace-snapshot";
 import type { RequestRepositoryTrust } from "../use-repository-trust";
+import { AppPort, AppPortList } from "./app-port";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import {
@@ -183,9 +184,7 @@ export function CreateWorktreeDialog({
                             <small>Available</small>
                           </span>
                           <span className="slot-select-ports">
-                            {option.apps
-                              .map((app) => `${app.label} ${app.port}`)
-                              .join(" · ")}
+                            <AppPortList apps={option.apps} />
                           </span>
                         </span>
                       </SelectItem>
@@ -199,7 +198,7 @@ export function CreateWorktreeDialog({
                 {selected.apps.map((app) => (
                   <span key={`${app.label}:${app.port}`}>
                     <b>{app.label}</b>
-                    <code>{app.port}</code>
+                    <AppPort port={app.port} />
                   </span>
                 ))}
               </div>
