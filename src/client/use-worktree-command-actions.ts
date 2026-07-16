@@ -34,6 +34,9 @@ export function useWorktreeCommandActions({
           commands.stopApps.isPending
             ? commands.stopApps.variables?.worktreeId
             : null,
+          commands.switchSlot.isPending
+            ? commands.switchSlot.variables?.worktreeId
+            : null,
           commands.restartApps.isPending
             ? commands.restartApps.variables?.worktreeId
             : null,
@@ -61,6 +64,8 @@ export function useWorktreeCommandActions({
       commands.startApps.variables,
       commands.stopApps.isPending,
       commands.stopApps.variables,
+      commands.switchSlot.isPending,
+      commands.switchSlot.variables,
     ]
   );
 

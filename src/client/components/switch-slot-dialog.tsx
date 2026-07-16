@@ -31,7 +31,7 @@ export function SwitchSlotDialog({
   target,
 }: {
   onClose: () => void;
-  onConfirm: (target: SlotSwitchTarget) => Promise<void>;
+  onConfirm: (target: SlotSwitchTarget) => Promise<unknown>;
   requestRepositoryTrust: RequestRepositoryTrust;
   target: SlotSwitchTarget | null;
 }) {

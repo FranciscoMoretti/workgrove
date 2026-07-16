@@ -67,7 +67,6 @@ import {
 import { Spinner } from "./components/ui/spinner";
 import { WorktreeTable } from "./components/worktree-table";
 import { useLogs, useWorkspace } from "./queries";
-import { runSlotSwitch } from "./slot-switch";
 import { useRepositoryOpen } from "./use-repository-open";
 import { useRepositoryPicker } from "./use-repository-picker";
 import { useRepositorySetup } from "./use-repository-setup";
@@ -539,18 +538,11 @@ export function App() {
         }
         onClose={() => setSlotSwitchTarget(null)}
         onConfirm={(target) =>
-          runSlotSwitch(
-            {
-              setSlot: (input) => commands.setSlot.mutateAsync(input),
-              startApps: (input) => commands.startApps.mutateAsync(input),
-              stopApps: (input) => commands.stopApps.mutateAsync(input),
-            },
-            {
-              repoPath,
-              slot: target.slot.slot,
-              worktreeId: target.worktree.id,
-            }
-          )
+          commands.switchSlot.mutateAsync({
+            repoPath,
+            slot: target.slot.slot,
+            worktreeId: target.worktree.id,
+          })
         }
         requestRepositoryTrust={repositoryTrust.requestTrust}
         target={slotSwitchTarget}

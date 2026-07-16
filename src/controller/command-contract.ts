@@ -51,6 +51,9 @@ const INPUT_SCHEMAS = {
   "start-apps": StartStopSchema,
   "stop-all-apps": VisibleBulkSchema,
   "stop-apps": StartStopSchema,
+  "switch-slot": StartStopSchema.extend({
+    slot: z.number().int().nonnegative(),
+  }),
   "trust-repository": RepositoryPathSchema,
   "update-repository-config": RepositoryPathSchema.extend({
     config: WorkgroveConfigSchema,
@@ -73,6 +76,7 @@ const RESULT_SCHEMAS = {
   "start-apps": CommandReceiptSchema,
   "stop-all-apps": CommandReceiptSchema,
   "stop-apps": CommandReceiptSchema,
+  "switch-slot": CommandReceiptSchema,
   "trust-repository": CommandReceiptSchema,
   "update-repository-config": CommandReceiptSchema,
 } as const;

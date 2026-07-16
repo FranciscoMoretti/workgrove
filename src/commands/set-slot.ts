@@ -1,27 +1,21 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 
 import type { WorkspaceController } from "../controller/workspace-controller";
-import type { CommandReceipt } from "../controller/workspace-snapshot";
+import type {
+  CommandReceipt,
+  WorkspaceSnapshot,
+} from "../controller/workspace-snapshot";
 import {
   resolveSlotFilePath,
   updateSlotFileContent,
 } from "../runtime/slot-file";
 import { requiredSlot, requiredString } from "./command";
 
-export function setSlot(
-  controller: WorkspaceController,
-  input: Record<string, unknown>
-): CommandReceipt {
-  const repoPath = requiredString(input.repoPath, "Repository path");
-  const worktreeId = requiredString(input.worktreeId, "Worktree");
-  const slot = requiredSlot(input.slot);
-  const { workspace, worktree } = controller.worktree(repoPath, worktreeId);
-  const hasListener = worktree.apps.some(
-    (app) => app.probe === "tcp" && app.ownership !== "none"
-  );
-  if (hasListener || worktree.processRunning) {
-    throw new Error("Stop apps before changing the slot");
-  }
+export function assertSlotTargetAvailable(
+  workspace: WorkspaceSnapshot,
+  worktreeId: string,
+  slot: number
+): void {
   const occupied = workspace.worktrees.find(
     (item) => item.id !== worktreeId && item.slot === slot
   );
@@ -40,6 +34,23 @@ export function setSlot(
       `Slot ${slot} has a port collision with ${collisionOwner.name}`
     );
   }
+}
+
+export function setSlot(
+  controller: WorkspaceController,
+  input: Record<string, unknown>
+): CommandReceipt {
+  const repoPath = requiredString(input.repoPath, "Repository path");
+  const worktreeId = requiredString(input.worktreeId, "Worktree");
+  const slot = requiredSlot(input.slot);
+  const { workspace, worktree } = controller.worktree(repoPath, worktreeId);
+  const hasListener = worktree.apps.some(
+    (app) => app.probe === "tcp" && app.ownership !== "none"
+  );
+  if (hasListener || worktree.processRunning) {
+    throw new Error("Stop apps before changing the slot");
+  }
+  assertSlotTargetAvailable(workspace, worktreeId, slot);
   const file = resolveSlotFilePath(worktree.path, workspace.slotFile);
   const content = existsSync(file) ? readFileSync(file, "utf8") : "";
   const temporary = `${file}.workgrove-${process.pid}`;

@@ -15,6 +15,7 @@ import { startAllApps } from "../commands/start-all-apps";
 import { startApps } from "../commands/start-apps";
 import { stopAllApps } from "../commands/stop-all-apps";
 import { stopApps } from "../commands/stop-apps";
+import { switchSlot } from "../commands/switch-slot";
 import { trustRepository } from "../commands/trust-repository";
 import { updateRepositoryConfig } from "../commands/update-repository-config";
 import {
@@ -85,6 +86,7 @@ const COMMAND_HANDLERS: Record<WorkgroveCommandName, CommandHandler> = {
   "start-apps": startApps,
   "stop-all-apps": stopAllApps,
   "stop-apps": stopApps,
+  "switch-slot": switchSlot,
   "trust-repository": trustRepository,
   "update-repository-config": updateRepositoryConfig,
 };
