@@ -1,4 +1,3 @@
-import type { RepositoryCommandProfile } from "../config/workgrove-command";
 import type { WorkgroveConfig } from "../config/workgrove-schema";
 import type { AppHealth, ControlledApp } from "../runtime/app-health";
 
@@ -56,7 +55,6 @@ export function appsCanRestart(
 }
 
 export interface WorkspaceSnapshot {
-  commandProfile: RepositoryCommandProfile;
   config: WorkgroveConfig;
   configPath: string;
   configRevision: string;
@@ -66,7 +64,6 @@ export interface WorkspaceSnapshot {
   mainWorktreePath: string;
   repoName: string;
   repoPath: string;
-  setupAvailable: boolean;
   slotEnv: string;
   slotFile: string;
   slotOptions: SlotOption[];

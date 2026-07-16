@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { WorkgroveCommandSchema } from "../config/workgrove-command";
 import { WorkgroveConfigSchema } from "../config/workgrove-schema";
 
 const RepositoryPathSchema = z.object({
@@ -25,6 +24,7 @@ export const RepositoryInitializationPlanSchema = z.object({
   config: z.record(z.string(), z.unknown()),
   configPath: z.string(),
   detectedRuntime: z.string(),
+  detectedSetupCommand: z.string().nullable(),
   detectedStartCommand: z.string().nullable(),
   repoPath: z.string(),
 });
@@ -51,11 +51,10 @@ const INPUT_SCHEMAS = {
   "start-apps": StartStopSchema,
   "stop-all-apps": VisibleBulkSchema,
   "stop-apps": StartStopSchema,
-  "trust-repository": RepositoryPathSchema,
-  "update-repository-commands": RepositoryPathSchema.extend({
-    setup: WorkgroveCommandSchema.nullable(),
-    start: WorkgroveCommandSchema.nullable().optional(),
+  "switch-slot": StartStopSchema.extend({
+    slot: z.number().int().nonnegative(),
   }),
+  "trust-repository": RepositoryPathSchema,
   "update-repository-config": RepositoryPathSchema.extend({
     config: WorkgroveConfigSchema,
     revision: z.string().min(1),
@@ -77,8 +76,8 @@ const RESULT_SCHEMAS = {
   "start-apps": CommandReceiptSchema,
   "stop-all-apps": CommandReceiptSchema,
   "stop-apps": CommandReceiptSchema,
+  "switch-slot": CommandReceiptSchema,
   "trust-repository": CommandReceiptSchema,
-  "update-repository-commands": CommandReceiptSchema,
   "update-repository-config": CommandReceiptSchema,
 } as const;
 

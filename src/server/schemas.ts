@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { WorkgroveCommandSchema } from "../config/workgrove-command";
 import { WorkgroveConfigSchema } from "../config/workgrove-schema";
 
 export const WorkspaceQuerySchema = z.object({ repoPath: z.string().min(1) });
@@ -20,11 +19,6 @@ const AppEndpointSchema = z.object({
 });
 
 export const WorkspaceSnapshotSchema = z.object({
-  commandProfile: z.object({
-    setup: WorkgroveCommandSchema.nullable(),
-    start: WorkgroveCommandSchema.nullable(),
-    startMode: z.enum(["aggregate", "none", "per-app"]),
-  }),
   config: WorkgroveConfigSchema,
   configPath: z.string(),
   configRevision: z.string().min(1),
@@ -43,7 +37,6 @@ export const WorkspaceSnapshotSchema = z.object({
   mainWorktreePath: z.string(),
   repoName: z.string(),
   repoPath: z.string(),
-  setupAvailable: z.boolean(),
   slotEnv: z.string(),
   slotFile: z.string(),
   slotOptions: z.array(

@@ -23,32 +23,19 @@ import { appsCanRestart } from "./workspace-snapshot";
 
 const config = {
   version: 1,
-  slot: { default: 0, env: "CHATJS_DEV_SLOT", file: ".env.worktree.local" },
-  ports: { slotStride: 10 },
-  url: "http://localhost:{port}",
+  stride: 10,
+  setup: { argv: ["npm", "install"] },
+  start: { argv: ["bun", "run", "dev:all"] },
   apps: {
-    chat: {
-      port: { base: 3000 },
-      exports: { APP_URL: "{url}", PORT: "{port}" },
-      control: { label: "Chat", open: true, probe: "tcp", required: true },
-    },
-    electron: {
-      port: { base: 3001 },
-      exports: { ELECTRON_APP_URL: "{apps.chat.url}" },
-      control: {
-        label: "Desktop",
-        open: false,
-        probe: "none",
-        required: false,
-      },
-    },
-    site: {
-      port: { base: 3002 },
-      exports: { PORT: "{port}" },
-      control: { label: "Docs Site", open: true, probe: "tcp", required: true },
-    },
+    chat: { basePort: 3000 },
+    electron: { basePort: 3001 },
+    site: { basePort: 3002 },
   },
-  control: { start: { argv: ["bun", "run", "dev:all"] } },
+  env: {
+    CHAT_PORT: "{apps.chat.port}",
+    ELECTRON_PORT: "{apps.electron.port}",
+    SITE_PORT: "{apps.site.port}",
+  },
 } satisfies WorktreeEnvConfig;
 
 describe("controlled app configuration", () => {
@@ -65,16 +52,16 @@ describe("controlled app configuration", () => {
       },
       {
         id: "electron",
-        label: "Desktop",
-        open: false,
+        label: "Electron",
+        open: true,
         port: 3061,
-        probe: "none",
-        required: false,
+        probe: "tcp",
+        required: true,
         url: "http://localhost:3061",
       },
       {
         id: "site",
-        label: "Docs Site",
+        label: "Site",
         open: true,
         port: 3062,
         probe: "tcp",
@@ -84,18 +71,22 @@ describe("controlled app configuration", () => {
     ]);
   });
 
-  it("injects resolved exports for a generated single-app start command", () => {
+  it("injects explicitly configured repository environment variables", () => {
     const singleAppConfig = {
       ...config,
       apps: { app: config.apps.chat },
-      slot: { ...config.slot, env: "WORKGROVE_SLOT" },
+      env: { APP_PORT: "{apps.app.port}" },
     } satisfies WorktreeEnvConfig;
     expect(commandEnvironment(singleAppConfig, 4)).toEqual({
-      APP_URL: "http://localhost:3040",
-      PORT: "3040",
+      APP_PORT: "3040",
       WORKGROVE_SLOT: "4",
     });
-    expect(commandEnvironment(config, 4)).toEqual({ CHATJS_DEV_SLOT: "4" });
+    expect(commandEnvironment(config, 4)).toEqual({
+      CHAT_PORT: "3040",
+      ELECTRON_PORT: "3041",
+      SITE_PORT: "3042",
+      WORKGROVE_SLOT: "4",
+    });
   });
 
   it("reports stopped, partial, and running from required configured probes", () => {
@@ -103,7 +94,7 @@ describe("controlled app configuration", () => {
 
     expect(appHealth(apps, new Set())).toBe("not-running");
     expect(appHealth(apps, new Set([3060]))).toBe("partially-running");
-    expect(appHealth(apps, new Set([3060, 3062]))).toBe("running");
+    expect(appHealth(apps, new Set([3060, 3061, 3062]))).toBe("running");
   });
 });
 

@@ -1,57 +1,64 @@
-const TEMPLATE_PATTERN = /\{([^}]+)\}/g;
-const APP_TEMPLATE_PATTERN = /^apps\.([a-zA-Z0-9_-]+)\.(port|url)$/;
+const TOKEN_PATTERN = /\{([^{}]+)\}/g;
+const APP_TOKEN_PATTERN = /^apps\.([A-Za-z0-9_-]+)\.(port|url)$/;
+const BRACE_PATTERN = /[{}]/;
 
 export interface WorkgroveTemplateContext {
   apps: Record<string, { port: number; url: string }>;
-  port: number;
   slot: number;
-  url?: string;
+}
+
+export function workgroveTemplateError(
+  template: string,
+  appIds: ReadonlySet<string>
+): string | null {
+  let error: string | null = null;
+  const remainder = template.replace(TOKEN_PATTERN, (_match, token: string) => {
+    if (token === "slot") {
+      return "";
+    }
+    const appToken = APP_TOKEN_PATTERN.exec(token);
+    if (!appToken) {
+      error ??= `Unsupported template token {${token}}`;
+      return "";
+    }
+    if (!appIds.has(appToken[1])) {
+      error ??= `Template references unknown app "${appToken[1]}"`;
+    }
+    return "";
+  });
+  if (!error && BRACE_PATTERN.test(remainder)) {
+    return "Environment template contains an unmatched brace";
+  }
+  return error;
 }
 
 export function renderWorkgroveTemplate(
   template: string,
   context: WorkgroveTemplateContext
 ): string {
-  return template.replace(TEMPLATE_PATTERN, (_, token: string) => {
+  const error = workgroveTemplateError(
+    template,
+    new Set(Object.keys(context.apps))
+  );
+  if (error) {
+    throw new Error(error);
+  }
+  return template.replace(TOKEN_PATTERN, (_match, token: string) => {
     if (token === "slot") {
       return String(context.slot);
     }
-    if (token === "port") {
-      return String(context.port);
+    const appToken = APP_TOKEN_PATTERN.exec(token);
+    if (!appToken) {
+      throw new Error(`Unsupported template token {${token}}`);
     }
-    if (token === "url" && context.url) {
-      return context.url;
-    }
-    const match = APP_TEMPLATE_PATTERN.exec(token);
-    const app = match ? context.apps[match[1]] : null;
-    if (match && app) {
-      return String(app[match[2] as "port" | "url"]);
-    }
-    throw new Error(`Unknown Workgrove template variable "${token}"`);
+    return String(context.apps[appToken[1]][appToken[2] as "port" | "url"]);
   });
 }
 
-export function workgroveTemplateAppReferences(value: string): string[] {
-  return workgroveTemplateTokens(value).flatMap((token) => {
-    const appId = workgroveTemplateTokenAppReference(token);
-    return appId ? [appId] : [];
-  });
-}
-
-export function workgroveTemplateTokens(value: string): string[] {
-  return Array.from(value.matchAll(TEMPLATE_PATTERN), (match) => match[1]);
-}
-
-export function workgroveTemplateTokenAppReference(
-  token: string
-): string | null {
-  return APP_TEMPLATE_PATTERN.exec(token)?.[1] ?? null;
-}
-
-export function renameWorkgroveTemplateAppReference(
-  value: string,
+export function renameWorkgroveAppTemplateReferences(
+  template: string,
   previousId: string,
   nextId: string
 ): string {
-  return value.replaceAll(`{apps.${previousId}.`, `{apps.${nextId}.`);
+  return template.replaceAll(`{apps.${previousId}.`, `{apps.${nextId}.`);
 }

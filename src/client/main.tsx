@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { App } from "./app";
+import { RecoveryBoundary } from "./components/recovery-boundary";
 import { ThemeProvider } from "./components/theme-provider";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { queryClient } from "./query-client";
@@ -18,7 +19,12 @@ createRoot(root).render(
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <App />
+          <RecoveryBoundary
+            description="Workgrove caught an unexpected interface error before it could blank the entire dashboard."
+            title="Workgrove needs to recover"
+          >
+            <App />
+          </RecoveryBoundary>
         </TooltipProvider>
       </QueryClientProvider>
     </ThemeProvider>

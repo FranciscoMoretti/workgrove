@@ -10,16 +10,14 @@ import {
 
 function createConfig(): WorkgroveConfig {
   return {
+    stride: 10,
+    setup: { argv: ["npm", "install"] },
     apps: {
       web: {
-        control: { label: "Web" },
-        port: { base: 3000 },
-        start: { argv: ["bun", "run", "dev"] },
+        basePort: 3000,
       },
     },
-    ports: { slotStride: 10 },
-    slot: { default: 0, env: "WORKGROVE_SLOT" },
-    url: "http://localhost:{port}",
+    start: { argv: ["bun", "run", "dev"] },
     version: 1,
   };
 }
@@ -43,7 +41,7 @@ describe("configuration drafts", () => {
     const source = createConfig();
     const draft = {
       ...source,
-      ports: { slotStride: Number.NaN },
+      apps: { web: { basePort: Number.NaN } },
     };
     const storage = createMemoryStorage();
 
@@ -51,7 +49,7 @@ describe("configuration drafts", () => {
 
     const restored = loadConfigDraft("/repo/.workgrove.json", source, storage);
     expect(restored).not.toBeNull();
-    expect(Number.isNaN(restored?.ports.slotStride)).toBe(true);
+    expect(Number.isNaN(restored?.apps.web.basePort)).toBe(true);
 
     clearConfigDraft("/repo/.workgrove.json", storage);
     expect(
@@ -66,7 +64,7 @@ describe("configuration drafts", () => {
     saveConfigDraft(
       "/repo/.workgrove.json",
       source,
-      { ...source, ports: { slotStride: 20 } },
+      { ...source, apps: { web: { basePort: 3100 } } },
       storage
     );
 
@@ -74,11 +72,30 @@ describe("configuration drafts", () => {
       ...source,
       apps: {
         ...source.apps,
-        web: { ...source.apps.web, port: { base: 4000 } },
+        web: { basePort: 4000 },
       },
     };
     expect(
       loadConfigDraft("/repo/.workgrove.json", changedSource, storage)
+    ).toBeNull();
+    expect(
+      loadConfigDraft("/repo/.workgrove.json", source, storage)
+    ).toBeNull();
+  });
+
+  it("drops a legacy draft that omitted a now-required command", () => {
+    const source = createConfig();
+    const storage = createMemoryStorage();
+
+    saveConfigDraft(
+      "/repo/.workgrove.json",
+      source,
+      { ...source, setup: undefined },
+      storage
+    );
+
+    expect(
+      loadConfigDraft("/repo/.workgrove.json", source, storage)
     ).toBeNull();
     expect(
       loadConfigDraft("/repo/.workgrove.json", source, storage)

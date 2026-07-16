@@ -1,33 +1,37 @@
-# Workgrove domain glossary
+# Workgrove
 
-## Repository command profile
+Workgrove coordinates development worktrees and the app groups they expose.
 
-The per-repository definition of the commands Workgrove may run. A profile can
-replace Workgrove's defaults and applies to every worktree of that repository.
-Repository trust is a one-time decision and is not tied to command revisions.
+## Language
 
-## Setup
+**Repository command profile**:
+The repository-wide definition of the Setup and Start commands Workgrove may run. It applies to every worktree of the repository.
 
-A finite repository command that prepares a worktree for development. Setup is
-independent of whether the development runtime is started or stopped.
+**Setup**:
+A finite repository command that prepares a worktree for development. It is separate from the app group's lifecycle.
 
-## Start
+**App group**:
+The configured collection of apps that share one Start, Stop, and Restart lifecycle within a worktree.
+_Avoid_: Runtime
 
-A long-running repository command that launches the development runtime for a
-worktree and becomes managed by Workgrove.
+**App**:
+An observable endpoint in an app group, identified by a base port from which Workgrove derives its worktree-specific port.
 
-## Stop
+**Stride**:
+The repository-wide port offset between consecutive worktree slots.
 
-A lifecycle command that terminates the development runtime managed by
-Workgrove. Stop does not run a repository-supplied shell command and does not
-terminate an independent Setup process.
+**Repository environment**:
+The explicit environment variables Workgrove derives from slots and app endpoints and supplies to Setup and Start. A repository-owned Start script may translate these values for its child processes.
 
-## Restart
+**Start**:
+The repository command that launches an app group for a worktree.
 
-A lifecycle command that completes Stop and then performs Start for the same
-worktree.
+**Managed process tree**:
+The process tree launched by Start and owned by Workgrove for one worktree.
+_Avoid_: Managed runtime
 
-## Managed runtime
+**Stop**:
+The lifecycle action that terminates a worktree's managed process tree without running a repository command.
 
-The development process or processes launched by Start and owned by Workgrove
-for one worktree.
+**Restart**:
+The lifecycle action that completes Stop and then performs Start for the same worktree.

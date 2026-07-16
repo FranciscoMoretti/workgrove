@@ -14,6 +14,7 @@ import { Button } from "./ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
@@ -101,14 +102,16 @@ export function Toolbar({
                 ))}
               </DropdownMenuRadioGroup>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={onConfigure}>
-                <Settings2Icon />
-                Repository configuration…
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onOpenRepository}>
-                <FolderOpenIcon />
-                Open another repository…
-              </DropdownMenuItem>
+              <DropdownMenuGroup>
+                <DropdownMenuItem onClick={onConfigure}>
+                  <Settings2Icon />
+                  Repository configuration…
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onOpenRepository}>
+                  <FolderOpenIcon />
+                  Open another repository…
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -137,6 +140,10 @@ export function Toolbar({
             />
             {isFetching ? "Refreshing" : "Refresh"}
           </span>
+        </Button>
+        <Button onClick={onConfigure} variant="secondary">
+          <Settings2Icon data-icon="inline-start" />
+          Settings
         </Button>
         <ThemeToggle />
       </div>

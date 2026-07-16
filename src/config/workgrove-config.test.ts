@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -8,244 +8,89 @@ import {
 } from "./repository-trust";
 import {
   loadWorkgroveConfigDocument,
-  repositoryCommandProfile,
   resolveSetupCommand,
-  resolveStartCommands,
-  resolveWorkgroveRuntime,
-  updateRepositoryCommandProfile,
+  resolveStartCommand,
+  resolveWorkgroveAppGroup,
   updateWorkgroveConfig,
   type WorkgroveConfig,
 } from "./workgrove-config";
 
 const config: WorkgroveConfig = {
   version: 1,
+  stride: 20,
+  setup: { argv: ["bun", "install"] },
+  start: { argv: ["bun", "run", "dev"] },
   apps: {
-    api: {
-      control: { label: "API", open: false, probe: "tcp", required: true },
-      exports: { API_PORT: "{port}" },
-      port: { base: 8000 },
-      start: {
-        argv: ["python", "-m", "api", "--port", "{port}"],
-        env: { PORT: "{port}" },
-      },
-    },
-    web: {
-      control: { label: "Web", open: true, probe: "tcp", required: true },
-      exports: { PORT: "{port}", API_URL: "{apps.api.url}" },
-      port: { base: 3000 },
-      start: { argv: ["npm", "run", "dev"], env: { PORT: "{port}" } },
-    },
+    api: { basePort: 8000 },
+    web: { basePort: 3000 },
   },
-  ports: { slotStride: 10 },
-  slot: { default: 0, env: "WORKGROVE_SLOT", file: ".env.worktree.local" },
-  url: "http://localhost:{port}",
+  env: {
+    API_PORT: "{apps.api.port}",
+    WEB_ORIGIN: "{apps.web.url}",
+    WORKTREE_NUMBER: "{slot}",
+  },
 };
 
 describe("generic Workgrove configuration", () => {
-  it("resolves and launches each app with its own environment", () => {
-    expect(
-      resolveWorkgroveRuntime(config, { WORKGROVE_SLOT: "3" }).apps
-    ).toEqual({
-      api: {
-        env: { API_PORT: "8030" },
-        port: 8030,
-        url: "http://localhost:8030",
+  it("resolves one app-group start command with every app port", () => {
+    expect(resolveWorkgroveAppGroup(config, { WORKGROVE_SLOT: "3" })).toEqual({
+      apps: {
+        api: { port: 8060, url: "http://localhost:8060" },
+        web: { port: 3060, url: "http://localhost:3060" },
       },
-      web: {
-        env: { API_URL: "http://localhost:8030", PORT: "3030" },
-        port: 3030,
-        url: "http://localhost:3030",
+      slot: 3,
+    });
+    expect(resolveStartCommand(config, 3)).toEqual({
+      argv: ["bun", "run", "dev"],
+      env: {
+        API_PORT: "8060",
+        WORKGROVE_SLOT: "3",
+        WEB_ORIGIN: "http://localhost:3060",
+        WORKTREE_NUMBER: "3",
       },
     });
-    expect(resolveStartCommands(config, 3)).toEqual([
-      {
-        appId: "api",
-        argv: ["python", "-m", "api", "--port", "8030"],
-        cwd: null,
-        env: { API_PORT: "8030", PORT: "8030", WORKGROVE_SLOT: "3" },
-      },
-      {
-        appId: "web",
-        argv: ["npm", "run", "dev"],
-        cwd: null,
-        env: {
-          API_URL: "http://localhost:8030",
-          PORT: "3030",
-          WORKGROVE_SLOT: "3",
-        },
-      },
-    ]);
   });
 
-  it("requires trust when executable commands are configured", () => {
+  it("runs setup from the same repository-wide environment", () => {
+    expect(resolveSetupCommand(config, 2)).toEqual({
+      argv: ["bun", "install"],
+      env: {
+        API_PORT: "8040",
+        WORKGROVE_SLOT: "2",
+        WEB_ORIGIN: "http://localhost:3040",
+        WORKTREE_NUMBER: "2",
+      },
+    });
+  });
+
+  it("requires trust only for the two repository commands", () => {
     expect(repositoryRequiresTrust(config)).toBe(true);
     expect(
-      repositoryRequiresTrust({
+      repositoryCommandFingerprint({
         ...config,
-        apps: Object.fromEntries(
-          Object.entries(config.apps).map(([id, app]) => [
-            id,
-            { ...app, start: undefined },
-          ])
-        ),
+        start: { argv: ["bun", "run", "dev:all"] },
       })
-    ).toBe(false);
-  });
-
-  it("binds repository trust to the exact configured commands", () => {
-    const fingerprint = repositoryCommandFingerprint(config);
-    const apiArgv = config.apps.api.start?.argv;
-    if (!apiArgv) {
-      throw new Error("Test config requires an API start command");
-    }
+    ).not.toBe(repositoryCommandFingerprint(config));
     expect(
       repositoryCommandFingerprint({
         ...config,
-        apps: {
-          ...config.apps,
-          api: {
-            ...config.apps.api,
-            start: {
-              argv: apiArgv,
-              env: { B: "two", A: "one" },
-            },
-          },
-        },
+        env: { ...config.env, NODE_OPTIONS: "--inspect" },
       })
-    ).not.toBe(fingerprint);
-    const orderedEnvironment = {
-      ...config,
-      apps: {
-        ...config.apps,
-        api: {
-          ...config.apps.api,
-          start: {
-            argv: apiArgv,
-            env: { B: "two", A: "one" },
-          },
-        },
-      },
-    };
-    expect(repositoryCommandFingerprint(orderedEnvironment)).toBe(
-      repositoryCommandFingerprint({
-        ...orderedEnvironment,
-        apps: {
-          ...orderedEnvironment.apps,
-          api: {
-            ...orderedEnvironment.apps.api,
-            start: {
-              argv: apiArgv,
-              env: { A: "one", B: "two" },
-            },
-          },
-        },
-      })
+    ).not.toBe(repositoryCommandFingerprint(config));
+  });
+
+  it("loads legacy version-one files with the required command defaults", () => {
+    const directory = mkdtempSync(join(tmpdir(), "workgrove-legacy-config-"));
+    const path = join(directory, ".workgrove.json");
+    writeFileSync(
+      path,
+      `${JSON.stringify({ version: 1, stride: 10, apps: config.apps })}\n`
     );
-  });
-
-  it("rejects incomplete or ambiguous per-app command modes", () => {
-    expect(() =>
-      resolveWorkgroveRuntime(
-        {
-          ...config,
-          apps: {
-            ...config.apps,
-            web: { ...config.apps.web, start: undefined },
-          },
-        },
-        {}
-      )
-    ).toThrow("Required apps need start commands");
-    expect(() =>
-      resolveWorkgroveRuntime(
-        { ...config, control: { start: { argv: ["npm", "run", "all"] } } },
-        {}
-      )
-    ).toThrow("either per-app start commands or control.start");
-  });
-
-  it("resolves setup cwd, argv, and environment templates", () => {
-    expect(
-      resolveSetupCommand(
-        {
-          ...config,
-          control: {
-            setup: {
-              argv: ["tool", "--port", "{apps.web.port}"],
-              cwd: "packages/{slot}",
-              env: { TARGET: "{url}" },
-            },
-          },
-        },
-        2
-      )
-    ).toEqual({
-      appId: null,
-      argv: ["tool", "--port", "3020"],
-      cwd: "packages/2",
-      env: { TARGET: "http://localhost:8020", WORKGROVE_SLOT: "2" },
-    });
-  });
-
-  it("keeps legacy postCreate configuration readable as setup", () => {
-    expect(
-      resolveSetupCommand(
-        {
-          ...config,
-          control: { postCreate: { argv: ["bun", "install"] } },
-        },
-        0
-      )?.argv
-    ).toEqual(["bun", "install"]);
-  });
-
-  it("atomically saves aggregate repository commands and canonicalizes setup", () => {
-    const directory = mkdtempSync(join(tmpdir(), "workgrove-commands-"));
-    const path = join(directory, ".workgrove.json");
-    const aggregateConfig: WorkgroveConfig = {
-      ...config,
-      apps: Object.fromEntries(
-        Object.entries(config.apps).map(([id, app]) => [
-          id,
-          { ...app, start: undefined },
-        ])
-      ),
-      control: {
-        postCreate: { argv: ["npm", "install"] },
+    try {
+      expect(loadWorkgroveConfigDocument(path).config).toMatchObject({
+        setup: { argv: ["npm", "install"] },
         start: { argv: ["npm", "run", "dev"] },
-      },
-    };
-    writeFileSync(path, `${JSON.stringify(aggregateConfig)}\n`);
-    try {
-      const saved = updateRepositoryCommandProfile(path, {
-        setup: { argv: ["bun", "install"] },
-        start: { argv: ["bun", "dev"] },
       });
-      expect(repositoryCommandProfile(saved)).toEqual({
-        setup: { argv: ["bun", "install"] },
-        start: { argv: ["bun", "dev"] },
-        startMode: "aggregate",
-      });
-      expect(readFileSync(path, "utf8")).not.toContain("postCreate");
-    } finally {
-      rmSync(directory, { force: true, recursive: true });
-    }
-  });
-
-  it("preserves per-app start commands when only setup is edited", () => {
-    const directory = mkdtempSync(join(tmpdir(), "workgrove-commands-"));
-    const path = join(directory, ".workgrove.json");
-    writeFileSync(path, `${JSON.stringify(config)}\n`);
-    try {
-      const saved = updateRepositoryCommandProfile(path, {
-        setup: { argv: ["bun", "install"] },
-      });
-      expect(repositoryCommandProfile(saved)).toEqual({
-        setup: { argv: ["bun", "install"] },
-        start: null,
-        startMode: "per-app",
-      });
-      expect(saved.apps.web.start?.argv).toEqual(["npm", "run", "dev"]);
     } finally {
       rmSync(directory, { force: true, recursive: true });
     }
@@ -259,16 +104,25 @@ describe("generic Workgrove configuration", () => {
       const firstRead = loadWorkgroveConfigDocument(path);
       writeFileSync(
         path,
-        `${JSON.stringify({ ...config, url: "http://127.0.0.1:{port}" })}\n`
+        `${JSON.stringify({
+          ...config,
+          apps: { ...config.apps, web: { basePort: 4000 } },
+        })}\n`
       );
       expect(() =>
         updateWorkgroveConfig(path, config, firstRead.revision)
       ).toThrow("configuration changed on disk");
-      expect(loadWorkgroveConfigDocument(path).config.url).toBe(
-        "http://127.0.0.1:{port}"
+      expect(loadWorkgroveConfigDocument(path).config.apps.web.basePort).toBe(
+        4000
       );
     } finally {
       rmSync(directory, { force: true, recursive: true });
     }
+  });
+
+  it("rejects malformed worktree slots", () => {
+    expect(() =>
+      resolveWorkgroveAppGroup(config, { WORKGROVE_SLOT: "invalid" })
+    ).toThrow('Invalid WORKGROVE_SLOT "invalid"');
   });
 });

@@ -14,6 +14,22 @@ interface StoredConfigDraft {
   source: string;
 }
 
+function hasEditableRequiredCommands(
+  value: unknown
+): value is Pick<WorkgroveConfig, "setup" | "start"> {
+  if (!(value && typeof value === "object" && !Array.isArray(value))) {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return [candidate.setup, candidate.start].every(
+    (command) =>
+      command !== null &&
+      typeof command === "object" &&
+      !Array.isArray(command) &&
+      Array.isArray((command as Record<string, unknown>).argv)
+  );
+}
+
 function configDraftStorageKey(configPath: string): string {
   return `${CONFIG_DRAFT_STORAGE_PREFIX}${configPath}`;
 }
@@ -59,7 +75,7 @@ export function loadConfigDraft(
       return null;
     }
     const draft = parseConfigDraft(stored.draft);
-    if (!(draft && typeof draft === "object" && !Array.isArray(draft))) {
+    if (!hasEditableRequiredCommands(draft)) {
       throw new Error("Invalid stored configuration draft");
     }
     return draft as WorkgroveConfig;

@@ -88,26 +88,24 @@ export function createWorktree(
   setSlot(controller, { repoPath: target, slot, worktreeId: created.id });
   const config = controller.config(target);
   const setup = resolveSetupCommand(config, slot);
-  if (setup) {
-    appendManagedLog(
-      created.id,
-      `[workgrove] Running setup: ${setup.argv.join(" ")}`
-    );
-    startManagedProcess({
-      argv: setup.argv,
-      cwd: setup.cwd ? join(target, setup.cwd) : target,
-      env: setup.env,
-      label: "Setup",
-      logId: created.id,
-      ownerId: created.id,
-      ownerRoot: target,
-      trackExitFailure: true,
-      worktreeId: setupProcessId(created.id),
-    });
-  }
+  appendManagedLog(
+    created.id,
+    `[workgrove] Running setup: ${setup.argv.join(" ")}`
+  );
+  startManagedProcess({
+    argv: setup.argv,
+    cwd: target,
+    env: setup.env,
+    label: "Setup",
+    logId: created.id,
+    ownerId: created.id,
+    ownerRoot: target,
+    trackExitFailure: true,
+    worktreeId: setupProcessId(created.id),
+  });
   return {
     command: "create-worktree",
-    message: `Created ${folderName} on slot ${slot}${setup ? "; setup is running" : ""}`,
+    message: `Created ${folderName} on slot ${slot}; setup is running`,
     ok: true,
     worktreeId: created.id,
   };

@@ -9,6 +9,7 @@ import type { WorktreeSnapshot } from "../controller/workspace-snapshot";
 import {
   appsAreRunning,
   appsAreStopped,
+  appsCanRestart,
 } from "../controller/workspace-snapshot";
 import type { CommandMenuItem } from "./components/command-menu-items";
 
@@ -17,7 +18,6 @@ export interface WorktreeCommandActions {
   onSetup: (worktree: WorktreeSnapshot) => void;
   onStart: (worktree: WorktreeSnapshot) => void;
   onStop: (worktree: WorktreeSnapshot) => void;
-  setupAvailable: boolean;
 }
 
 export function worktreeCommandMenuItems({
@@ -31,10 +31,9 @@ export function worktreeCommandMenuItems({
 }): CommandMenuItem[] {
   const running = appsAreRunning(worktree);
   const stopped = appsAreStopped(worktree);
-  const fullyRunning = worktree.health === "running";
   return [
     {
-      disabled: pending || !actions.setupAvailable,
+      disabled: pending,
       icon: Settings2Icon,
       id: "setup",
       label: "Setup apps",
@@ -63,7 +62,7 @@ export function worktreeCommandMenuItems({
           },
         ]
       : []),
-    ...(fullyRunning && worktree.slotState === "assigned"
+    ...(appsCanRestart(worktree)
       ? [
           {
             disabled: pending,

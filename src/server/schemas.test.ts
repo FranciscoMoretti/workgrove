@@ -5,13 +5,12 @@ import { WorkspaceSnapshotSchema } from "./schemas";
 describe("workspace snapshot transport schema", () => {
   it("preserves the slot collision owner identity", () => {
     const snapshot = WorkspaceSnapshotSchema.parse({
-      commandProfile: { setup: null, start: null, startMode: "none" },
       config: {
         version: 1,
-        apps: { web: { port: { base: 3000 } } },
-        ports: { slotStride: 10 },
-        slot: { default: 0, env: "WORKGROVE_SLOT" },
-        url: "http://localhost:{port}",
+        stride: 10,
+        setup: { argv: ["npm", "install"] },
+        start: { argv: ["npm", "run", "dev"] },
+        apps: { web: { basePort: 3000 } },
       },
       configPath: "/repo/.workgrove.json",
       configRevision: "revision",
@@ -21,7 +20,6 @@ describe("workspace snapshot transport schema", () => {
       mainWorktreePath: "/repo",
       repoName: "repo",
       repoPath: "/repo",
-      setupAvailable: false,
       slotEnv: "WORKGROVE_SLOT",
       slotFile: ".env.worktree.local",
       slotOptions: [
@@ -31,8 +29,8 @@ describe("workspace snapshot transport schema", () => {
           slot: 0,
         },
       ],
-      trustCommands: [],
-      trustRequired: false,
+      trustCommands: ["Setup: npm install", "Apps: npm run dev"],
+      trustRequired: true,
       trusted: true,
       updatedAt: "2026-07-14T00:00:00.000Z",
       worktrees: [],

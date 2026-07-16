@@ -10,7 +10,7 @@ import {
 } from "./repository-initializer";
 
 describe("repository initialization", () => {
-  it("detects package defaults, previews safely, and never overwrites", () => {
+  it("detects one setup command, one start command, and one app", () => {
     const root = mkdtempSync(join(tmpdir(), "workgrove-initialize-"));
     try {
       spawnSync("git", ["init", "-q"], { cwd: root });
@@ -22,12 +22,20 @@ describe("repository initialization", () => {
         })
       );
       const preview = planRepositoryInitialization(root);
-      expect(preview.detectedRuntime).toBe("Node.js · bun");
-      expect(preview.detectedStartCommand).toBe("bun dev");
-      expect(preview.config.control?.start?.argv).toEqual(["bun", "dev"]);
-      expect(preview.config.control?.setup?.argv).toEqual(["bun", "install"]);
-      expect(preview.config.apps.app.port.base).toBeGreaterThanOrEqual(10_000);
-      expect(preview.config.ports).toEqual({ slotStride: 10 });
+      expect(preview.detectedRuntime).toBe("Node.js · npm");
+      expect(preview.detectedSetupCommand).toBe("npm install");
+      expect(preview.detectedStartCommand).toBe("npm run dev");
+      expect(preview.config.setup.argv).toEqual(["npm", "install"]);
+      expect(preview.config.start.argv).toEqual(["npm", "run", "dev"]);
+      expect(preview.config.apps.app.basePort).toBeGreaterThanOrEqual(10_000);
+      expect(Object.keys(preview.config).sort()).toEqual([
+        "$schema",
+        "apps",
+        "setup",
+        "start",
+        "stride",
+        "version",
+      ]);
       expect(() => readFileSync(preview.configPath)).toThrow();
 
       const created = initializeRepository(root);
@@ -43,40 +51,28 @@ describe("repository initialization", () => {
     }
   });
 
-  it("creates a runnable starter for a detected Django repository", () => {
+  it("uses safe command defaults when project detection has no commands", () => {
     const root = mkdtempSync(join(tmpdir(), "workgrove-django-"));
     try {
       spawnSync("git", ["init", "-q"], { cwd: root });
       writeFileSync(join(root, "manage.py"), "");
       const preview = planRepositoryInitialization(root);
-      expect(preview.detectedRuntime).toBe("Python · Django");
-      expect(preview.config.control?.start?.argv).toEqual([
-        "python",
-        "manage.py",
-        "runserver",
-        "127.0.0.1:{port}",
-      ]);
+      expect(preview.detectedSetupCommand).toBe("npm install");
+      expect(preview.detectedStartCommand).toBe("npm run dev");
+      expect(preview.config.setup.argv).toEqual(["npm", "install"]);
+      expect(preview.config.start.argv).toEqual(["npm", "run", "dev"]);
     } finally {
       rmSync(root, { force: true, recursive: true });
     }
   });
 
-  it("prefers Compose orchestration in mixed-runtime repositories", () => {
+  it("uses the same repository start field for Docker Compose", () => {
     const root = mkdtempSync(join(tmpdir(), "workgrove-compose-"));
     try {
       spawnSync("git", ["init", "-q"], { cwd: root });
       writeFileSync(join(root, "compose.yaml"), "services: {}\n");
-      writeFileSync(
-        join(root, "package.json"),
-        JSON.stringify({ scripts: { dev: "vite" } })
-      );
       const preview = planRepositoryInitialization(root);
-      expect(preview.detectedRuntime).toBe("Docker Compose");
-      expect(preview.config.control?.start?.argv).toEqual([
-        "docker",
-        "compose",
-        "up",
-      ]);
+      expect(preview.config.start?.argv).toEqual(["docker", "compose", "up"]);
     } finally {
       rmSync(root, { force: true, recursive: true });
     }

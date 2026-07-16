@@ -3,39 +3,30 @@ import type { CommandReceipt } from "../controller/workspace-snapshot";
 import { inspectListeningPorts, ownedPortPids } from "../runtime/ports";
 import {
   appendManagedLog,
-  appProcessId,
   stopManagedProcess,
+  stopOwnedProcess,
 } from "../runtime/process-supervisor";
 import { requiredString } from "./command";
 
-export function stopApps(
+export async function stopApps(
   controller: WorkspaceController,
   input: Record<string, unknown>
-): CommandReceipt {
+): Promise<CommandReceipt> {
   const repoPath = requiredString(input.repoPath, "Repository path");
   const worktreeId = requiredString(input.worktreeId, "Worktree");
   const { worktree } = controller.worktree(repoPath, worktreeId);
   const killed = new Set<number>();
-  const config = controller.config(repoPath);
-  for (const id of [
-    worktreeId,
-    ...Object.keys(config.apps).map((appId) => appProcessId(worktreeId, appId)),
-  ]) {
-    const managed = stopManagedProcess(id, worktree.path);
-    if (managed) {
-      killed.add(managed);
-    }
+  const managed = await stopManagedProcess(worktreeId, worktree.path);
+  if (managed) {
+    killed.add(managed);
   }
   for (const pid of ownedPortPids(
     inspectListeningPorts(),
     worktree.apps.map((app) => app.port),
     worktree.path
   )) {
-    try {
-      process.kill(pid, "SIGTERM");
+    if (await stopOwnedProcess(pid, worktreeId)) {
       killed.add(pid);
-    } catch {
-      // The process may have exited with its managed root.
     }
   }
   const message =

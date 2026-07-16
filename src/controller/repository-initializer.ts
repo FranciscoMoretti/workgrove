@@ -8,11 +8,16 @@ import {
 } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { trustRepository } from "../config/repository-trust";
-import type { WorkgroveCommand } from "../config/workgrove-command";
 import {
-  resolveWorktreeRuntime,
+  defaultWorkgroveSetupCommand,
+  defaultWorkgroveStartCommand,
+  type WorkgroveCommand,
+} from "../config/workgrove-command";
+import {
+  resolveWorkgroveAppGroup,
   type WorktreeEnvConfig,
 } from "../config/workgrove-config";
+import { WORKGROVE_SLOT_FILE } from "../config/workgrove-schema";
 
 const LINE_BREAK = /\r?\n/;
 const FASTAPI_DEPENDENCY = /\bfastapi\b/i;
@@ -22,11 +27,11 @@ const COMPOSE_FILES = [
   "docker-compose.yaml",
   "docker-compose.yml",
 ] as const;
-
 export interface RepositoryInitializationPlan {
   config: WorktreeEnvConfig;
   configPath: string;
   detectedRuntime: string;
+  detectedSetupCommand: string | null;
   detectedStartCommand: string | null;
   repoPath: string;
 }
@@ -78,24 +83,18 @@ function projectDefaults(root: string): ProjectDefaults {
       label: "Docker Compose",
       start: {
         argv: ["docker", "compose", "up"],
-        env: { PORT: "{port}" },
       },
     };
   }
   if (existsSync(join(root, "package.json"))) {
     return {
-      label: "Node.js · bun",
-      setup: { argv: ["bun", "install"] },
-      start: { argv: ["bun", "dev"] },
+      label: "Node.js · npm",
+      setup: defaultWorkgroveSetupCommand(),
+      start: defaultWorkgroveStartCommand(),
     };
   }
   if (existsSync(join(root, "manage.py"))) {
-    return {
-      label: "Python · Django",
-      start: {
-        argv: ["python", "manage.py", "runserver", "127.0.0.1:{port}"],
-      },
-    };
+    return { label: "Python · Django" };
   }
   if (existsSync(join(root, "pyproject.toml"))) {
     const content = readFileSync(join(root, "pyproject.toml"), "utf8");
@@ -104,15 +103,6 @@ function projectDefaults(root: string): ProjectDefaults {
       return {
         label: "Python · FastAPI",
         ...(usesUv ? { setup: { argv: ["uv", "sync"] } } : {}),
-        start: {
-          argv: [
-            ...(usesUv ? ["uv", "run"] : []),
-            "fastapi",
-            "dev",
-            "--port",
-            "{port}",
-          ],
-        },
       };
     }
     return { label: "Python" };
@@ -121,13 +111,13 @@ function projectDefaults(root: string): ProjectDefaults {
     return {
       label: "Rust · Cargo",
       setup: { argv: ["cargo", "fetch"] },
-      start: { argv: ["cargo", "run"], env: { PORT: "{port}" } },
+      start: { argv: ["cargo", "run"] },
     };
   }
   if (existsSync(join(root, "go.mod"))) {
     return {
       label: "Go",
-      start: { argv: ["go", "run", "."], env: { PORT: "{port}" } },
+      start: { argv: ["go", "run", "."] },
     };
   }
   return { label: "Unknown" };
@@ -152,38 +142,28 @@ export function planRepositoryInitialization(
     );
   }
   const defaults = projectDefaults(root);
+  const setup = defaults.setup ?? defaultWorkgroveSetupCommand();
+  const start = defaults.start ?? defaultWorkgroveStartCommand();
   const config: WorktreeEnvConfig = {
     $schema:
       "https://raw.githubusercontent.com/franciscomoretti/workgrove/main/schema/workgrove.schema.json",
     version: 1,
+    stride: 10,
+    setup,
+    start,
     apps: {
       app: {
-        control: {
-          label: "App",
-          open: true,
-          probe: "tcp",
-          required: true,
-        },
-        exports: { PORT: "{port}" },
-        port: { base: stableBasePort(root) },
+        basePort: stableBasePort(root),
       },
     },
-    ports: { slotStride: 10 },
-    slot: { default: 0, env: "WORKGROVE_SLOT", file: ".env.worktree.local" },
-    url: "http://localhost:{port}",
   };
-  if (defaults.setup || defaults.start) {
-    config.control = {
-      ...(defaults.setup ? { setup: defaults.setup } : {}),
-      ...(defaults.start ? { start: defaults.start } : {}),
-    };
-  }
-  resolveWorktreeRuntime(config, {});
+  resolveWorkgroveAppGroup(config, {});
   return {
     config,
     configPath,
     detectedRuntime: defaults.label,
-    detectedStartCommand: defaults.start?.argv.join(" ") ?? null,
+    detectedSetupCommand: setup.argv.join(" "),
+    detectedStartCommand: start.argv.join(" "),
     repoPath: root,
   };
 }
@@ -195,10 +175,7 @@ export function initializeRepository(
   writeFileSync(plan.configPath, `${JSON.stringify(plan.config, null, 2)}\n`, {
     flag: "wx",
   });
-  excludeLocalSlotFile(
-    plan.repoPath,
-    plan.config.slot.file ?? ".env.worktree.local"
-  );
+  excludeLocalSlotFile(plan.repoPath, WORKGROVE_SLOT_FILE);
   trustRepository(plan.repoPath, plan.config);
   return plan;
 }

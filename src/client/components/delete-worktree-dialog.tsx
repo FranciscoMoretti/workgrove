@@ -5,8 +5,16 @@ import type {
   CommandReceipt,
   WorktreeSnapshot,
 } from "../../controller/workspace-snapshot";
-import { Modal } from "./modal";
-import { Button } from "./ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "./ui/alert-dialog";
 
 export function DeleteWorktreeDialog({
   mutation,
@@ -42,32 +50,40 @@ export function DeleteWorktreeDialog({
     }
   }
   return (
-    <Modal onClose={onClose} open={open} title="Delete worktree">
-      <div className="modal-copy">
-        <p>Remove this Git worktree?</p>
+    <AlertDialog
+      onOpenChange={(nextOpen) => {
+        if (!(nextOpen || mutation.isPending)) {
+          onClose();
+        }
+      }}
+      open={open}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete worktree?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Remove this linked Git worktree from the repository.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
         <code className="path-callout">{worktree.path}</code>
-        <p className="hint">
+        <p className="hint text-xs/relaxed">
           Git will refuse if the worktree has uncommitted changes. Workgrove
           never forces removal.
         </p>
         {error ? <p className="field-error">{error}</p> : null}
-      </div>
-      <div className="modal-actions">
-        <Button
-          disabled={mutation.isPending}
-          onClick={onClose}
-          variant="secondary"
-        >
-          Cancel
-        </Button>
-        <Button
-          disabled={mutation.isPending}
-          onClick={confirm}
-          variant="destructive"
-        >
-          {mutation.isPending ? "Deleting…" : "Delete worktree"}
-        </Button>
-      </div>
-    </Modal>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={mutation.isPending}>
+            Cancel
+          </AlertDialogCancel>
+          <AlertDialogAction
+            disabled={mutation.isPending}
+            onClick={confirm}
+            variant="destructive"
+          >
+            {mutation.isPending ? "Deleting…" : "Delete worktree"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

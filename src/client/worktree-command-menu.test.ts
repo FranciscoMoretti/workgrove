@@ -11,7 +11,6 @@ const actions: WorktreeCommandActions = {
   onSetup: () => undefined,
   onStart: () => undefined,
   onStop: () => undefined,
-  setupAvailable: true,
 };
 
 function worktree(
@@ -48,8 +47,12 @@ describe("worktree command menu", () => {
     expect(itemIds(worktree("not-running"))).toEqual(["setup", "start"]);
   });
 
-  it("offers setup and stop when partially running", () => {
-    expect(itemIds(worktree("partially-running"))).toEqual(["setup", "stop"]);
+  it("offers setup, stop, and group restart when partially running", () => {
+    expect(itemIds(worktree("partially-running"))).toEqual([
+      "setup",
+      "stop",
+      "restart",
+    ]);
   });
 
   it("offers setup, stop, and restart when fully running", () => {
@@ -68,18 +71,9 @@ describe("worktree command menu", () => {
     expect(items.find((item) => item.id === "start")?.disabled).toBe(true);
   });
 
-  it("does not offer restart for a partial or unassigned runtime", () => {
+  it("does not offer restart for an unassigned app group", () => {
     expect(
       itemIds(worktree("running", { slot: null, slotState: "unassigned" }))
     ).toEqual(["setup", "stop"]);
-  });
-
-  it("keeps setup visible but disabled when no setup command is configured", () => {
-    const items = worktreeCommandMenuItems({
-      actions: { ...actions, setupAvailable: false },
-      pending: false,
-      worktree: worktree("not-running"),
-    });
-    expect(items.find((item) => item.id === "setup")?.disabled).toBe(true);
   });
 });

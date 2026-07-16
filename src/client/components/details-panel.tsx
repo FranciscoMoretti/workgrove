@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import type { WorktreeSnapshot } from "../../controller/workspace-snapshot";
 import { appsAreRunning } from "../../controller/workspace-snapshot";
 import type { WorktreeCommandActions } from "../worktree-command-menu";
+import { AppPort } from "./app-port";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import {
@@ -20,6 +21,7 @@ import {
   CardHeader,
   CardTitle,
 } from "./ui/card";
+import { ScrollArea } from "./ui/scroll-area";
 import { Spinner } from "./ui/spinner";
 import { WorktreeActionsMenu } from "./worktree-actions-menu";
 
@@ -33,9 +35,6 @@ function indicatorClass(app: WorktreeSnapshot["apps"][number]): string {
 }
 
 function endpointStatus(app: WorktreeSnapshot["apps"][number]): string {
-  if (app.probe === "none") {
-    return "Port reserved · no health check";
-  }
   if (app.ownership === "foreign") {
     return "Occupied by another process";
   }
@@ -127,7 +126,13 @@ export function DetailsPanel({
   const end = useRef<HTMLSpanElement>(null);
   const [copied, setCopied] = useState(false);
   const running = appsAreRunning(worktree);
-  useEffect(() => end.current?.scrollIntoView({ block: "end" }));
+  const logCount = logs.length;
+  const latestLog = logs.at(-1);
+  useEffect(() => {
+    if (logCount > 0 && latestLog !== undefined) {
+      end.current?.scrollIntoView({ block: "end" });
+    }
+  }, [latestLog, logCount]);
   async function copy() {
     await navigator.clipboard.writeText(logs.join("\n"));
     setCopied(true);
@@ -180,10 +185,10 @@ export function DetailsPanel({
                     rel="noreferrer"
                     target="_blank"
                   >
-                    {app.port}
+                    <AppPort port={app.port} />
                   </a>
                 ) : (
-                  <code>{app.port}</code>
+                  <AppPort port={app.port} />
                 )}
               </CardContent>
             </Card>
@@ -234,7 +239,10 @@ export function DetailsPanel({
             </Button>
           </div>
         </div>
-        <div className="terminal">
+        <ScrollArea
+          className="terminal"
+          scrollbars={["vertical", "horizontal"]}
+        >
           {terminalContent({
             end,
             error,
@@ -242,7 +250,7 @@ export function DetailsPanel({
             logs,
             onRetry: onRetryLogs,
           })}
-        </div>
+        </ScrollArea>
       </section>
     </aside>
   );

@@ -2,7 +2,9 @@ import { useState } from "react";
 
 import { pickRepository } from "./api";
 
-export function useRepositoryPicker(onPick: (path: string) => void) {
+export function useRepositoryPicker(
+  onPick: (path: string) => void | Promise<void>
+) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -12,7 +14,7 @@ export function useRepositoryPicker(onPick: (path: string) => void) {
       setError(null);
       const path = await pickRepository();
       if (path) {
-        onPick(path);
+        await onPick(path);
       }
     } catch (caught) {
       setError(

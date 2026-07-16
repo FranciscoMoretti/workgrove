@@ -116,7 +116,7 @@ try {
     "bun",
     [
       "-e",
-      'import { resolveWorkgroveRuntime } from "workgrove/config"; const runtime = resolveWorkgroveRuntime({ version: 1, apps: { web: { port: { base: 4000 } } }, ports: { slotStride: 10 }, slot: { default: 0, env: "WORKGROVE_SLOT" }, url: "http://localhost:{port}" }, {}); if (runtime.apps.web.port !== 4000) process.exit(1);',
+      'import { resolveWorkgroveAppGroup } from "workgrove/config"; const appGroup = resolveWorkgroveAppGroup({ version: 1, stride: 10, setup: { argv: ["npm", "install"] }, start: { argv: ["npm", "run", "dev"] }, apps: { web: { basePort: 4000 } } }, {}); if (appGroup.apps.web.port !== 4000) process.exit(1);',
     ],
     { cwd: installDirectory }
   );
@@ -134,11 +134,11 @@ try {
     `${JSON.stringify(
       {
         version: 1,
-        slot: { env: "WORKGROVE_SLOT", default: 0 },
-        ports: { slotStride: 10 },
-        url: "http://localhost:{port}",
+        stride: 10,
+        setup: { argv: ["npm", "install"] },
+        start: { argv: ["npm", "run", "dev"] },
         apps: {
-          fixture: { port: { base: 45_000 }, control: { probe: "none" } },
+          fixture: { basePort: 45_000 },
         },
       },
       null,

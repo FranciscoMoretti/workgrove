@@ -9,6 +9,42 @@
       "type": "number",
       "const": 1
     },
+    "stride": {
+      "default": 10,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "setup": {
+      "type": "object",
+      "properties": {
+        "argv": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": ["argv"],
+      "additionalProperties": false
+    },
+    "start": {
+      "type": "object",
+      "properties": {
+        "argv": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": ["argv"],
+      "additionalProperties": false
+    },
     "apps": {
       "type": "object",
       "propertyNames": {
@@ -18,210 +54,30 @@
       "additionalProperties": {
         "type": "object",
         "properties": {
-          "control": {
-            "type": "object",
-            "properties": {
-              "label": {
-                "type": "string",
-                "minLength": 1
-              },
-              "open": {
-                "type": "boolean"
-              },
-              "probe": {
-                "type": "string",
-                "enum": ["none", "tcp"]
-              },
-              "required": {
-                "type": "boolean"
-              }
-            },
-            "additionalProperties": false
-          },
-          "exports": {
-            "type": "object",
-            "propertyNames": {
-              "type": "string"
-            },
-            "additionalProperties": {
-              "type": "string"
-            }
-          },
-          "port": {
-            "type": "object",
-            "properties": {
-              "base": {
-                "type": "integer",
-                "minimum": 1024,
-                "maximum": 65535
-              }
-            },
-            "required": ["base"],
-            "additionalProperties": false
-          },
-          "start": {
-            "type": "object",
-            "properties": {
-              "argv": {
-                "minItems": 1,
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "minLength": 1
-                }
-              },
-              "cwd": {
-                "type": "string",
-                "minLength": 1
-              },
-              "env": {
-                "type": "object",
-                "propertyNames": {
-                  "type": "string"
-                },
-                "additionalProperties": {
-                  "type": "string"
-                }
-              }
-            },
-            "required": ["argv"],
-            "additionalProperties": false
+          "basePort": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 65535
           }
         },
-        "required": ["port"],
+        "required": ["basePort"],
         "additionalProperties": false
       }
     },
-    "control": {
+    "env": {
       "type": "object",
-      "properties": {
-        "postCreate": {
-          "type": "object",
-          "properties": {
-            "argv": {
-              "minItems": 1,
-              "type": "array",
-              "items": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "cwd": {
-              "type": "string",
-              "minLength": 1
-            },
-            "env": {
-              "type": "object",
-              "propertyNames": {
-                "type": "string"
-              },
-              "additionalProperties": {
-                "type": "string"
-              }
-            }
-          },
-          "required": ["argv"],
-          "additionalProperties": false
-        },
-        "setup": {
-          "type": "object",
-          "properties": {
-            "argv": {
-              "minItems": 1,
-              "type": "array",
-              "items": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "cwd": {
-              "type": "string",
-              "minLength": 1
-            },
-            "env": {
-              "type": "object",
-              "propertyNames": {
-                "type": "string"
-              },
-              "additionalProperties": {
-                "type": "string"
-              }
-            }
-          },
-          "required": ["argv"],
-          "additionalProperties": false
-        },
-        "start": {
-          "type": "object",
-          "properties": {
-            "argv": {
-              "minItems": 1,
-              "type": "array",
-              "items": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "cwd": {
-              "type": "string",
-              "minLength": 1
-            },
-            "env": {
-              "type": "object",
-              "propertyNames": {
-                "type": "string"
-              },
-              "additionalProperties": {
-                "type": "string"
-              }
-            }
-          },
-          "required": ["argv"],
-          "additionalProperties": false
-        }
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
       },
-      "additionalProperties": false
-    },
-    "ports": {
-      "type": "object",
-      "properties": {
-        "slotStride": {
-          "type": "integer",
-          "exclusiveMinimum": 0,
-          "maximum": 65535
-        }
-      },
-      "required": ["slotStride"],
-      "additionalProperties": false
-    },
-    "slot": {
-      "type": "object",
-      "properties": {
-        "default": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "env": {
-          "type": "string",
-          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-        },
-        "file": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "required": ["default", "env"],
-      "additionalProperties": false
-    },
-    "url": {
-      "type": "string",
-      "minLength": 1
+      "additionalProperties": {
+        "type": "string"
+      }
     }
   },
-  "required": ["version", "apps", "ports", "slot", "url"],
+  "required": ["version", "stride", "setup", "start", "apps"],
   "additionalProperties": false,
   "$id": "https://raw.githubusercontent.com/franciscomoretti/workgrove/main/schema/workgrove.schema.json",
   "title": "Workgrove configuration",
-  "description": "Choose one start mode: either control.start for aggregate orchestration, or per-app start commands. Each app declares its slot-zero base port, and Workgrove applies the shared slot stride."
+  "description": "Configure repository commands, worktree port allocation, observable apps, and their exposed environment."
 }

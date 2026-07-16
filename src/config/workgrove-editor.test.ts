@@ -1,63 +1,59 @@
 import { describe, expect, it } from "bun:test";
 
 import {
-  nextAvailableWorkgroveAppPort,
+  addWorkgroveEnvironment,
+  deleteWorkgroveEnvironment,
+  nextAvailableWorkgroveAppBasePort,
   renameWorkgroveApp,
+  renameWorkgroveEnvironment,
   resolveWorkgroveAppEndpoints,
-  withWorkgroveLaunchMode,
-  workgroveAppReferenceCount,
-  workgroveLaunchMode,
 } from "./workgrove-editor";
 import type { WorkgroveConfig } from "./workgrove-schema";
 
 const config: WorkgroveConfig = {
   version: 1,
+  stride: 10,
+  setup: { argv: ["npm", "install"] },
+  start: { argv: ["npm", "run", "dev"] },
   apps: {
-    api: { port: { base: 8000 } },
-    web: {
-      exports: { API_URL: "{apps.api.url}" },
-      port: { base: 3000 },
-      start: { argv: ["bun", "dev", "--api={apps.api.port}"] },
-    },
+    api: { basePort: 8000 },
+    web: { basePort: 3000 },
   },
-  control: {
-    setup: { argv: ["echo", "{apps.api.url}"] },
+  env: {
+    API_URL: "{apps.api.url}",
+    API_PORT: "{apps.api.port}",
   },
-  ports: { slotStride: 10 },
-  slot: { default: 0, env: "WORKGROVE_SLOT" },
-  url: "http://localhost:{port}",
 };
 
 describe("configuration builder domain operations", () => {
-  it("allocates the next available explicit base", () => {
-    expect(
-      nextAvailableWorkgroveAppPort({ api: { port: { base: 8000 } } })
-    ).toEqual({ base: 3000 });
+  it("allocates the next available app base port", () => {
+    expect(nextAvailableWorkgroveAppBasePort({ api: { basePort: 8000 } })).toBe(
+      3000
+    );
   });
 
-  it("renames an app and every template reference to it", () => {
-    expect(workgroveAppReferenceCount(config, "api")).toBe(3);
+  it("renames an app without changing its base port", () => {
     const renamed = renameWorkgroveApp(config, "api", "backend");
     expect(renamed.apps.api).toBeUndefined();
-    expect(renamed.apps.web.exports?.API_URL).toBe("{apps.backend.url}");
-    expect(renamed.apps.web.start?.argv[2]).toBe("--api={apps.backend.port}");
-    expect(renamed.control?.setup?.argv[1]).toBe("{apps.backend.url}");
+    expect(renamed.apps.backend).toEqual({ basePort: 8000 });
+    expect(renamed.env).toEqual({
+      API_URL: "{apps.backend.url}",
+      API_PORT: "{apps.backend.port}",
+    });
   });
 
-  it("switches launch strategies without leaving ambiguous commands", () => {
-    const aggregate = withWorkgroveLaunchMode(config, "aggregate");
-    expect(workgroveLaunchMode(aggregate)).toBe("aggregate");
-    expect(aggregate.apps.web.start).toBeUndefined();
-
-    const perApp = withWorkgroveLaunchMode(aggregate, "per-app");
-    expect(workgroveLaunchMode(perApp)).toBe("per-app");
-    expect(perApp.control?.start).toBeUndefined();
-  });
-
-  it("uses the executable's shared endpoint resolver for previews", () => {
+  it("resolves endpoint previews from product port conventions", () => {
     expect(resolveWorkgroveAppEndpoints(config, 2)).toEqual({
       api: { port: 8020, url: "http://localhost:8020" },
       web: { port: 3020, url: "http://localhost:3020" },
     });
+  });
+
+  it("adds, renames, and deletes repository environment entries", () => {
+    const added = addWorkgroveEnvironment({ ...config, env: undefined });
+    expect(added.env).toEqual({ APP_PORT: "{apps.api.port}" });
+    const renamed = renameWorkgroveEnvironment(added, "APP_PORT", "API_PORT");
+    expect(renamed.env).toEqual({ API_PORT: "{apps.api.port}" });
+    expect(deleteWorkgroveEnvironment(renamed, "API_PORT").env).toEqual({});
   });
 });

@@ -9,10 +9,7 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { WorkgroveCommand } from "./workgrove-command";
-import {
-  configuredSetupCommand,
-  type WorkgroveConfig,
-} from "./workgrove-config";
+import type { WorkgroveConfig } from "./workgrove-config";
 
 const CONTROL_DIR = join(homedir(), ".workgrove");
 const TRUST_FILE = join(CONTROL_DIR, "trusted-repositories.json");
@@ -31,37 +28,23 @@ function trustStore(): Record<string, boolean | string> {
   }
 }
 
-export function repositoryRequiresTrust(config: WorkgroveConfig): boolean {
-  return Boolean(
-    config.control?.start ||
-      configuredSetupCommand(config) ||
-      Object.values(config.apps).some((app) => app.start)
-  );
+export function repositoryRequiresTrust(_config: WorkgroveConfig): boolean {
+  return true;
 }
 
-function fingerprintCommand(command: WorkgroveCommand | null) {
-  return command
-    ? {
-        argv: command.argv,
-        cwd: command.cwd ?? null,
-        env: Object.fromEntries(
-          Object.entries(command.env ?? {}).sort(([left], [right]) =>
-            left.localeCompare(right)
-          )
-        ),
-      }
-    : null;
+function fingerprintCommand(command: WorkgroveCommand) {
+  return { argv: command.argv };
 }
 
 export function repositoryCommandFingerprint(config: WorkgroveConfig): string {
   const commands = {
-    setup: fingerprintCommand(configuredSetupCommand(config)),
-    start: fingerprintCommand(config.control?.start ?? null),
-    apps: Object.fromEntries(
-      Object.entries(config.apps)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([id, app]) => [id, fingerprintCommand(app.start ?? null)])
-    ),
+    environment: {
+      apps: config.apps,
+      env: config.env ?? {},
+      stride: config.stride,
+    },
+    setup: fingerprintCommand(config.setup),
+    start: fingerprintCommand(config.start),
   };
   return createHash("sha256")
     .update(JSON.stringify(commands))

@@ -1,8 +1,8 @@
 # Workgrove
 
 Workgrove is a local, macOS-first control center for Git worktrees. It assigns
-stable port slots, starts and stops each worktree's configured apps, detects
-listeners, and keeps managed logs without requiring terminal juggling.
+stable port slots, starts and stops each worktree's app group, detects listeners,
+and keeps managed logs without requiring terminal juggling.
 
 ## Install
 
@@ -18,89 +18,72 @@ Then open <http://127.0.0.1:3999>. Use `workgrove status` and
 
 ## Repository configuration
 
-Commit `.workgrove.json` at the repository root. Workgrove resolves the slot
-stored in each worktree's ignored `.env.worktree.local`, then injects each
-app's environment itself.
+Commit `.workgrove.json` at the repository root:
 
 ```json
 {
   "$schema": "https://raw.githubusercontent.com/franciscomoretti/workgrove/main/schema/workgrove.schema.json",
   "version": 1,
-  "slot": {
-    "env": "WORKGROVE_SLOT",
-    "default": 0,
-    "file": ".env.worktree.local"
-  },
-  "ports": { "slotStride": 10 },
-  "url": "http://localhost:{port}",
+  "stride": 10,
+  "setup": { "argv": ["bun", "install"] },
+  "start": { "argv": ["bun", "run", "dev:workgrove"] },
   "apps": {
-    "web": {
-      "port": { "base": 3000 },
-      "control": {
-        "label": "Web",
-        "open": true,
-        "probe": "tcp",
-        "required": true
-      },
-      "exports": { "PORT": "{port}" }
-    }
+    "web": { "basePort": 3000 },
+    "api": { "basePort": 8000 }
   },
-  "control": {
-    "setup": { "argv": ["bun", "install"] },
-    "start": {
-      "argv": ["bun", "dev"],
-      "env": { "PORT": "{port}" }
-    }
+  "env": {
+    "WEB_PORT": "{apps.web.port}",
+    "API_URL": "{apps.api.url}"
   }
 }
 ```
 
-Every app declares its conventional slot-zero base port. For example,
-`"port": { "base": 8000 }` gives that app ports 8000, 8010, and 8020 for
-slots 0, 1, and 2 when `slotStride` is 10. Workgrove checks the exact computed
-ports of assigned worktrees and prevents slot choices that would collide.
+`setup` is the finite command that prepares a worktree. `start` is the
+foreground command that launches every app as one app group. Both commands are
+required; new configurations default to `npm install` and `npm run dev`. Workgrove
+manages the resulting process tree as a unit, so Stop terminates the whole group
+and Restart waits for Stop before launching it again. Commands always run from
+the worktree root.
 
-Workgrove asks you to review and trust executable commands the first time a
-repository is opened. Trust is saved for that repository and does not need to
-be repeated when its commands change. `.worktree-env.json` remains discoverable
-as an alternate filename when it uses the current configuration contract.
+Each app is an observable endpoint with a slot-zero `basePort`. The configurable
+`stride` is the offset between worktree slots, so base port 8000 with stride 10
+resolves to 8000, 8010, and 8020 for slots 0, 1, and 2. The slot is stored in the ignored `.env.worktree.local` file as
+`WORKGROVE_SLOT`.
 
-When a repository has no configuration, the initialization dialog can prepare
-conservative starters for Node.js, Django, FastAPI, Rust, Go, and Docker
-Compose projects. Review the generated command before creating the file;
-unknown layouts receive an editable config without an executable command.
+The start and setup commands receive `WORKGROVE_SLOT` plus the explicit `env`
+entries. Environment values may be literals or use these templates:
 
-Command `argv`, `cwd`, and `env` strings support `{slot}`, `{port}`, `{url}`,
-and cross-app templates such as `{apps.api.port}`.
+- `{slot}`
+- `{apps.<id>.port}`
+- `{apps.<id>.url}`
 
-Use exactly one launch mode: either the repository-level `control.start`, or
-per-app `start` commands when apps need separate processes. In per-app mode
-every required TCP app needs its own start command. These cross-field rules are
-enforced by Workgrove in addition to the public JSON Schema. The localhost UI
-provides repository command fields with `bun install` and `bun dev` placeholders.
+Workgrove intentionally starts only one repository command. For a multi-process
+repository, a root script can read names such as `WEB_PORT` and `API_URL`, spawn
+the child apps, and translate them into child-local names such as `PORT`. This
+keeps repository-specific orchestration in the repository while Workgrove owns
+port allocation and the resulting process tree.
 
-`control.setup` is a finite preparation command and can run whether apps are
-started or stopped. Stop terminates only the process Workgrove launched for
-Start; Restart waits for Stop and then performs Start again. The legacy
-`control.postCreate` key remains readable as an alias for `control.setup`.
+Workgrove asks you to review and trust the setup and start commands whenever
+their command fingerprint changes. When a repository has no configuration, the
+initialization dialog can detect conservative setup and start commands for
+Node.js, Django, FastAPI, Rust, Go, and Docker Compose projects.
 
 ### Repository tooling API
 
-Bun-based repository scripts can share Workgrove's checked-in configuration
-contract instead of maintaining their own port resolver:
+Bun-based scripts can share Workgrove's checked-in configuration contract:
 
 ```ts
 import {
   findWorkgroveConfig,
   loadWorkgroveConfig,
-  resolveWorkgroveRuntime,
+  resolveWorkgroveAppGroup,
   type WorkgroveConfig,
 } from "workgrove/config";
 ```
 
-`workgrove/config` intentionally exposes only the configuration schemas and
-types, config discovery/loading, and runtime app/port resolution. Process,
-trust, command execution, and controller internals are not public APIs.
+The public API exposes configuration schemas and types, discovery/loading, and
+app-port resolution. Process ownership, command execution, trust, and controller
+internals remain private.
 
 ## Development
 
@@ -110,11 +93,11 @@ bun run dev
 bun run lint
 bun run test:types
 bun run test
+bun run build
 ```
 
-The controller remains the central module: Git, configuration, process
-ownership and port state stay behind the same interface used by the local HTTP
-server and tests.
+Git, configuration, port inspection, process ownership, and command rules stay
+behind the workspace controller and its internal modules.
 
 ## License
 
