@@ -300,8 +300,8 @@
   overflow: auto;
   font-size: 0.75rem;
   line-height: 1.6;
-  color: var(--background);
-  background: var(--foreground);
+  color: var(--foreground);
+  background: var(--background);
   border: 1px solid var(--border);
 }
 
@@ -321,7 +321,7 @@
 }
 
 .terminal-state > span {
-  color: color-mix(in oklch, var(--background), transparent 28%);
+  color: color-mix(in oklch, var(--foreground), transparent 28%);
 }
 
 .terminal-empty strong {
