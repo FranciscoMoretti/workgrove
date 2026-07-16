@@ -1,19 +1,9 @@
 import type { WorkspaceController } from "../controller/workspace-controller";
 import type { CommandReceipt } from "../controller/workspace-snapshot";
-import {
-  appsAreRunning,
-  appsAreStopped,
-} from "../controller/workspace-snapshot";
+import { appsAreRunning } from "../controller/workspace-snapshot";
 import { requiredString } from "./command";
 import { startApps } from "./start-apps";
-import { stopApps } from "./stop-apps";
-
-const STOP_ATTEMPTS = 50;
-const STOP_POLL_MS = 100;
-
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
+import { stopAppsAndWait } from "./stop-apps-and-wait";
 
 export async function restartApps(
   controller: WorkspaceController,
@@ -28,18 +18,15 @@ export async function restartApps(
   if (current.slotState !== "assigned") {
     throw new Error("Assign a unique slot before restarting apps");
   }
-  await stopApps(controller, { repoPath, worktreeId });
-  for (let attempt = 0; attempt < STOP_ATTEMPTS; attempt += 1) {
-    const worktree = controller.worktree(repoPath, worktreeId).worktree;
-    if (appsAreStopped(worktree)) {
-      const started = startApps(controller, { repoPath, worktreeId });
-      return {
-        ...started,
-        command: "restart-apps",
-        message: started.message.replace("Started", "Restarted"),
-      };
-    }
-    await delay(STOP_POLL_MS);
-  }
-  throw new Error("Apps did not stop within 5 seconds; restart was cancelled");
+  await stopAppsAndWait(
+    controller,
+    { repoPath, worktreeId },
+    "Apps did not stop within 5 seconds; restart was cancelled"
+  );
+  const started = startApps(controller, { repoPath, worktreeId });
+  return {
+    ...started,
+    command: "restart-apps",
+    message: started.message.replace("Started", "Restarted"),
+  };
 }
