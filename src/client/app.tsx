@@ -9,9 +9,11 @@ import type { FormEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
+  SlotOption,
   WorkspaceSnapshot,
   WorktreeSnapshot,
 } from "../controller/workspace-snapshot";
+import { appsAreRunning } from "../controller/workspace-snapshot";
 import {
   repositoryPageFromSearch,
   repositoryPathFromSearch,
@@ -24,6 +26,10 @@ import { RecoveryBoundary } from "./components/recovery-boundary";
 import { RepositoryConfigPage } from "./components/repository-config-page";
 import { RepositoryDialog } from "./components/repository-dialog";
 import { RepositoryTrustDialog } from "./components/repository-trust-dialog";
+import {
+  type SlotSwitchTarget,
+  SwitchSlotDialog,
+} from "./components/switch-slot-dialog";
 import { Toolbar } from "./components/toolbar";
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
 import { Button } from "./components/ui/button";
@@ -61,6 +67,7 @@ import {
 import { Spinner } from "./components/ui/spinner";
 import { WorktreeTable } from "./components/worktree-table";
 import { useLogs, useWorkspace } from "./queries";
+import { runSlotSwitch } from "./slot-switch";
 import { useRepositoryOpen } from "./use-repository-open";
 import { useRepositoryPicker } from "./use-repository-picker";
 import { useRepositorySetup } from "./use-repository-setup";
@@ -237,6 +244,8 @@ export function App() {
   const [deleteTarget, setDeleteTarget] = useState<WorktreeSnapshot | null>(
     null
   );
+  const [slotSwitchTarget, setSlotSwitchTarget] =
+    useState<SlotSwitchTarget | null>(null);
   const workspace = useWorkspace(repoPath);
   const queryClient = useQueryClient();
   const logs = useLogs(repoPath, selectedId);
@@ -354,6 +363,17 @@ export function App() {
     );
     setRepositoryPage("workspace");
   }
+  function selectSlot(worktree: WorktreeSnapshot, slot: SlotOption): void {
+    if (appsAreRunning(worktree)) {
+      setSlotSwitchTarget({ slot, worktree });
+      return;
+    }
+    commands.setSlot.mutate({
+      repoPath,
+      slot: slot.slot,
+      worktreeId: worktree.id,
+    });
+  }
   if (repositoryPage === "settings") {
     return (
       <RepositoryConfigPage
@@ -384,13 +404,7 @@ export function App() {
         defaultSlot={data.defaultSlot}
         onDelete={setDeleteTarget}
         onInspect={setSelectedId}
-        onSetSlot={(worktree, option) =>
-          commands.setSlot.mutate({
-            repoPath,
-            slot: option.slot,
-            worktreeId: worktree.id,
-          })
-        }
+        onSetSlot={selectSlot}
         onToggleApps={toggleApps}
         selectedId={selectedId}
         slots={data.slotOptions}
@@ -516,6 +530,30 @@ export function App() {
         open={deleteTarget !== null}
         repoPath={repoPath}
         worktree={deleteTarget}
+      />
+      <SwitchSlotDialog
+        key={
+          slotSwitchTarget
+            ? `${slotSwitchTarget.worktree.id}:${slotSwitchTarget.slot.slot}`
+            : "no-slot-switch"
+        }
+        onClose={() => setSlotSwitchTarget(null)}
+        onConfirm={(target) =>
+          runSlotSwitch(
+            {
+              setSlot: (input) => commands.setSlot.mutateAsync(input),
+              startApps: (input) => commands.startApps.mutateAsync(input),
+              stopApps: (input) => commands.stopApps.mutateAsync(input),
+            },
+            {
+              repoPath,
+              slot: target.slot.slot,
+              worktreeId: target.worktree.id,
+            }
+          )
+        }
+        requestRepositoryTrust={repositoryTrust.requestTrust}
+        target={slotSwitchTarget}
       />
       <RepositoryTrustDialog
         actionLabel={repositoryTrust.actionLabel}
