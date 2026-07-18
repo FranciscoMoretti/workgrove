@@ -475,60 +475,61 @@ function VariantB({
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
       <PrototypeHeading
-        description="Keep worktree operations quiet on the left and give Codex a persistent inspector rail with every related task."
+        description="Use a compact worktree navigator on the left and give the selected worktree's Codex tasks the main content pane."
         label="Task rail"
       />
-      <div className="grid min-h-0 flex-1 overflow-hidden rounded-lg border bg-card lg:grid-cols-[minmax(0,1fr)_25rem]">
-        <ScrollArea className="min-h-0 border-r">
-          <div className="divide-y">
-            {records.map((record) => {
-              const selected =
-                record.worktree.id === selectedRecord?.worktree.id;
-              const liveCount = record.tasks.filter(
-                (task) =>
-                  task.activity === "working" || task.activity === "waiting"
-              ).length;
-              return (
-                <Button
-                  className={`grid h-auto w-full grid-cols-[minmax(12rem,1fr)_minmax(12rem,1fr)_auto] items-center justify-stretch gap-5 whitespace-normal rounded-none px-4 py-4 text-left transition-colors ${
-                    selected ? "bg-muted/70" : "hover:bg-muted/35"
-                  }`}
-                  key={record.worktree.id}
-                  onClick={() => {
-                    setSelectedWorktreeId(record.worktree.id);
-                    if (record.tasks[0]) {
-                      setSelectedTaskId(record.tasks[0].id);
-                    }
-                  }}
-                  type="button"
-                  variant="ghost"
-                >
-                  <WorktreeIdentity worktree={record.worktree} />
-                  <div className="min-w-0 text-sm">
-                    <div className="truncate font-medium">
-                      {record.worktree.appGroups
-                        .map((group) => group.name)
-                        .join(" · ")}
-                    </div>
-                    <div className="mt-1 truncate text-muted-foreground text-xs">
-                      {record.worktree.path}
-                    </div>
-                  </div>
-                  <div className="flex min-w-24 justify-end">
-                    {record.available ? (
-                      <Badge variant={liveCount > 0 ? "default" : "outline"}>
-                        {record.tasks.length} tasks
-                        {liveCount > 0 ? ` · ${liveCount} live` : ""}
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline">Unavailable</Badge>
-                    )}
-                  </div>
-                </Button>
-              );
-            })}
+      <div className="grid min-h-0 flex-1 grid-cols-[13rem_minmax(0,1fr)] overflow-hidden rounded-lg border bg-card lg:grid-cols-[15rem_minmax(0,1fr)] xl:grid-cols-[17rem_minmax(0,1fr)]">
+        <nav className="flex min-h-0 flex-col border-r bg-muted/20">
+          <div className="flex items-center justify-between border-b px-3 py-2.5">
+            <span className="font-medium text-muted-foreground text-xs uppercase tracking-[0.14em]">
+              Worktrees
+            </span>
+            <Badge variant="outline">{records.length}</Badge>
           </div>
-        </ScrollArea>
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="divide-y">
+              {records.map((record) => {
+                const selected =
+                  record.worktree.id === selectedRecord?.worktree.id;
+                const liveCount = record.tasks.filter(
+                  (task) =>
+                    task.activity === "working" || task.activity === "waiting"
+                ).length;
+                return (
+                  <Button
+                    className={`grid h-auto w-full grid-cols-[minmax(0,1fr)_auto] items-start justify-stretch gap-2 whitespace-normal rounded-none border-l-2 px-3 py-3 text-left transition-colors ${
+                      selected
+                        ? "border-l-foreground bg-muted/70"
+                        : "border-l-transparent hover:bg-muted/35"
+                    }`}
+                    key={record.worktree.id}
+                    onClick={() => {
+                      setSelectedWorktreeId(record.worktree.id);
+                      if (record.tasks[0]) {
+                        setSelectedTaskId(record.tasks[0].id);
+                      }
+                    }}
+                    type="button"
+                    variant="ghost"
+                  >
+                    <WorktreeIdentity worktree={record.worktree} />
+                    <div className="flex items-center gap-1.5 pt-0.5">
+                      {liveCount > 0 ? (
+                        <span
+                          className="size-2 rounded-full bg-status-running-foreground"
+                          title={`${liveCount} live tasks`}
+                        />
+                      ) : null}
+                      <Badge variant="outline">
+                        {record.available ? record.tasks.length : "—"}
+                      </Badge>
+                    </div>
+                  </Button>
+                );
+              })}
+            </div>
+          </ScrollArea>
+        </nav>
         {selectedRecord ? (
           <aside className="flex min-h-0 flex-col bg-background">
             <header className="flex items-start justify-between gap-3 border-b p-4">
