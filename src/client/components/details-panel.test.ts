@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-
+import type { CodexTaskSnapshot } from "../../codex/codex-integration";
 import type { WorktreeSnapshot } from "../../controller/workspace-snapshot";
 import { DetailsPanel } from "./details-panel";
 
@@ -34,12 +34,16 @@ const worktree: WorktreeSnapshot = {
   slotState: "assigned",
 };
 
-function renderDetails(value: WorktreeSnapshot): string {
+function renderDetails(
+  value: WorktreeSnapshot,
+  codexTasks: CodexTaskSnapshot[] = []
+): string {
   return renderToStaticMarkup(
     createElement(DetailsPanel, {
       actionBlocked: false,
       actionPending: false,
       clearPending: false,
+      codexTasks,
       commandActions: {
         onRestart: () => undefined,
         onSetup: () => undefined,
@@ -130,5 +134,26 @@ describe("details panel", () => {
 
     expect(markup).toContain('data-slot="scroll-area"');
     expect(markup).toContain('data-slot="scroll-area-viewport"');
+  });
+
+  it("keeps associated Codex tasks in the existing worktree details panel", () => {
+    const markup = renderDetails(worktree, [
+      {
+        activity: {
+          observedAt: "2026-07-18T10:00:00.000Z",
+          state: "waiting-for-approval",
+          subagentCount: 0,
+        },
+        contextSharedAt: null,
+        createdAt: "2026-07-18T09:00:00.000Z",
+        id: "task-approval",
+        title: "Confirm the release-compatible layout",
+        updatedAt: "2026-07-18T10:00:00.000Z",
+      },
+    ]);
+
+    expect(markup).toContain("Codex tasks");
+    expect(markup).toContain("Confirm the release-compatible layout");
+    expect(markup).toContain("Waiting approval");
   });
 });

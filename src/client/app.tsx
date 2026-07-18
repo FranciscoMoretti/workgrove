@@ -5,7 +5,7 @@ import {
   FolderOpenIcon,
   TreesIcon,
 } from "lucide-react";
-import type { FormEvent, ReactNode } from "react";
+import type { FormEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
@@ -20,11 +20,6 @@ import {
   repositoryPathFromSearch,
   repositoryUrl,
 } from "../repository-context";
-import {
-  type CodexPrototypeVariant,
-  CodexTasksPrototype,
-  codexPrototypeVariantFromSearch,
-} from "./components/codex-tasks-prototype";
 import { CreateWorktreeDialog } from "./components/create-worktree-dialog";
 import { DeleteWorktreeDialog } from "./components/delete-worktree-dialog";
 import { DetailsPanel } from "./components/details-panel";
@@ -72,13 +67,8 @@ import {
   ResizablePanelGroup,
 } from "./components/ui/resizable";
 import { Spinner } from "./components/ui/spinner";
-import {
-  type IntegrationPrototypeVariant,
-  integrationPrototypeVariantFromSearch,
-  WorkgroveTaskIntegrationPrototype,
-} from "./components/workgrove-task-integration-prototype";
 import { WorktreeTable } from "./components/worktree-table";
-import { useLogs, useWorkspace } from "./queries";
+import { useCodexIntegration, useLogs, useWorkspace } from "./queries";
 import { useRepositoryOpen } from "./use-repository-open";
 import { useRepositoryPicker } from "./use-repository-picker";
 import { useRepositorySetup } from "./use-repository-setup";
@@ -280,50 +270,6 @@ function Onboarding({
   );
 }
 
-function WorkspaceRegionContent({
-  fallback,
-  integrationVariant,
-  prototypeVariant,
-  workspace,
-}: {
-  fallback: ReactNode;
-  integrationVariant: IntegrationPrototypeVariant | null;
-  prototypeVariant: CodexPrototypeVariant | null;
-  workspace: WorkspaceSnapshot;
-}) {
-  if (integrationVariant) {
-    return (
-      <WorkgroveTaskIntegrationPrototype
-        initialVariant={integrationVariant}
-        workspace={workspace}
-      />
-    );
-  }
-  if (prototypeVariant) {
-    return (
-      <CodexTasksPrototype
-        initialVariant={prototypeVariant}
-        workspace={workspace}
-      />
-    );
-  }
-  return fallback;
-}
-
-function developmentPrototypeVariant(
-  search: string
-): CodexPrototypeVariant | null {
-  return import.meta.env.DEV ? codexPrototypeVariantFromSearch(search) : null;
-}
-
-function developmentIntegrationVariant(
-  search: string
-): IntegrationPrototypeVariant | null {
-  return import.meta.env.DEV
-    ? integrationPrototypeVariantFromSearch(search)
-    : null;
-}
-
 export function App() {
   const [repoPath, setRepoPath] = useState(
     () => repositoryPathFromSearch(window.location.search) ?? ""
@@ -353,6 +299,7 @@ export function App() {
   const [slotSwitchTarget, setSlotSwitchTarget] =
     useState<SlotSwitchTarget | null>(null);
   const workspace = useWorkspace(repoPath);
+  const codex = useCodexIntegration(repoPath);
   const queryClient = useQueryClient();
   const quickRepository = useRepositoryOpen(openRepository);
   const selected =
@@ -473,10 +420,7 @@ export function App() {
     );
   }
   const data = workspace.data;
-  const prototypeVariant = developmentPrototypeVariant(window.location.search);
-  const integrationVariant = developmentIntegrationVariant(
-    window.location.search
-  );
+  const codexWorktrees = codex.data?.worktrees;
   function openRepositorySettings(): void {
     window.history.pushState(
       null,
@@ -537,6 +481,7 @@ export function App() {
         appGroupActionBlocked={appGroupActionBlocked}
         appGroupActionPending={appGroupActionPending}
         appGroupSlots={data.appGroupSlotOptions}
+        codexWorktrees={codexWorktrees}
         commandActions={commandActions}
         onDelete={setDeleteTarget}
         onInspect={setSelectedId}
@@ -561,6 +506,7 @@ export function App() {
         onRefresh={() =>
           Promise.all([
             workspace.refetch(),
+            codex.refetch(),
             selectedId ? logs.refetch() : Promise.resolve(),
           ]).then(() => undefined)
         }
@@ -584,12 +530,7 @@ export function App() {
         </Alert>
       ) : null}
       <section className="worktree-region min-h-0 flex-1 overflow-hidden px-5 pb-5">
-        <WorkspaceRegionContent
-          fallback={worktreeTable()}
-          integrationVariant={integrationVariant}
-          prototypeVariant={prototypeVariant}
-          workspace={data}
-        />
+        {worktreeTable()}
       </section>
     </div>
   );
@@ -623,6 +564,9 @@ export function App() {
                 actionBlocked={detailsActionState.blocked}
                 actionPending={detailsActionState.pending}
                 clearPending={commands.clearLogs.isPending}
+                codexTasks={
+                  codexWorktrees?.[selectedForDetails.id]?.tasks ?? []
+                }
                 commandActions={commandActions}
                 error={logs.error}
                 loading={logs.isLoading}

@@ -253,4 +253,49 @@ describe("worktree table", () => {
     expect(productMarkup).toContain('aria-label="Loading"');
     expect(websiteMarkup).not.toContain('aria-label="Loading"');
   });
+
+  it("summarizes associated Codex task activity in its own table cell", () => {
+    const markup = renderToStaticMarkup(
+      createElement(WorktreeTable, {
+        appGroupActionBlocked: () => false,
+        appGroupActionPending: () => false,
+        appGroupSlots: {},
+        codexWorktrees: {
+          worktree: {
+            tasks: [
+              {
+                activity: {
+                  observedAt: "2026-07-18T10:00:00.000Z",
+                  state: "working",
+                  subagentCount: 1,
+                },
+                contextSharedAt: null,
+                createdAt: "2026-07-18T09:00:00.000Z",
+                id: "task-1",
+                title: "Investigate task aggregation",
+                updatedAt: "2026-07-18T10:00:00.000Z",
+              },
+            ],
+          },
+        },
+        commandActions: {
+          onRestart: () => undefined,
+          onSetup: () => undefined,
+          onStart: () => undefined,
+          onStop: () => undefined,
+        },
+        onDelete: () => undefined,
+        onInspect: () => undefined,
+        onRestartAppGroup: () => undefined,
+        onSetSlot: () => undefined,
+        onToggleAppGroup: () => undefined,
+        selectedId: null,
+        worktreeActionPending: () => false,
+        worktrees: [worktree],
+      })
+    );
+
+    expect(markup).toContain(">Codex<");
+    expect(markup).toContain(">1 live<");
+  });
 });

@@ -1,4 +1,6 @@
 import {
+  BotIcon,
+  Clock3Icon,
   CopyIcon,
   EraserIcon,
   GitBranchIcon,
@@ -7,7 +9,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-
+import type { CodexTaskSnapshot } from "../../codex/codex-integration";
 import type { WorktreeSnapshot } from "../../controller/workspace-snapshot";
 import { appsAreRunning } from "../../controller/workspace-snapshot";
 import type { WorktreeCommandActions } from "../worktree-command-menu";
@@ -46,6 +48,71 @@ function lifecycleActionIcon(pending: boolean, running: boolean) {
     return <Spinner />;
   }
   return running ? <SquareIcon /> : <PlayIcon />;
+}
+
+function codexActivity(task: CodexTaskSnapshot): {
+  className: string;
+  label: string;
+} {
+  if (task.activity?.state === "working") {
+    return { className: "bg-status-running-foreground", label: "Working" };
+  }
+  if (task.activity?.state === "waiting-for-approval") {
+    return {
+      className: "bg-status-partial-foreground",
+      label: "Waiting approval",
+    };
+  }
+  if (task.activity?.state === "unknown") {
+    return { className: "bg-muted-foreground", label: "Activity unknown" };
+  }
+  return { className: "bg-muted-foreground", label: "Ready" };
+}
+
+function CodexTasksSection({ tasks }: { tasks: CodexTaskSnapshot[] }) {
+  return (
+    <section className="codex-tasks-section">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="flex items-center gap-1.5">
+          <BotIcon className="size-4" />
+          Codex tasks
+        </h3>
+        <Badge variant="outline">{tasks.length}</Badge>
+      </div>
+      {tasks.length > 0 ? (
+        <ScrollArea className="mt-2 h-44 border" scrollbars={["vertical"]}>
+          <div className="divide-y">
+            {tasks.map((task) => {
+              const activity = codexActivity(task);
+              return (
+                <div className="px-3 py-2.5" key={task.id}>
+                  <div className="truncate font-medium text-sm">
+                    {task.title}
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="flex items-center gap-1.5 text-muted-foreground text-xs">
+                      <span
+                        className={`size-1.5 rounded-full ${activity.className}`}
+                      />
+                      {activity.label}
+                    </span>
+                    <span className="flex items-center gap-1 text-muted-foreground text-xs">
+                      <Clock3Icon className="size-3" />
+                      {new Date(task.updatedAt).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </ScrollArea>
+      ) : (
+        <p className="mt-2 text-muted-foreground text-sm">
+          No Codex tasks associated with this worktree.
+        </p>
+      )}
+    </section>
+  );
 }
 
 function terminalContent({
@@ -105,6 +172,7 @@ export function DetailsPanel({
   actionBlocked,
   actionPending,
   clearPending,
+  codexTasks = [],
   commandActions,
   error,
   loading,
@@ -121,6 +189,7 @@ export function DetailsPanel({
   actionBlocked: boolean;
   actionPending: boolean;
   clearPending: boolean;
+  codexTasks?: CodexTaskSnapshot[];
   commandActions: WorktreeCommandActions;
   error: Error | null;
   loading: boolean;
@@ -226,6 +295,7 @@ export function DetailsPanel({
           worktree={worktree}
         />
       </div>
+      <CodexTasksSection tasks={codexTasks} />
       <section className="terminal-section">
         <div className="section-title">
           <h3>Managed logs</h3>
