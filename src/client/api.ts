@@ -1,5 +1,9 @@
 import type { ZodType } from "zod";
 import {
+  type CodexIntegrationSnapshot,
+  CodexIntegrationSnapshotSchema,
+} from "../codex/codex-integration";
+import {
   CommandReceiptSchema,
   PickRepositoryResultSchema,
   RepositoryInitializationPlanSchema,
@@ -64,6 +68,15 @@ export async function fetchWorkspace(
   return WorkspaceSnapshotSchema.parse(
     await responseJson(await fetch(`/api/workspace?${query}`))
   ) as WorkspaceSnapshot;
+}
+
+export async function fetchCodexIntegration(
+  repoPath: string
+): Promise<CodexIntegrationSnapshot> {
+  const query = new URLSearchParams({ repoPath });
+  return CodexIntegrationSnapshotSchema.parse(
+    await responseJson(await fetch(`/api/codex?${query}`))
+  );
 }
 
 export async function fetchLogs(

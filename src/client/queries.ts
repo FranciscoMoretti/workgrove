@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { fetchLogs, fetchWorkspace } from "./api";
+import { fetchCodexIntegration, fetchLogs, fetchWorkspace } from "./api";
 
 export const REFRESH_INTERVAL = 30_000;
 
@@ -9,6 +9,18 @@ export function useWorkspace(repoPath: string) {
     enabled: repoPath !== "",
     queryFn: () => fetchWorkspace(repoPath),
     queryKey: ["workspace", repoPath],
+    refetchInterval: (query) =>
+      query.state.status === "error" ? false : REFRESH_INTERVAL,
+    retry: false,
+    staleTime: REFRESH_INTERVAL,
+  });
+}
+
+export function useCodexIntegration(repoPath: string) {
+  return useQuery({
+    enabled: repoPath !== "",
+    queryFn: () => fetchCodexIntegration(repoPath),
+    queryKey: ["codex-integration", repoPath],
     refetchInterval: (query) =>
       query.state.status === "error" ? false : REFRESH_INTERVAL,
     retry: false,

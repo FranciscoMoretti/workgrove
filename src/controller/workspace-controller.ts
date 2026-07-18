@@ -1,6 +1,12 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { basename, join } from "node:path";
+import {
+  type CodexIntegrationAdapter,
+  type CodexIntegrationSnapshot,
+  projectCodexIntegration,
+  UnavailableCodexIntegrationAdapter,
+} from "../codex/codex-integration";
 import { clearLogs } from "../commands/clear-logs";
 import { createWorktree } from "../commands/create-worktree";
 import { deleteWorktree } from "../commands/delete-worktree";
@@ -169,6 +175,22 @@ function appGroupInstanceKey(name: string, slot: number): string {
 }
 
 export class WorkspaceController {
+  private readonly codexAdapter: CodexIntegrationAdapter;
+
+  constructor(
+    codexAdapter: CodexIntegrationAdapter = new UnavailableCodexIntegrationAdapter()
+  ) {
+    this.codexAdapter = codexAdapter;
+  }
+
+  async inspectCodex(repoPath: string): Promise<CodexIntegrationSnapshot> {
+    const workspace = this.inspect(repoPath);
+    const worktrees = workspace.worktrees.map(({ id, path }) => ({ id, path }));
+    const adapterSnapshot =
+      await this.codexAdapter.loadAssociatedTasks(worktrees);
+    return projectCodexIntegration(worktrees, adapterSnapshot);
+  }
+
   async execute<Name extends WorkgroveCommandName>(
     command: Name,
     input: unknown
