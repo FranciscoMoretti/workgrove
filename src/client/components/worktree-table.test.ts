@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import type { CodexIntegrationSnapshot } from "../../codex/codex-integration";
 import type { WorktreeSnapshot } from "../../controller/workspace-snapshot";
 import { WorktreeTable } from "./worktree-table";
 
@@ -252,5 +253,92 @@ describe("worktree table", () => {
 
     expect(productMarkup).toContain('aria-label="Loading"');
     expect(websiteMarkup).not.toContain('aria-label="Loading"');
+  });
+
+  it("keeps task discovery failure compact in the table", () => {
+    const markup = renderToStaticMarkup(
+      createElement(WorktreeTable, {
+        appGroupActionBlocked: () => false,
+        appGroupActionPending: () => false,
+        appGroupSlots: {},
+        codexAvailability: "unavailable",
+        commandActions: {
+          onRestart: () => undefined,
+          onSetup: () => undefined,
+          onStart: () => undefined,
+          onStop: () => undefined,
+        },
+        onDelete: () => undefined,
+        onInspect: () => undefined,
+        onRestartAppGroup: () => undefined,
+        onSetSlot: () => undefined,
+        onToggleAppGroup: () => undefined,
+        selectedId: null,
+        worktreeActionPending: () => false,
+        worktrees: [worktree],
+      })
+    );
+
+    expect(markup).toContain(">Codex<");
+    expect(markup).toContain("Unavailable");
+  });
+
+  it("summarizes working and waiting Codex tasks without replacing app controls", () => {
+    const codexWorktrees: CodexIntegrationSnapshot["worktrees"] = {
+      worktree: {
+        tasks: [
+          {
+            activity: {
+              observedAt: "2026-07-18T10:00:00.000Z",
+              state: "working",
+              subagentCount: 0,
+            },
+            contextSharedAt: null,
+            createdAt: "2026-07-18T09:00:00.000Z",
+            id: "task-a",
+            title: "Active task",
+            updatedAt: "2026-07-18T10:01:00.000Z",
+          },
+          {
+            activity: {
+              observedAt: "2026-07-18T10:00:00.000Z",
+              state: "waiting-for-approval",
+              subagentCount: 0,
+            },
+            contextSharedAt: null,
+            createdAt: "2026-07-18T09:00:00.000Z",
+            id: "task-b",
+            title: "Waiting task",
+            updatedAt: "2026-07-18T10:01:00.000Z",
+          },
+        ],
+      },
+    };
+    const markup = renderToStaticMarkup(
+      createElement(WorktreeTable, {
+        appGroupActionBlocked: () => false,
+        appGroupActionPending: () => false,
+        appGroupSlots: {},
+        codexWorktrees,
+        commandActions: {
+          onRestart: () => undefined,
+          onSetup: () => undefined,
+          onStart: () => undefined,
+          onStop: () => undefined,
+        },
+        onDelete: () => undefined,
+        onInspect: () => undefined,
+        onRestartAppGroup: () => undefined,
+        onSetSlot: () => undefined,
+        onToggleAppGroup: () => undefined,
+        selectedId: null,
+        worktreeActionPending: () => false,
+        worktrees: [worktree],
+      })
+    );
+
+    expect(markup).toContain("1 live");
+    expect(markup).toContain("1 waiting");
+    expect(markup).toContain('data-slot="app-group-grid"');
   });
 });

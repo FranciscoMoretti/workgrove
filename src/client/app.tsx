@@ -68,7 +68,7 @@ import {
 } from "./components/ui/resizable";
 import { Spinner } from "./components/ui/spinner";
 import { WorktreeTable } from "./components/worktree-table";
-import { useLogs, useWorkspace } from "./queries";
+import { useCodexIntegration, useLogs, useWorkspace } from "./queries";
 import { useRepositoryOpen } from "./use-repository-open";
 import { useRepositoryPicker } from "./use-repository-picker";
 import { useRepositorySetup } from "./use-repository-setup";
@@ -79,6 +79,19 @@ const REPO_STORAGE_KEY = "workgrove:repo-path";
 const RECENTS_STORAGE_KEY = "workgrove:recent-repos";
 const DETAILS_PANEL_IDS = ["worktrees", "details"];
 const EMPTY_WORKTREES: WorktreeSnapshot[] = [];
+
+function codexAvailability({
+  isError,
+  isLoading,
+}: {
+  isError: boolean;
+  isLoading: boolean;
+}): "loading" | "ready" | "unavailable" {
+  if (isError) {
+    return "unavailable";
+  }
+  return isLoading ? "loading" : "ready";
+}
 
 function worktreeForAppGroup(
   worktree: WorktreeSnapshot | null,
@@ -299,6 +312,7 @@ export function App() {
   const [slotSwitchTarget, setSlotSwitchTarget] =
     useState<SlotSwitchTarget | null>(null);
   const workspace = useWorkspace(repoPath);
+  const codex = useCodexIntegration(repoPath);
   const queryClient = useQueryClient();
   const quickRepository = useRepositoryOpen(openRepository);
   const selected =
@@ -419,6 +433,8 @@ export function App() {
     );
   }
   const data = workspace.data;
+  const codexWorktrees = codex.data?.worktrees;
+  const currentCodexAvailability = codexAvailability(codex);
   function openRepositorySettings(): void {
     window.history.pushState(
       null,
@@ -479,6 +495,8 @@ export function App() {
         appGroupActionBlocked={appGroupActionBlocked}
         appGroupActionPending={appGroupActionPending}
         appGroupSlots={data.appGroupSlotOptions}
+        codexAvailability={currentCodexAvailability}
+        codexWorktrees={codexWorktrees}
         commandActions={commandActions}
         onDelete={setDeleteTarget}
         onInspect={setSelectedId}
@@ -503,6 +521,7 @@ export function App() {
         onRefresh={() =>
           Promise.all([
             workspace.refetch(),
+            codex.refetch(),
             selectedId ? logs.refetch() : Promise.resolve(),
           ]).then(() => undefined)
         }
@@ -560,6 +579,11 @@ export function App() {
                 actionBlocked={detailsActionState.blocked}
                 actionPending={detailsActionState.pending}
                 clearPending={commands.clearLogs.isPending}
+                codexDiscoveryUnavailable={codex.isError}
+                codexLoading={codex.isLoading}
+                codexTasks={
+                  codexWorktrees?.[selectedForDetails.id]?.tasks ?? []
+                }
                 commandActions={commandActions}
                 error={logs.error}
                 loading={logs.isLoading}

@@ -1,4 +1,6 @@
-import { GitBranchIcon, PlayIcon, SquareIcon } from "lucide-react";
+import { BotIcon, GitBranchIcon, PlayIcon, SquareIcon } from "lucide-react";
+
+import type { CodexIntegrationSnapshot } from "../../codex/codex-integration";
 
 import type {
   AppGroupSlotOption,
@@ -49,10 +51,59 @@ function actionIcon(pending: boolean, running: boolean) {
   return running ? <SquareIcon /> : <PlayIcon />;
 }
 
+function CodexTaskSummary({
+  availability,
+  tasks,
+}: {
+  availability: "loading" | "ready" | "unavailable";
+  tasks: CodexIntegrationSnapshot["worktrees"][string]["tasks"] | undefined;
+}) {
+  if (!tasks) {
+    let label = "—";
+    if (availability === "unavailable") {
+      label = "Unavailable";
+    } else if (availability === "loading") {
+      label = "Loading…";
+    }
+    return <span className="text-muted-foreground text-xs">{label}</span>;
+  }
+  if (tasks.length === 0) {
+    return <span className="text-muted-foreground text-xs">No tasks</span>;
+  }
+  const working = tasks.filter(
+    (task) => task.activity?.state === "working"
+  ).length;
+  const waiting = tasks.filter(
+    (task) => task.activity?.state === "waiting-for-approval"
+  ).length;
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <Badge variant="outline">
+        <BotIcon />
+        {tasks.length}
+      </Badge>
+      {working > 0 ? (
+        <span className="flex items-center gap-1 text-status-running-foreground text-xs">
+          <span className="size-1.5 rounded-full bg-current" />
+          {working} live
+        </span>
+      ) : null}
+      {waiting > 0 ? (
+        <span className="flex items-center gap-1 text-status-partial-foreground text-xs">
+          <span className="size-1.5 rounded-full bg-current" />
+          {waiting} waiting
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 export function WorktreeTable({
   appGroupActionBlocked,
   appGroupActionPending,
   appGroupSlots,
+  codexAvailability = "ready",
+  codexWorktrees,
   commandActions,
   onDelete,
   onInspect,
@@ -66,6 +117,8 @@ export function WorktreeTable({
   appGroupActionBlocked: (worktreeId: string, appGroupName: string) => boolean;
   appGroupActionPending: (worktreeId: string, appGroupName: string) => boolean;
   appGroupSlots: Record<string, AppGroupSlotOption[]>;
+  codexAvailability?: "loading" | "ready" | "unavailable";
+  codexWorktrees?: CodexIntegrationSnapshot["worktrees"];
   commandActions: WorktreeCommandActions;
   onDelete: (worktree: WorktreeSnapshot) => void;
   onInspect: (worktreeId: string) => void;
@@ -92,7 +145,7 @@ export function WorktreeTable({
       scrollbars={["vertical", "horizontal"]}
     >
       <Table
-        className="min-w-[900px]"
+        className="min-w-[1020px]"
         containerClassName="w-max min-w-full overflow-visible"
       >
         <TableHeader className="sticky top-0 z-10 bg-muted">
@@ -100,6 +153,7 @@ export function WorktreeTable({
             <TableHead className="w-[24%]">Worktree</TableHead>
             <TableHead className="w-[16%]">Branch</TableHead>
             <TableHead>App groups</TableHead>
+            <TableHead className="w-[14%]">Codex</TableHead>
             <TableHead>
               <span className="sr-only">Actions</span>
             </TableHead>
@@ -283,6 +337,12 @@ export function WorktreeTable({
                     })}
                   </div>
                 </TableCell>
+                <TableCell className="whitespace-normal">
+                  <CodexTaskSummary
+                    availability={codexAvailability}
+                    tasks={codexWorktrees?.[worktree.id]?.tasks}
+                  />
+                </TableCell>
                 <TableCell onClick={(event) => event.stopPropagation()}>
                   <WorktreeActionsMenu
                     commandActions={commandActions}
@@ -298,7 +358,7 @@ export function WorktreeTable({
           })}
           {worktrees.length === 0 ? (
             <TableRow>
-              <TableCell className="h-48" colSpan={4}>
+              <TableCell className="h-48" colSpan={5}>
                 <Empty>
                   <EmptyHeader>
                     <EmptyTitle>No Git worktrees found</EmptyTitle>
