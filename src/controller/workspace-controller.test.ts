@@ -251,7 +251,7 @@ describe("cross-group endpoint ownership", () => {
       const snapshot = new WorkspaceController().inspect(root);
       expect(
         snapshot.worktrees[0]?.appGroups.map((group) => group.slotState)
-      ).toEqual(["invalid", "invalid"]);
+      ).toEqual(["conflicting", "conflicting"]);
     } finally {
       rmSync(root, { force: true, recursive: true });
     }

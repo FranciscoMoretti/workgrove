@@ -25,7 +25,7 @@ const AppGroupSchema = z.object({
   name: z.string().min(1),
   processRunning: z.boolean(),
   slot: z.number().int().nonnegative(),
-  slotState: z.enum(["assigned", "invalid"]),
+  slotState: z.enum(["assigned", "conflicting", "invalid"]),
   stop: z.enum(["command", "process"]),
 });
 
@@ -76,7 +76,7 @@ export const WorkspaceSnapshotSchema = z.object({
       processRunning: z.boolean(),
       setupState: z.enum(["failed", "idle", "running"]),
       slot: z.number().int().nonnegative(),
-      slotState: z.enum(["assigned", "invalid"]),
+      slotState: z.enum(["assigned", "conflicting", "invalid"]),
     })
   ),
 });

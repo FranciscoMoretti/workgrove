@@ -164,6 +164,10 @@ function worktreeSlots(
   };
 }
 
+function appGroupInstanceKey(name: string, slot: number): string {
+  return `${name}\0${slot}`;
+}
+
 export class WorkspaceController {
   async execute<Name extends WorkgroveCommandName>(
     command: Name,
@@ -197,84 +201,123 @@ export class WorkspaceController {
 
     const primaryGroup = primaryAppGroup(config);
     const ports = inspectListeningPorts();
-    const worktrees = discovered.map((item, index) => {
+    const discoveredWorktrees = discovered.map((item) => {
       const id = worktreeId(item.path);
       const path = realpathSync(item.path);
       const resolvedSlots = worktreeSlots(path, config, primaryGroup);
-      const resolvedGroups = Object.entries(config.appGroups).map(
-        ([name, configured]) => {
-          const slot = resolvedSlots.slots[name] ?? configured.slot.default;
-          const slotInvalid =
-            resolvedSlots.invalid ||
-            slot > maximumWorkgroveAppGroupSlot(configured);
-          const controlledApps = slotInvalid
-            ? []
-            : resolveControlledApps(config, name, slot);
-          return { configured, controlledApps, name, slot, slotInvalid };
-        }
-      );
-      const portCounts = new Map<number, number>();
-      for (const app of resolvedGroups.flatMap(
-        (group) => group.controlledApps
-      )) {
-        portCounts.set(app.port, (portCounts.get(app.port) ?? 0) + 1);
-      }
-      const appGroups = resolvedGroups.map(
-        ({ configured, controlledApps, name, slot, slotInvalid }) => {
-          const portCollision = controlledApps.some(
-            (app) => (portCounts.get(app.port) ?? 0) > 1
-          );
-          const invalid = slotInvalid || portCollision;
-          const commandControlled = configured.stop !== "process";
-          const apps = invalid
-            ? []
-            : controlledApps.map((app) => {
-                const ownership = portOwnership(ports, app.port, path);
-                return {
-                  ...app,
-                  listening: commandControlled
-                    ? ownership !== "none"
-                    : ownership === "owned",
-                  ownership,
-                };
-              });
-          const listening = new Set(
-            apps.filter((app) => app.listening).map((app) => app.port)
-          );
-          return {
-            apps,
-            health: appHealth(invalid ? [] : controlledApps, listening),
-            name,
-            processRunning:
-              configured.stop === "process" &&
-              managedPid(appGroupProcessId(id, name), path) !== null,
-            slot,
-            slotState: invalid ? ("invalid" as const) : ("assigned" as const),
-            stop: commandControlled
-              ? ("command" as const)
-              : ("process" as const),
-          };
-        }
-      );
-      const primary =
-        appGroups.find((group) => group.name === primaryGroup) ?? appGroups[0];
-      return {
-        appLabel: primary.name,
-        apps: primary.apps,
-        appGroups,
-        branch:
-          item.branch ?? `detached ${item.head?.slice(0, 7) ?? "unknown"}`,
-        health: primary.health,
-        id,
-        isMain: index === 0,
-        name: basename(path),
-        path,
-        processRunning: primary.processRunning,
-        setupState: worktreeSetupState(id, path),
-        slot: primary.slot,
-        slotState: primary.slotState,
-      };
+      return { id, item, path, resolvedSlots };
     });
+    const instances = new Map<string, number[]>();
+    for (const { resolvedSlots } of discoveredWorktrees) {
+      for (const [name, configured] of Object.entries(config.appGroups)) {
+        const slot = resolvedSlots.slots[name] ?? configured.slot.default;
+        if (
+          resolvedSlots.invalid ||
+          slot > maximumWorkgroveAppGroupSlot(configured)
+        ) {
+          continue;
+        }
+        const key = appGroupInstanceKey(name, slot);
+        if (!instances.has(key)) {
+          instances.set(
+            key,
+            resolveControlledApps(config, name, slot).map((app) => app.port)
+          );
+        }
+      }
+    }
+    const instanceKeysByPort = new Map<number, Set<string>>();
+    for (const [key, instancePorts] of instances) {
+      for (const port of instancePorts) {
+        const keys = instanceKeysByPort.get(port) ?? new Set<string>();
+        keys.add(key);
+        instanceKeysByPort.set(port, keys);
+      }
+    }
+    const conflictingInstances = new Set(
+      [...instanceKeysByPort.values()]
+        .filter((keys) => keys.size > 1)
+        .flatMap((keys) => [...keys])
+    );
+    const worktrees = discoveredWorktrees.map(
+      ({ id, item, path, resolvedSlots }, index) => {
+        const resolvedGroups = Object.entries(config.appGroups).map(
+          ([name, configured]) => {
+            const slot = resolvedSlots.slots[name] ?? configured.slot.default;
+            const slotInvalid =
+              resolvedSlots.invalid ||
+              slot > maximumWorkgroveAppGroupSlot(configured);
+            const controlledApps = slotInvalid
+              ? []
+              : resolveControlledApps(config, name, slot);
+            return { configured, controlledApps, name, slot, slotInvalid };
+          }
+        );
+        const appGroups = resolvedGroups.map(
+          ({ configured, controlledApps, name, slot, slotInvalid }) => {
+            const portCollision = conflictingInstances.has(
+              appGroupInstanceKey(name, slot)
+            );
+            const invalid = slotInvalid || portCollision;
+            const commandControlled = configured.stop !== "process";
+            const apps = invalid
+              ? []
+              : controlledApps.map((app) => {
+                  const ownership = portOwnership(ports, app.port, path);
+                  return {
+                    ...app,
+                    listening: commandControlled
+                      ? ownership !== "none"
+                      : ownership === "owned",
+                    ownership,
+                  };
+                });
+            const listening = new Set(
+              apps.filter((app) => app.listening).map((app) => app.port)
+            );
+            let slotState: "assigned" | "conflicting" | "invalid" = "assigned";
+            if (portCollision) {
+              slotState = "conflicting";
+            }
+            if (slotInvalid) {
+              slotState = "invalid";
+            }
+            return {
+              apps,
+              health: appHealth(invalid ? [] : controlledApps, listening),
+              name,
+              processRunning:
+                configured.stop === "process" &&
+                managedPid(appGroupProcessId(id, name), path) !== null,
+              slot,
+              slotState,
+              stop: commandControlled
+                ? ("command" as const)
+                : ("process" as const),
+            };
+          }
+        );
+        const primary =
+          appGroups.find((group) => group.name === primaryGroup) ??
+          appGroups[0];
+        return {
+          appLabel: primary.name,
+          apps: primary.apps,
+          appGroups,
+          branch:
+            item.branch ?? `detached ${item.head?.slice(0, 7) ?? "unknown"}`,
+          health: primary.health,
+          id,
+          isMain: index === 0,
+          name: basename(path),
+          path,
+          processRunning: primary.processRunning,
+          setupState: worktreeSetupState(id, path),
+          slot: primary.slot,
+          slotState: primary.slotState,
+        };
+      }
+    );
 
     const appGroupSlotOptions = Object.fromEntries(
       Object.entries(config.appGroups).map(([name, configured]) => {

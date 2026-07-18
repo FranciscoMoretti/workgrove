@@ -20,7 +20,7 @@ export interface AppGroupSnapshot {
   name: string;
   processRunning: boolean;
   slot: number;
-  slotState: "assigned" | "invalid";
+  slotState: "assigned" | "conflicting" | "invalid";
   stop: "command" | "process";
 }
 
@@ -46,7 +46,7 @@ export interface WorktreeSnapshot {
   processRunning: boolean;
   setupState: "failed" | "idle" | "running";
   slot: number;
-  slotState: "assigned" | "invalid";
+  slotState: "assigned" | "conflicting" | "invalid";
 }
 
 export function appGroupIsRunning(

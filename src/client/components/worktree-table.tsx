@@ -48,6 +48,13 @@ function actionIcon(pending: boolean, running: boolean) {
   return running ? <SquareIcon /> : <PlayIcon />;
 }
 
+function groupMode(group: AppGroupSnapshot): string {
+  if (group.slotState === "conflicting") {
+    return "port conflict";
+  }
+  return group.stop;
+}
+
 export function WorktreeTable({
   actionPending,
   appGroupSlots,
@@ -212,8 +219,14 @@ export function WorktreeTable({
                               </SelectContent>
                             </Select>
                           </ButtonGroup>
-                          <Badge variant="outline">
-                            {group.stop === "process" ? "process" : "command"}
+                          <Badge
+                            variant={
+                              group.slotState === "conflicting"
+                                ? "destructive"
+                                : "outline"
+                            }
+                          >
+                            {groupMode(group)}
                           </Badge>
                         </div>
                       );
