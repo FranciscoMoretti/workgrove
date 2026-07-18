@@ -1,10 +1,12 @@
 import { describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
   realpathSync,
   rmSync,
   symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -217,5 +219,41 @@ describe("controller command contract", () => {
         worktreeId: "worktree",
       })
     ).rejects.toThrow();
+  });
+});
+
+describe("cross-group endpoint ownership", () => {
+  it("marks groups invalid when their selected slots resolve to the same port", () => {
+    const root = mkdtempSync(join(tmpdir(), "workgrove-group-collision-"));
+    try {
+      spawnSync("git", ["init", "-q"], { cwd: root });
+      writeFileSync(
+        join(root, ".workgrove.json"),
+        JSON.stringify({
+          version: 2,
+          setup: { argv: ["true"] },
+          appGroups: {
+            Product: {
+              slot: { default: 0, stride: 10 },
+              start: { argv: ["true"] },
+              stop: "process",
+              apps: { Web: { basePort: 4000 } },
+            },
+            Infrastructure: {
+              slot: { default: 0, stride: 20 },
+              start: { argv: ["true"] },
+              stop: { argv: ["true"] },
+              apps: { Proxy: { basePort: 4000 } },
+            },
+          },
+        })
+      );
+      const snapshot = new WorkspaceController().inspect(root);
+      expect(
+        snapshot.worktrees[0]?.appGroups.map((group) => group.slotState)
+      ).toEqual(["invalid", "invalid"]);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
   });
 });

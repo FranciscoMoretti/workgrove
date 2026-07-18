@@ -80,6 +80,27 @@ const RECENTS_STORAGE_KEY = "workgrove:recent-repos";
 const DETAILS_PANEL_IDS = ["worktrees", "details"];
 const EMPTY_WORKTREES: WorktreeSnapshot[] = [];
 
+function worktreeForAppGroup(
+  worktree: WorktreeSnapshot | null,
+  appGroupName: string | null
+): WorktreeSnapshot | null {
+  const group = worktree?.appGroups.find(
+    (candidate) => candidate.name === appGroupName
+  );
+  if (!(worktree && group)) {
+    return worktree;
+  }
+  return {
+    ...worktree,
+    appLabel: group.name,
+    apps: group.apps,
+    health: group.health,
+    processRunning: group.processRunning,
+    slot: group.slot,
+    slotState: group.slotState,
+  };
+}
+
 function recentRepositories(): string[] {
   try {
     const value = JSON.parse(localStorage.getItem(RECENTS_STORAGE_KEY) ?? "[]");
@@ -256,8 +277,11 @@ export function App() {
   const selected =
     workspace.data?.worktrees.find((worktree) => worktree.id === selectedId) ??
     null;
-  const selectedAppGroupName =
-    selected?.appGroups[0]?.name ?? workspace.data?.primaryAppGroup ?? null;
+  const selectedAppGroupName = workspace.data?.primaryAppGroup ?? null;
+  const selectedForDetails = worktreeForAppGroup(
+    selected,
+    selectedAppGroupName
+  );
   const logs = useLogs(repoPath, selectedId, selectedAppGroupName);
   const visibleWorktrees = workspace.data?.worktrees ?? EMPTY_WORKTREES;
   const repositoryTrust = useRepositoryTrust({
@@ -266,6 +290,7 @@ export function App() {
     trusted: workspace.data?.trusted ?? true,
   });
   const worktreeActions = useWorktreeCommandActions({
+    primaryAppGroup: workspace.data?.primaryAppGroup ?? "",
     repoPath,
     requestRepositoryTrust: repositoryTrust.requestTrust,
     worktrees: visibleWorktrees,
@@ -462,7 +487,7 @@ export function App() {
   );
   return (
     <main className="h-screen overflow-hidden">
-      {selected ? (
+      {selectedForDetails ? (
         <ResizablePanelGroup
           autoSaveId="workgrove:details-layout:v2"
           className="h-full"
@@ -482,12 +507,12 @@ export function App() {
             <RecoveryBoundary
               description="The worktree details panel failed, but the workspace table is still available."
               dismissLabel="Close details"
-              key={selected.id}
+              key={selectedForDetails.id}
               onDismiss={() => setSelectedId(null)}
               title="Details unavailable"
             >
               <DetailsPanel
-                actionPending={pendingIds.has(selected.id)}
+                actionPending={pendingIds.has(selectedForDetails.id)}
                 clearPending={commands.clearLogs.isPending}
                 commandActions={commandActions}
                 error={logs.error}
@@ -497,15 +522,15 @@ export function App() {
                   commands.clearLogs.mutate({
                     appGroupName: selectedAppGroupName,
                     repoPath,
-                    worktreeId: selected.id,
+                    worktreeId: selectedForDetails.id,
                   })
                 }
                 onClose={() => setSelectedId(null)}
-                onDelete={() => setDeleteTarget(selected)}
-                onInspect={() => setSelectedId(selected.id)}
+                onDelete={() => setDeleteTarget(selectedForDetails)}
+                onInspect={() => setSelectedId(selectedForDetails.id)}
                 onRetryLogs={() => logs.refetch().then(() => undefined)}
-                onToggleApps={() => toggleApps(selected)}
-                worktree={selected}
+                onToggleApps={() => toggleApps(selectedForDetails)}
+                worktree={selectedForDetails}
               />
             </RecoveryBoundary>
           </ResizablePanel>

@@ -106,6 +106,27 @@ describe("shared Workgrove schema", () => {
     }
   });
 
+  it("rejects only template references that are ambiguous between exact names", () => {
+    const result = WorkgroveConfigSchema.safeParse({
+      ...validConfig,
+      appGroups: {
+        A: {
+          ...validConfig.appGroups.Apps,
+          apps: { "B.apps.C": { basePort: 3000 } },
+        },
+        "A.apps.B": {
+          ...validConfig.appGroups.Apps,
+          apps: { C: { basePort: 4000 } },
+        },
+      },
+      env: { PORT: "{appGroups.A.apps.B.apps.C.port}" },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toContain("Ambiguous");
+    }
+  });
+
   it("limits slots per App group using its highest base port", () => {
     expect(maximumWorkgroveAppGroupSlot(validConfig.appGroups.Apps)).toBe(2301);
   });

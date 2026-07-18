@@ -30,10 +30,12 @@ function reviewedCommand(value: string): {
   const separator = value.indexOf(": ");
   const label = separator === -1 ? "Command" : value.slice(0, separator);
   const command = separator === -1 ? value : value.slice(separator + 2);
-  const description =
-    label === "Setup"
-      ? "Prepares a newly created worktree."
-      : "Starts the app group as one managed process tree.";
+  let description = "Starts the App group.";
+  if (label === "Setup") {
+    description = "Prepares a newly created worktree.";
+  } else if (label.endsWith(" Stop")) {
+    description = "Stops the App group with its configured command.";
+  }
   return { command, description, label };
 }
 

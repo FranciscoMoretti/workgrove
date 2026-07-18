@@ -78,6 +78,28 @@ describe("generic Workgrove configuration", () => {
     );
   });
 
+  it("renders exact names containing template delimiters", () => {
+    const unusual: WorkgroveConfig = {
+      version: 2,
+      setup: { argv: ["true"] },
+      appGroups: {
+        "Curly } Group": {
+          slot: { default: 0, stride: 10 },
+          start: { argv: ["true"] },
+          stop: "process",
+          apps: { "API { Edge": { basePort: 9000 } },
+        },
+      },
+      env: {
+        PORT: "{appGroups.Curly } Group.apps.API { Edge.port}",
+      },
+    };
+    expect(resolveStartCommand(unusual, "Curly } Group", {})).toEqual({
+      argv: ["true"],
+      env: { PORT: "9000" },
+    });
+  });
+
   it("fingerprints every lifecycle command and environment", () => {
     expect(repositoryRequiresTrust(config)).toBe(true);
     const changed = structuredClone(config);

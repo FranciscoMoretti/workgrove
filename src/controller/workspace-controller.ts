@@ -201,7 +201,7 @@ export class WorkspaceController {
       const id = worktreeId(item.path);
       const path = realpathSync(item.path);
       const resolvedSlots = worktreeSlots(path, config, primaryGroup);
-      const appGroups = Object.entries(config.appGroups).map(
+      const resolvedGroups = Object.entries(config.appGroups).map(
         ([name, configured]) => {
           const slot = resolvedSlots.slots[name] ?? configured.slot.default;
           const slotInvalid =
@@ -210,31 +210,46 @@ export class WorkspaceController {
           const controlledApps = slotInvalid
             ? []
             : resolveControlledApps(config, name, slot);
+          return { configured, controlledApps, name, slot, slotInvalid };
+        }
+      );
+      const portCounts = new Map<number, number>();
+      for (const app of resolvedGroups.flatMap(
+        (group) => group.controlledApps
+      )) {
+        portCounts.set(app.port, (portCounts.get(app.port) ?? 0) + 1);
+      }
+      const appGroups = resolvedGroups.map(
+        ({ configured, controlledApps, name, slot, slotInvalid }) => {
+          const portCollision = controlledApps.some(
+            (app) => (portCounts.get(app.port) ?? 0) > 1
+          );
+          const invalid = slotInvalid || portCollision;
           const commandControlled = configured.stop !== "process";
-          const apps = controlledApps.map((app) => {
-            const ownership = portOwnership(ports, app.port, path);
-            return {
-              ...app,
-              listening: commandControlled
-                ? ownership !== "none"
-                : ownership === "owned",
-              ownership,
-            };
-          });
+          const apps = invalid
+            ? []
+            : controlledApps.map((app) => {
+                const ownership = portOwnership(ports, app.port, path);
+                return {
+                  ...app,
+                  listening: commandControlled
+                    ? ownership !== "none"
+                    : ownership === "owned",
+                  ownership,
+                };
+              });
           const listening = new Set(
             apps.filter((app) => app.listening).map((app) => app.port)
           );
           return {
             apps,
-            health: appHealth(controlledApps, listening),
+            health: appHealth(invalid ? [] : controlledApps, listening),
             name,
             processRunning:
               configured.stop === "process" &&
               managedPid(appGroupProcessId(id, name), path) !== null,
             slot,
-            slotState: slotInvalid
-              ? ("invalid" as const)
-              : ("assigned" as const),
+            slotState: invalid ? ("invalid" as const) : ("assigned" as const),
             stop: commandControlled
               ? ("command" as const)
               : ("process" as const),

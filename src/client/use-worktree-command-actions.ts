@@ -19,15 +19,22 @@ function requestedWorktreeIds(value: unknown): string[] {
 }
 
 export function useWorktreeCommandActions({
+  primaryAppGroup,
   repoPath,
   requestRepositoryTrust,
   worktrees,
 }: {
+  primaryAppGroup: string;
   repoPath: string;
   requestRepositoryTrust: RequestRepositoryTrust;
   worktrees: WorktreeSnapshot[];
 }) {
   const commands = useCommands(repoPath);
+  const primaryGroup = useCallback(
+    (worktree: WorktreeSnapshot) =>
+      worktree.appGroups.find((group) => group.name === primaryAppGroup),
+    [primaryAppGroup]
+  );
   const pendingIds = useMemo(
     () =>
       new Set(
@@ -75,7 +82,7 @@ export function useWorktreeCommandActions({
 
   const startApps = useCallback(
     (worktree: WorktreeSnapshot) => {
-      const appGroupName = worktree.appGroups[0]?.name;
+      const appGroupName = primaryGroup(worktree)?.name;
       if (!appGroupName) {
         return;
       }
@@ -87,12 +94,12 @@ export function useWorktreeCommandActions({
         });
       });
     },
-    [commands.startApps, repoPath, requestRepositoryTrust]
+    [commands.startApps, primaryGroup, repoPath, requestRepositoryTrust]
   );
 
   const stopApps = useCallback(
     (worktree: WorktreeSnapshot) => {
-      const appGroupName = worktree.appGroups[0]?.name;
+      const appGroupName = primaryGroup(worktree)?.name;
       if (appGroupName) {
         commands.stopApps.mutate({
           appGroupName,
@@ -101,12 +108,12 @@ export function useWorktreeCommandActions({
         });
       }
     },
-    [commands.stopApps, repoPath]
+    [commands.stopApps, primaryGroup, repoPath]
   );
 
   const restartApps = useCallback(
     (worktree: WorktreeSnapshot) => {
-      const appGroupName = worktree.appGroups[0]?.name;
+      const appGroupName = primaryGroup(worktree)?.name;
       if (!appGroupName) {
         return;
       }
@@ -118,7 +125,7 @@ export function useWorktreeCommandActions({
         });
       });
     },
-    [commands.restartApps, repoPath, requestRepositoryTrust]
+    [commands.restartApps, primaryGroup, repoPath, requestRepositoryTrust]
   );
 
   const setupApps = useCallback(
