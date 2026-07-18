@@ -8,6 +8,10 @@ import {
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
+import {
+  CodexIntegrationSnapshotSchema,
+  CodexIntegrationUnavailableError,
+} from "../codex/codex-integration";
 import { isWorkgroveCommandName } from "../controller/command-contract";
 import {
   MissingWorktreeConfigError,
@@ -43,6 +47,9 @@ function sendJson(response: ServerResponse, status: number, value: unknown) {
 }
 
 function errorBody(error: unknown) {
+  if (error instanceof CodexIntegrationUnavailableError) {
+    return { code: error.code, error: error.message };
+  }
   if (error instanceof MissingWorktreeConfigError) {
     return {
       code: error.code,
@@ -85,7 +92,10 @@ const vite =
         server: { middlewareMode: true },
       });
 
-function handleGetApi(url: URL, response: ServerResponse): boolean {
+async function handleGetApi(
+  url: URL,
+  response: ServerResponse
+): Promise<boolean> {
   if (url.pathname === "/api/health") {
     sendJson(response, 200, {
       ok: true,
@@ -106,6 +116,19 @@ function handleGetApi(url: URL, response: ServerResponse): boolean {
       response,
       200,
       WorkspaceSnapshotSchema.parse(controller.inspect(repoPath))
+    );
+    return true;
+  }
+  if (url.pathname === "/api/codex") {
+    const { repoPath } = WorkspaceQuerySchema.parse(
+      Object.fromEntries(url.searchParams)
+    );
+    sendJson(
+      response,
+      200,
+      CodexIntegrationSnapshotSchema.parse(
+        await controller.inspectCodex(repoPath)
+      )
     );
     return true;
   }
@@ -181,7 +204,7 @@ const server = createServer(async (request, response) => {
     `http://${request.headers.host ?? `${HOST}:${PORT}`}`
   );
   try {
-    if (request.method === "GET" && handleGetApi(url, response)) {
+    if (request.method === "GET" && (await handleGetApi(url, response))) {
       return;
     }
     const commandMatch =
@@ -192,7 +215,11 @@ const server = createServer(async (request, response) => {
     }
     serveUi(request, response, url);
   } catch (error) {
-    sendJson(response, 400, errorBody(error));
+    sendJson(
+      response,
+      error instanceof CodexIntegrationUnavailableError ? 503 : 400,
+      errorBody(error)
+    );
   }
 });
 
