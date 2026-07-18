@@ -1,0 +1,20 @@
+{
+  "name": "workgrove",
+  "interface": {
+    "displayName": "Workgrove"
+  },
+  "plugins": [
+    {
+      "name": "workgrove",
+      "source": {
+        "source": "local",
+        "path": "./plugins/workgrove"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
