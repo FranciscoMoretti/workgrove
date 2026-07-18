@@ -101,6 +101,33 @@ function worktreeForAppGroup(
   };
 }
 
+function selectedAppGroupActionState(
+  worktree: WorktreeSnapshot | null,
+  appGroupName: string | null,
+  appGroupActionBlocked: (
+    worktreeId: string,
+    targetAppGroupName: string
+  ) => boolean,
+  appGroupActionPending: (
+    worktreeId: string,
+    targetAppGroupName: string
+  ) => boolean,
+  worktreeActionPending: (worktreeId: string) => boolean
+): { blocked: boolean; pending: boolean; worktreePending: boolean } {
+  if (!worktree) {
+    return { blocked: false, pending: false, worktreePending: false };
+  }
+  const worktreePending = worktreeActionPending(worktree.id);
+  if (!appGroupName) {
+    return { blocked: worktreePending, pending: false, worktreePending };
+  }
+  return {
+    blocked: appGroupActionBlocked(worktree.id, appGroupName),
+    pending: appGroupActionPending(worktree.id, appGroupName),
+    worktreePending,
+  };
+}
+
 function recentRepositories(): string[] {
   try {
     const value = JSON.parse(localStorage.getItem(RECENTS_STORAGE_KEY) ?? "[]");
@@ -296,13 +323,22 @@ export function App() {
     worktrees: visibleWorktrees,
   });
   const {
+    appGroupActionBlocked,
+    appGroupActionPending,
     commandActions,
     commands,
-    pendingIds,
     restartAppGroup,
     toggleAppGroup,
     toggleApps,
+    worktreeActionPending,
   } = worktreeActions;
+  const detailsActionState = selectedAppGroupActionState(
+    selectedForDetails,
+    selectedAppGroupName,
+    appGroupActionBlocked,
+    appGroupActionPending,
+    worktreeActionPending
+  );
 
   useEffect(() => {
     function syncLocation(): void {
@@ -440,7 +476,8 @@ export function App() {
   function worktreeTable() {
     return (
       <WorktreeTable
-        actionPending={(id) => pendingIds.has(id)}
+        appGroupActionBlocked={appGroupActionBlocked}
+        appGroupActionPending={appGroupActionPending}
         appGroupSlots={data.appGroupSlotOptions}
         commandActions={commandActions}
         onDelete={setDeleteTarget}
@@ -449,6 +486,7 @@ export function App() {
         onSetSlot={selectSlot}
         onToggleAppGroup={toggleAppGroup}
         selectedId={selectedId}
+        worktreeActionPending={worktreeActionPending}
         worktrees={visibleWorktrees}
       />
     );
@@ -519,7 +557,8 @@ export function App() {
               title="Details unavailable"
             >
               <DetailsPanel
-                actionPending={pendingIds.has(selectedForDetails.id)}
+                actionBlocked={detailsActionState.blocked}
+                actionPending={detailsActionState.pending}
                 clearPending={commands.clearLogs.isPending}
                 commandActions={commandActions}
                 error={logs.error}
@@ -538,6 +577,7 @@ export function App() {
                 onRetryLogs={() => logs.refetch().then(() => undefined)}
                 onToggleApps={() => toggleApps(selectedForDetails)}
                 worktree={selectedForDetails}
+                worktreeActionPending={detailsActionState.worktreePending}
               />
             </RecoveryBoundary>
           </ResizablePanel>

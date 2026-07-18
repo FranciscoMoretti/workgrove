@@ -88,7 +88,8 @@ describe("worktree table", () => {
     };
     const markup = renderToStaticMarkup(
       createElement(WorktreeTable, {
-        actionPending: () => false,
+        appGroupActionBlocked: () => false,
+        appGroupActionPending: () => false,
         appGroupSlots: { Infrastructure: [], "Product Apps": [] },
         commandActions: {
           onRestart: () => undefined,
@@ -102,6 +103,7 @@ describe("worktree table", () => {
         onSetSlot: () => undefined,
         onToggleAppGroup: () => undefined,
         selectedId: null,
+        worktreeActionPending: () => false,
         worktrees: [withGroups],
       })
     );
@@ -131,7 +133,8 @@ describe("worktree table", () => {
     };
     const markup = renderToStaticMarkup(
       createElement(WorktreeTable, {
-        actionPending: () => false,
+        appGroupActionBlocked: () => false,
+        appGroupActionPending: () => false,
         commandActions: {
           onRestart: () => undefined,
           onSetup: () => undefined,
@@ -145,6 +148,7 @@ describe("worktree table", () => {
         onSetSlot: () => undefined,
         onToggleAppGroup: () => undefined,
         selectedId: null,
+        worktreeActionPending: () => false,
         worktrees: [withGroup],
       })
     );
@@ -171,7 +175,8 @@ describe("worktree table", () => {
     };
     const markup = renderToStaticMarkup(
       createElement(WorktreeTable, {
-        actionPending: () => false,
+        appGroupActionBlocked: () => false,
+        appGroupActionPending: () => false,
         appGroupSlots: { "Product Apps": [] },
         commandActions: {
           onRestart: () => undefined,
@@ -185,10 +190,67 @@ describe("worktree table", () => {
         onSetSlot: () => undefined,
         onToggleAppGroup: () => undefined,
         selectedId: null,
+        worktreeActionPending: () => false,
         worktrees: [running],
       })
     );
 
     expect(markup).toContain('data-health="running"');
+  });
+
+  it("shows pending state only for the affected app group", () => {
+    const withGroups = {
+      ...worktree,
+      appGroups: [
+        {
+          apps: [worktree.apps[0]],
+          health: "running" as const,
+          name: "Product Apps",
+          processRunning: true,
+          slot: 0,
+          slotState: "assigned" as const,
+          stop: "process" as const,
+        },
+        {
+          apps: [worktree.apps[1]],
+          health: "not-running" as const,
+          name: "Website",
+          processRunning: false,
+          slot: 0,
+          slotState: "assigned" as const,
+          stop: "process" as const,
+        },
+      ],
+    };
+    const markup = renderToStaticMarkup(
+      createElement(WorktreeTable, {
+        appGroupActionBlocked: (_worktreeId: string, appGroupName: string) =>
+          appGroupName === "Product Apps",
+        appGroupActionPending: (_worktreeId: string, appGroupName: string) =>
+          appGroupName === "Product Apps",
+        appGroupSlots: { "Product Apps": [], Website: [] },
+        commandActions: {
+          onRestart: () => undefined,
+          onSetup: () => undefined,
+          onStart: () => undefined,
+          onStop: () => undefined,
+        },
+        onDelete: () => undefined,
+        onInspect: () => undefined,
+        onRestartAppGroup: () => undefined,
+        onSetSlot: () => undefined,
+        onToggleAppGroup: () => undefined,
+        selectedId: null,
+        worktreeActionPending: () => true,
+        worktrees: [withGroups],
+      })
+    );
+    const productStart = markup.indexOf('data-app-group="Product Apps"');
+    const websiteStart = markup.indexOf('data-app-group="Website"');
+    const productMarkup = markup.slice(productStart, websiteStart);
+    const websiteMarkup = markup.slice(websiteStart);
+
+    expect(productMarkup).toContain('aria-label="Loading"');
+    expect(websiteMarkup).not.toContain('aria-label="Loading"');
   });
 });

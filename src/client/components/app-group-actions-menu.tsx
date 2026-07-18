@@ -82,6 +82,7 @@ export function AppGroupActionsMenu({
         render={
           <Button
             aria-label={`Actions for ${group.name} in ${worktree.name}`}
+            disabled={pending}
             size="icon"
             variant="ghost"
           />

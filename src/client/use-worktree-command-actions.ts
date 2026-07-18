@@ -1,3 +1,4 @@
+import { useMutationState } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
 import type {
@@ -12,10 +13,117 @@ import { useCommands } from "./mutations";
 import type { RequestRepositoryTrust } from "./use-repository-trust";
 import type { WorktreeCommandActions } from "./worktree-command-menu";
 
-function requestedWorktreeIds(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
+const APP_GROUP_COMMANDS = new Set([
+  "restart-apps",
+  "set-slot",
+  "start-apps",
+  "stop-apps",
+  "switch-slot",
+]);
+const ALL_APP_GROUP_COMMANDS = new Set([
+  "restart-running-apps",
+  "start-all-apps",
+  "stop-all-apps",
+]);
+const BLOCKING_WORKTREE_COMMANDS = new Set([
+  "delete-worktree",
+  "setup-all-apps",
+]);
+
+export interface PendingCommand {
+  command: string | null;
+  variables: unknown;
+}
+
+export interface PendingCommandScopes {
+  allAppGroups: Set<string>;
+  appGroups: Map<string, Set<string>>;
+  blockedWorktrees: Set<string>;
+  worktrees: Set<string>;
+}
+
+function commandInput(
+  value: unknown
+): (Record<string, unknown> & { repoPath: string }) | null {
+  if (!(value && typeof value === "object" && !Array.isArray(value))) {
+    return null;
+  }
+  const input = value as Record<string, unknown>;
+  return typeof input.repoPath === "string"
+    ? (input as Record<string, unknown> & { repoPath: string })
+    : null;
+}
+
+function requestedWorktreeIds(input: Record<string, unknown>): string[] {
+  if (typeof input.worktreeId === "string") {
+    return [input.worktreeId];
+  }
+  return Array.isArray(input.worktreeIds)
+    ? input.worktreeIds.filter(
+        (item): item is string => typeof item === "string"
+      )
     : [];
+}
+
+function addAppGroupScope(
+  scopes: PendingCommandScopes,
+  input: Record<string, unknown>
+): void {
+  if (
+    typeof input.worktreeId !== "string" ||
+    typeof input.appGroupName !== "string"
+  ) {
+    return;
+  }
+  const groups = scopes.appGroups.get(input.worktreeId) ?? new Set();
+  groups.add(input.appGroupName);
+  scopes.appGroups.set(input.worktreeId, groups);
+  scopes.worktrees.add(input.worktreeId);
+}
+
+function addWorktreeScopes(
+  scopes: PendingCommandScopes,
+  worktreeIds: readonly string[],
+  allAppGroups: boolean
+): void {
+  for (const worktreeId of worktreeIds) {
+    if (allAppGroups) {
+      scopes.allAppGroups.add(worktreeId);
+    }
+    scopes.blockedWorktrees.add(worktreeId);
+    scopes.worktrees.add(worktreeId);
+  }
+}
+
+export function pendingCommandScopes(
+  commands: readonly PendingCommand[],
+  repoPath: string
+): PendingCommandScopes {
+  const scopes: PendingCommandScopes = {
+    allAppGroups: new Set(),
+    appGroups: new Map(),
+    blockedWorktrees: new Set(),
+    worktrees: new Set(),
+  };
+  for (const pending of commands) {
+    const input = commandInput(pending.variables);
+    if (!(input && input.repoPath === repoPath && pending.command)) {
+      continue;
+    }
+    if (APP_GROUP_COMMANDS.has(pending.command)) {
+      addAppGroupScope(scopes, input);
+      continue;
+    }
+    const worktreeIds = requestedWorktreeIds(input);
+    if (ALL_APP_GROUP_COMMANDS.has(pending.command)) {
+      addWorktreeScopes(scopes, worktreeIds, true);
+      continue;
+    }
+    if (BLOCKING_WORKTREE_COMMANDS.has(pending.command)) {
+      addWorktreeScopes(scopes, worktreeIds, false);
+    }
+  }
+  return scopes;
 }
 
 export function useWorktreeCommandActions({
@@ -30,56 +138,41 @@ export function useWorktreeCommandActions({
   worktrees: WorktreeSnapshot[];
 }) {
   const commands = useCommands(repoPath);
+  const pendingCommands = useMutationState<PendingCommand>({
+    filters: { mutationKey: ["command"], status: "pending" },
+    select: (mutation) => ({
+      command:
+        typeof mutation.options.mutationKey?.[1] === "string"
+          ? mutation.options.mutationKey[1]
+          : null,
+      variables: mutation.state.variables,
+    }),
+  });
+  const pendingScopes = useMemo(
+    () => pendingCommandScopes(pendingCommands, repoPath),
+    [pendingCommands, repoPath]
+  );
+  const appGroupActionPending = useCallback(
+    (worktreeId: string, appGroupName: string) =>
+      pendingScopes.allAppGroups.has(worktreeId) ||
+      (pendingScopes.appGroups.get(worktreeId)?.has(appGroupName) ?? false),
+    [pendingScopes]
+  );
+  const appGroupActionBlocked = useCallback(
+    (worktreeId: string, appGroupName: string) =>
+      pendingScopes.blockedWorktrees.has(worktreeId) ||
+      appGroupActionPending(worktreeId, appGroupName),
+    [appGroupActionPending, pendingScopes]
+  );
+  const worktreeActionPending = useCallback(
+    (worktreeId: string) => pendingScopes.worktrees.has(worktreeId),
+    [pendingScopes]
+  );
   const primaryGroup = useCallback(
     (worktree: WorktreeSnapshot) =>
       worktree.appGroups.find((group) => group.name === primaryAppGroup),
     [primaryAppGroup]
   );
-  const pendingIds = useMemo(
-    () =>
-      new Set(
-        [
-          commands.startApps.isPending
-            ? commands.startApps.variables?.worktreeId
-            : null,
-          commands.stopApps.isPending
-            ? commands.stopApps.variables?.worktreeId
-            : null,
-          commands.switchSlot.isPending
-            ? commands.switchSlot.variables?.worktreeId
-            : null,
-          commands.restartApps.isPending
-            ? commands.restartApps.variables?.worktreeId
-            : null,
-          commands.setSlot.isPending
-            ? commands.setSlot.variables?.worktreeId
-            : null,
-          commands.deleteWorktree.isPending
-            ? commands.deleteWorktree.variables?.worktreeId
-            : null,
-          ...(commands.setupAllApps.isPending
-            ? requestedWorktreeIds(commands.setupAllApps.variables?.worktreeIds)
-            : []),
-        ].filter((id): id is string => typeof id === "string")
-      ),
-    [
-      commands.deleteWorktree.isPending,
-      commands.deleteWorktree.variables,
-      commands.restartApps.isPending,
-      commands.restartApps.variables,
-      commands.setSlot.isPending,
-      commands.setSlot.variables,
-      commands.setupAllApps.isPending,
-      commands.setupAllApps.variables,
-      commands.startApps.isPending,
-      commands.startApps.variables,
-      commands.stopApps.isPending,
-      commands.stopApps.variables,
-      commands.switchSlot.isPending,
-      commands.switchSlot.variables,
-    ]
-  );
-
   const startApps = useCallback(
     (worktree: WorktreeSnapshot) => {
       const appGroupName = primaryGroup(worktree)?.name;
@@ -229,13 +322,15 @@ export function useWorktreeCommandActions({
   ]);
 
   return {
+    appGroupActionBlocked,
+    appGroupActionPending,
     commandActions,
     commands,
-    pendingIds,
     restartAppGroup,
     restartApps,
     toggleAppGroup,
     toggleApps,
     visibleActions,
+    worktreeActionPending,
   };
 }

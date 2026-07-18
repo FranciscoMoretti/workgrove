@@ -41,6 +41,13 @@ function endpointStatus(app: WorktreeSnapshot["apps"][number]): string {
   return app.listening ? "Listening" : "Not running";
 }
 
+function lifecycleActionIcon(pending: boolean, running: boolean) {
+  if (pending) {
+    return <Spinner />;
+  }
+  return running ? <SquareIcon /> : <PlayIcon />;
+}
+
 function terminalContent({
   end,
   error,
@@ -95,6 +102,7 @@ function terminalContent({
 }
 
 export function DetailsPanel({
+  actionBlocked,
   actionPending,
   clearPending,
   commandActions,
@@ -107,8 +115,10 @@ export function DetailsPanel({
   onInspect,
   onRetryLogs,
   onToggleApps,
+  worktreeActionPending,
   worktree,
 }: {
+  actionBlocked: boolean;
   actionPending: boolean;
   clearPending: boolean;
   commandActions: WorktreeCommandActions;
@@ -121,6 +131,7 @@ export function DetailsPanel({
   onInspect: () => void;
   onRetryLogs: () => void;
   onToggleApps: () => void;
+  worktreeActionPending: boolean;
   worktree: WorktreeSnapshot;
 }) {
   const end = useRef<HTMLSpanElement>(null);
@@ -198,12 +209,12 @@ export function DetailsPanel({
       <div className="detail-actions">
         <Button
           disabled={
-            actionPending || (!running && worktree.slotState !== "assigned")
+            actionBlocked || (!running && worktree.slotState !== "assigned")
           }
           onClick={onToggleApps}
           variant={running ? "secondary" : "default"}
         >
-          {running ? <SquareIcon /> : <PlayIcon />}
+          {lifecycleActionIcon(actionPending, running)}
           {running ? "Stop apps" : "Start apps"}
         </Button>
         <WorktreeActionsMenu
@@ -211,7 +222,7 @@ export function DetailsPanel({
           commandActions={commandActions}
           onDelete={onDelete}
           onInspect={onInspect}
-          pending={actionPending}
+          pending={worktreeActionPending}
           worktree={worktree}
         />
       </div>

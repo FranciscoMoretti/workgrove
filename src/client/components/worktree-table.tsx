@@ -50,7 +50,8 @@ function actionIcon(pending: boolean, running: boolean) {
 }
 
 export function WorktreeTable({
-  actionPending,
+  appGroupActionBlocked,
+  appGroupActionPending,
   appGroupSlots,
   commandActions,
   onDelete,
@@ -59,9 +60,11 @@ export function WorktreeTable({
   onSetSlot,
   onToggleAppGroup,
   selectedId,
+  worktreeActionPending,
   worktrees,
 }: {
-  actionPending: (worktreeId: string) => boolean;
+  appGroupActionBlocked: (worktreeId: string, appGroupName: string) => boolean;
+  appGroupActionPending: (worktreeId: string, appGroupName: string) => boolean;
   appGroupSlots: Record<string, AppGroupSlotOption[]>;
   commandActions: WorktreeCommandActions;
   onDelete: (worktree: WorktreeSnapshot) => void;
@@ -80,6 +83,7 @@ export function WorktreeTable({
     group: AppGroupSnapshot
   ) => void;
   selectedId: string | null;
+  worktreeActionPending: (worktreeId: string) => boolean;
   worktrees: WorktreeSnapshot[];
 }) {
   return (
@@ -103,7 +107,7 @@ export function WorktreeTable({
         </TableHeader>
         <TableBody>
           {worktrees.map((worktree) => {
-            const pending = actionPending(worktree.id);
+            const worktreePending = worktreeActionPending(worktree.id);
             return (
               <TableRow
                 className="cursor-default"
@@ -149,6 +153,14 @@ export function WorktreeTable({
                     data-slot="app-group-grid"
                   >
                     {worktree.appGroups.map((group) => {
+                      const blocked = appGroupActionBlocked(
+                        worktree.id,
+                        group.name
+                      );
+                      const pending = appGroupActionPending(
+                        worktree.id,
+                        group.name
+                      );
                       const running = appGroupIsRunning(group);
                       const slots = appGroupSlots[group.name] ?? [];
                       return (
@@ -171,7 +183,7 @@ export function WorktreeTable({
                               className="min-w-24 justify-start"
                               data-health={group.health}
                               disabled={
-                                pending ||
+                                blocked ||
                                 (!running && group.slotState !== "assigned")
                               }
                               onClick={() => onToggleAppGroup(worktree, group)}
@@ -182,6 +194,7 @@ export function WorktreeTable({
                               Slot {group.slot}
                             </Button>
                             <Select
+                              disabled={blocked}
                               onValueChange={(value) => {
                                 const option = slots.find(
                                   (candidate) =>
@@ -201,7 +214,7 @@ export function WorktreeTable({
                                 <SelectGroup>
                                   {slots.map((option) => (
                                     <SelectItem
-                                      disabled={pending}
+                                      disabled={blocked}
                                       key={option.slot}
                                       value={String(option.slot)}
                                     >
@@ -261,7 +274,7 @@ export function WorktreeTable({
                                 onRestartAppGroup(worktree, group)
                               }
                               onToggle={() => onToggleAppGroup(worktree, group)}
-                              pending={pending}
+                              pending={blocked}
                               worktree={worktree}
                             />
                           </div>
@@ -276,7 +289,7 @@ export function WorktreeTable({
                     includeLifecycle={false}
                     onDelete={() => onDelete(worktree)}
                     onInspect={() => onInspect(worktree.id)}
-                    pending={pending}
+                    pending={worktreePending}
                     worktree={worktree}
                   />
                 </TableCell>

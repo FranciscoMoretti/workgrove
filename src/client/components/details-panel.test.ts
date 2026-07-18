@@ -37,6 +37,7 @@ const worktree: WorktreeSnapshot = {
 function renderDetails(value: WorktreeSnapshot): string {
   return renderToStaticMarkup(
     createElement(DetailsPanel, {
+      actionBlocked: false,
       actionPending: false,
       clearPending: false,
       commandActions: {
@@ -54,6 +55,7 @@ function renderDetails(value: WorktreeSnapshot): string {
       onInspect: () => undefined,
       onRetryLogs: () => undefined,
       onToggleApps: () => undefined,
+      worktreeActionPending: false,
       worktree: value,
     })
   );
@@ -63,6 +65,7 @@ describe("details panel", () => {
   it("presents transient log transport errors as a recoverable state", () => {
     const markup = renderToStaticMarkup(
       createElement(DetailsPanel, {
+        actionBlocked: false,
         actionPending: false,
         clearPending: false,
         commandActions: {
@@ -80,6 +83,7 @@ describe("details panel", () => {
         onInspect: () => undefined,
         onRetryLogs: () => undefined,
         onToggleApps: () => undefined,
+        worktreeActionPending: false,
         worktree,
       })
     );
