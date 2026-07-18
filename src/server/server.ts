@@ -223,6 +223,34 @@ const server = createServer(async (request, response) => {
   }
 });
 
+function closeHttpServer(): Promise<void> {
+  if (!server.listening) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+}
+
+let shutdownPromise: Promise<void> | undefined;
+
+function shutdown(): Promise<void> {
+  shutdownPromise ??= Promise.all([
+    closeHttpServer(),
+    controller.close(),
+    vite?.close() ?? Promise.resolve(),
+  ]).then(() => undefined);
+  return shutdownPromise;
+}
+
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => {
+    shutdown().catch(() => {
+      process.exitCode = 1;
+    });
+  });
+}
+
 server.listen(PORT, HOST, () => {
   console.log(`Workgrove: http://${HOST}:${PORT}/`);
 });

@@ -58,6 +58,8 @@ describe("WorkspaceController Codex projection", () => {
         worktrees: { [worktreeId]: { tasks: [task] } },
       });
       expect(workspace).not.toHaveProperty("codex");
+      await controller.close();
+      expect(fake.closed).toBe(true);
     } finally {
       rmSync(root, { force: true, recursive: true });
     }

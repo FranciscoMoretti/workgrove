@@ -5,8 +5,8 @@ import {
   type CodexIntegrationAdapter,
   type CodexIntegrationSnapshot,
   projectCodexIntegration,
-  UnavailableCodexIntegrationAdapter,
 } from "../codex/codex-integration";
+import { CodexTaskDiscoveryAdapter } from "../codex/codex-task-discovery";
 import { clearLogs } from "../commands/clear-logs";
 import { createWorktree } from "../commands/create-worktree";
 import { deleteWorktree } from "../commands/delete-worktree";
@@ -178,9 +178,13 @@ export class WorkspaceController {
   private readonly codexAdapter: CodexIntegrationAdapter;
 
   constructor(
-    codexAdapter: CodexIntegrationAdapter = new UnavailableCodexIntegrationAdapter()
+    codexAdapter: CodexIntegrationAdapter = new CodexTaskDiscoveryAdapter()
   ) {
     this.codexAdapter = codexAdapter;
+  }
+
+  close(): Promise<void> {
+    return this.codexAdapter.close();
   }
 
   async inspectCodex(repoPath: string): Promise<CodexIntegrationSnapshot> {

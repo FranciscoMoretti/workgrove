@@ -50,6 +50,7 @@ export interface CodexIntegrationAdapterSnapshot {
 }
 
 export interface CodexIntegrationAdapter {
+  close(): Promise<void>;
   loadAssociatedTasks(
     worktrees: readonly CodexWorktreeReference[]
   ): Promise<CodexIntegrationAdapterSnapshot>;
@@ -65,11 +66,17 @@ export class CodexIntegrationUnavailableError extends Error {
 }
 
 export class FakeCodexIntegrationAdapter implements CodexIntegrationAdapter {
+  closed = false;
   readonly requests: CodexWorktreeReference[][] = [];
   private readonly snapshot: CodexIntegrationAdapterSnapshot;
 
   constructor(snapshot: CodexIntegrationAdapterSnapshot) {
     this.snapshot = snapshot;
+  }
+
+  close(): Promise<void> {
+    this.closed = true;
+    return Promise.resolve();
   }
 
   loadAssociatedTasks(
@@ -83,6 +90,10 @@ export class FakeCodexIntegrationAdapter implements CodexIntegrationAdapter {
 export class UnavailableCodexIntegrationAdapter
   implements CodexIntegrationAdapter
 {
+  close(): Promise<void> {
+    return Promise.resolve();
+  }
+
   loadAssociatedTasks(
     _worktrees: readonly CodexWorktreeReference[]
   ): Promise<CodexIntegrationAdapterSnapshot> {
