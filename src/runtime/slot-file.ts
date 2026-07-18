@@ -1,30 +1,49 @@
 import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
-const ENV_LINE = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/;
-const LINE_BREAK = /\r?\n/;
-const TRAILING_LINE_BREAK = /\r?\n$/;
+const LEGACY_SLOT_PATTERN = /^WORKGROVE_SLOT=(.*)$/m;
 
-export type ParsedSlot =
+export interface WorkgroveLocalState {
+  slots: Record<string, number>;
+  version: 1;
+}
+
+export type ParsedSlotAssignments =
   | { kind: "invalid"; raw: string }
-  | { kind: "missing" }
-  | { kind: "value"; slot: number };
+  | { kind: "missing"; slots: Record<string, never> }
+  | { kind: "value"; slots: Record<string, number> };
 
-export function parseSlotFromContent(
-  content: string,
-  envName: string
-): ParsedSlot {
-  for (const line of content.split(LINE_BREAK)) {
-    const match = ENV_LINE.exec(line);
-    if (match?.[1] !== envName) {
-      continue;
-    }
-    const slot = Number(match[2]);
-    return Number.isSafeInteger(slot) && slot >= 0
-      ? { kind: "value", slot }
-      : { kind: "invalid", raw: match[2] };
+export function parseSlotAssignments(content: string): ParsedSlotAssignments {
+  if (content.trim() === "") {
+    return { kind: "missing", slots: {} };
   }
-  return { kind: "missing" };
+  try {
+    const value = JSON.parse(content) as Partial<WorkgroveLocalState>;
+    if (!(value && value.version === 1 && value.slots)) {
+      return { kind: "invalid", raw: content };
+    }
+    for (const [name, slot] of Object.entries(value.slots)) {
+      if (!(name && Number.isSafeInteger(slot) && slot >= 0)) {
+        return { kind: "invalid", raw: content };
+      }
+    }
+    return { kind: "value", slots: value.slots };
+  } catch {
+    return { kind: "invalid", raw: content };
+  }
+}
+
+export function slotAssignmentsContent(slots: Record<string, number>): string {
+  return `${JSON.stringify({ version: 1, slots } satisfies WorkgroveLocalState, null, 2)}\n`;
+}
+
+export function parseLegacySlot(content: string): number | null {
+  const match = content.match(LEGACY_SLOT_PATTERN);
+  if (!match) {
+    return null;
+  }
+  const slot = Number(match[1]);
+  return Number.isSafeInteger(slot) && slot >= 0 ? slot : null;
 }
 
 export function resolveSlotFilePath(
@@ -53,29 +72,4 @@ export function resolveSlotFilePath(
     }
   }
   return target;
-}
-
-export function updateSlotFileContent(
-  content: string,
-  envName: string,
-  slot: number
-): string {
-  const lines =
-    content === ""
-      ? []
-      : content.replace(TRAILING_LINE_BREAK, "").split(LINE_BREAK);
-  let replaced = false;
-  const updated = lines.map((line) => {
-    const match = ENV_LINE.exec(line);
-    if (match?.[1] !== envName) {
-      return line;
-    }
-    replaced = true;
-    return `${envName}=${slot}`;
-  });
-
-  if (!replaced) {
-    updated.push(`${envName}=${slot}`);
-  }
-  return `${updated.join("\n")}\n`;
 }

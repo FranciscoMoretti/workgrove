@@ -1,35 +1,16 @@
-import {
-  GitBranchIcon,
-  MoreHorizontalIcon,
-  PlayIcon,
-  RotateCwIcon,
-  Settings2Icon,
-  SquareIcon,
-} from "lucide-react";
-import { Fragment } from "react";
+import { GitBranchIcon, PlayIcon, SquareIcon } from "lucide-react";
 
 import type {
-  SlotOption,
+  AppGroupSlotOption,
+  AppGroupSnapshot,
   WorktreeSnapshot,
 } from "../../controller/workspace-snapshot";
-import {
-  appsAreRunning,
-  appsAreStopped,
-  appsCanRestart,
-} from "../../controller/workspace-snapshot";
+import { appGroupIsRunning } from "../../controller/workspace-snapshot";
 import type { WorktreeCommandActions } from "../worktree-command-menu";
-import { AppPort, AppPortList } from "./app-port";
-import { type CommandMenuItem, CommandMenuItems } from "./command-menu-items";
+import { AppPort } from "./app-port";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { ButtonGroup } from "./ui/button-group";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from "./ui/dropdown-menu";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
 import { ScrollArea } from "./ui/scroll-area";
 import {
@@ -50,161 +31,66 @@ import {
 } from "./ui/table";
 import { WorktreeActionsMenu } from "./worktree-actions-menu";
 
-function statusText(
-  health: WorktreeSnapshot["health"],
-  running: boolean
-): string {
-  if (health === "running") {
+function status(group: AppGroupSnapshot): string {
+  if (group.health === "running") {
     return "Running";
   }
-  if (health === "partially-running") {
+  if (group.health === "partially-running") {
     return "Partially running";
   }
-  return running ? "Managed process running" : "Not running";
+  return group.processRunning ? "Process running" : "Not running";
 }
 
-function indicatorClass(app: WorktreeSnapshot["apps"][number]): string {
-  if (app.listening) {
-    return "size-1.5 rounded-full bg-foreground";
-  }
-  return app.ownership === "foreign"
-    ? "size-1.5 rounded-full bg-destructive"
-    : "size-1.5 rounded-full bg-muted-foreground/60";
-}
-
-function appActionIndicator(pending: boolean, running: boolean) {
+function actionIcon(pending: boolean, running: boolean) {
   if (pending) {
     return <Spinner />;
   }
-  return running ? (
-    <SquareIcon data-icon="inline-start" />
-  ) : (
-    <PlayIcon data-icon="inline-start" />
-  );
-}
-
-function slotStateText(state: WorktreeSnapshot["slotState"]): string {
-  return state === "invalid" ? "Invalid slot" : "Slot conflict";
-}
-
-function slotAvailability(
-  occupiedByOther: boolean,
-  occupiedBy: string | null,
-  current: boolean
-): string {
-  if (occupiedByOther) {
-    return `In use by ${occupiedBy}`;
-  }
-  return current ? "Current assignment" : "Available";
+  return running ? <SquareIcon /> : <PlayIcon />;
 }
 
 export function WorktreeTable({
   actionPending,
+  appGroupSlots,
   commandActions,
-  defaultSlot,
   onDelete,
   onInspect,
   onSetSlot,
-  onToggleApps,
+  onToggleAppGroup,
   selectedId,
-  slots,
-  visibleActions,
   worktrees,
 }: {
   actionPending: (worktreeId: string) => boolean;
+  appGroupSlots: Record<string, AppGroupSlotOption[]>;
   commandActions: WorktreeCommandActions;
-  defaultSlot: number;
   onDelete: (worktree: WorktreeSnapshot) => void;
   onInspect: (worktreeId: string) => void;
-  onSetSlot: (worktree: WorktreeSnapshot, slot: SlotOption) => void;
-  onToggleApps: (worktree: WorktreeSnapshot) => void;
+  onSetSlot: (
+    worktree: WorktreeSnapshot,
+    group: AppGroupSnapshot,
+    slot: AppGroupSlotOption
+  ) => void;
+  onToggleAppGroup: (
+    worktree: WorktreeSnapshot,
+    group: AppGroupSnapshot
+  ) => void;
   selectedId: string | null;
-  slots: SlotOption[];
-  visibleActions: {
-    onRestart: () => void;
-    onSetup: () => void;
-    onStart: () => void;
-    onStop: () => void;
-    pending: boolean;
-  };
   worktrees: WorktreeSnapshot[];
 }) {
-  const canSetupVisible = worktrees.length > 0;
-  const canStartVisible = worktrees.some(
-    (worktree) => worktree.slotState === "assigned" && appsAreStopped(worktree)
-  );
-  const canStopVisible = worktrees.some(appsAreRunning);
-  const canRestartVisible = worktrees.some(appsCanRestart);
-  const visibleCommandItems: CommandMenuItem[] = [
-    {
-      disabled: !canSetupVisible || visibleActions.pending,
-      icon: Settings2Icon,
-      id: "setup-all",
-      label: "Setup all",
-      onSelect: visibleActions.onSetup,
-    },
-    {
-      disabled: !canStartVisible || visibleActions.pending,
-      icon: PlayIcon,
-      id: "start-all",
-      label: "Start all",
-      onSelect: visibleActions.onStart,
-    },
-    {
-      disabled: !canRestartVisible || visibleActions.pending,
-      icon: RotateCwIcon,
-      id: "restart-running",
-      label: "Restart running",
-      onSelect: visibleActions.onRestart,
-    },
-    {
-      disabled: !canStopVisible || visibleActions.pending,
-      icon: SquareIcon,
-      id: "stop-all",
-      label: "Stop all",
-      onSelect: visibleActions.onStop,
-    },
-  ];
   return (
     <ScrollArea
       className="worktree-table h-full min-w-0 border bg-card"
       scrollbars={["vertical", "horizontal"]}
     >
       <Table
-        className="min-w-[840px]"
+        className="min-w-[900px]"
         containerClassName="w-max min-w-full overflow-visible"
       >
         <TableHeader className="sticky top-0 z-10 bg-muted">
           <TableRow>
-            <TableHead className="w-[34%]">
-              <span>Worktree</span>
-            </TableHead>
+            <TableHead className="w-[28%]">Worktree</TableHead>
             <TableHead className="w-[18%]">Branch</TableHead>
-            <TableHead className="w-[22%]">
-              <div className="flex items-center gap-1">
-                <span>Apps</span>
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={
-                      <Button
-                        aria-label="Visible worktree app actions"
-                        size="icon"
-                        variant="ghost"
-                      />
-                    }
-                  >
-                    <MoreHorizontalIcon />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    <DropdownMenuGroup>
-                      <DropdownMenuLabel>Visible worktrees</DropdownMenuLabel>
-                      <CommandMenuItems items={visibleCommandItems} />
-                    </DropdownMenuGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </TableHead>
-            <TableHead className="w-[16%]">Ports</TableHead>
+            <TableHead className="w-[34%]">App groups</TableHead>
+            <TableHead>Endpoints</TableHead>
             <TableHead>
               <span className="sr-only">Actions</span>
             </TableHead>
@@ -213,39 +99,25 @@ export function WorktreeTable({
         <TableBody>
           {worktrees.map((worktree) => {
             const pending = actionPending(worktree.id);
-            const appSlot = worktree.slot ?? defaultSlot;
-            const slotLabel = `Slot ${appSlot}`;
-            const running = appsAreRunning(worktree);
             return (
               <TableRow
-                className="cursor-default focus-visible:outline-1 focus-visible:outline-ring focus-visible:-outline-offset-1"
+                className="cursor-default"
                 data-state={selectedId === worktree.id ? "selected" : undefined}
                 key={worktree.id}
                 onClick={(event) => {
                   if (
                     !(event.target as Element).closest(
-                      "button, a, [role=menuitem], [role=option]"
+                      "button, a, [role=option]"
                     )
                   ) {
                     onInspect(worktree.id);
                   }
                 }}
-                onKeyDown={(event) => {
-                  if (
-                    event.currentTarget === event.target &&
-                    (event.key === "Enter" || event.key === " ")
-                  ) {
-                    onInspect(worktree.id);
-                  }
-                }}
-                tabIndex={0}
               >
-                <TableCell className="h-18">
+                <TableCell>
                   <div className="grid gap-1">
-                    <div className="flex items-center gap-1.5">
-                      <strong className="truncate font-medium text-sm">
-                        {worktree.name}
-                      </strong>
+                    <div className="flex items-center gap-2">
+                      <strong>{worktree.name}</strong>
                       {worktree.isMain ? (
                         <Badge variant="secondary">Main</Badge>
                       ) : null}
@@ -253,16 +125,8 @@ export function WorktreeTable({
                     <span className="truncate font-mono text-muted-foreground">
                       {worktree.path}
                     </span>
-                    {worktree.slotState === "invalid" ||
-                    worktree.slotState === "conflicting" ? (
-                      <Badge variant="destructive">
-                        {slotStateText(worktree.slotState)}
-                      </Badge>
-                    ) : null}
                     {worktree.setupState === "failed" ? (
-                      <Badge variant="destructive">
-                        Setup failed · retry from Apps menu
-                      </Badge>
+                      <Badge variant="destructive">Setup failed</Badge>
                     ) : null}
                   </div>
                 </TableCell>
@@ -275,94 +139,122 @@ export function WorktreeTable({
                   </div>
                 </TableCell>
                 <TableCell>
-                  <ButtonGroup onClick={(event) => event.stopPropagation()}>
-                    <Button
-                      aria-label={`${running ? "Stop" : "Start"} apps in ${slotLabel} for ${worktree.name}`}
-                      className="min-w-24 justify-start"
-                      data-health={worktree.health}
-                      disabled={
-                        pending ||
-                        (!running && worktree.slotState !== "assigned")
-                      }
-                      onClick={() => onToggleApps(worktree)}
-                      title={`${statusText(worktree.health, running)} · ${slotLabel}`}
-                      variant="outline"
-                    >
-                      {appActionIndicator(pending, running)}
-                      <b>{slotLabel}</b>
-                    </Button>
-                    <Select
-                      onValueChange={(value) => {
-                        const option = slots.find(
-                          (candidate) => candidate.slot === Number(value)
-                        );
-                        if (option && option.slot !== worktree.slot) {
-                          onSetSlot(worktree, option);
-                        }
-                      }}
-                      value={
-                        worktree.slot === null ? "" : String(worktree.slot)
-                      }
-                    >
-                      <SelectTrigger
-                        aria-label={`Choose slot for ${worktree.name}`}
-                        className="w-8 [&_[data-slot=select-value]]:hidden"
-                      />
-                      <SelectContent className="min-w-80">
-                        <SelectGroup>
-                          {slots.map((option) => {
-                            const collisionOwner = option.collisionOwners.find(
-                              (owner) => owner.id !== worktree.id
-                            );
-                            const occupiedByOther = Boolean(collisionOwner);
-                            return (
-                              <SelectItem
-                                disabled={occupiedByOther || pending}
-                                key={option.slot}
-                                value={String(option.slot)}
-                              >
-                                <span className="flex w-full items-center justify-between gap-6">
-                                  <span className="grid gap-0.5">
-                                    <b>Slot {option.slot}</b>
-                                    <small className="text-muted-foreground">
-                                      {slotAvailability(
-                                        occupiedByOther,
-                                        collisionOwner?.name ?? null,
-                                        option.slot === worktree.slot
-                                      )}
-                                    </small>
-                                  </span>
-                                  <span className="text-muted-foreground">
-                                    <AppPortList apps={option.apps} />
-                                  </span>
-                                </span>
-                              </SelectItem>
-                            );
-                          })}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </ButtonGroup>
+                  <div className="grid gap-2">
+                    {worktree.appGroups.map((group) => {
+                      const running = appGroupIsRunning(group);
+                      const slots = appGroupSlots[group.name] ?? [];
+                      return (
+                        <div
+                          className="flex items-center gap-2"
+                          key={group.name}
+                        >
+                          <span
+                            className="w-32 truncate font-medium"
+                            title={group.name}
+                          >
+                            {group.name}
+                          </span>
+                          <ButtonGroup
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <Button
+                              aria-label={`${running ? "Stop" : "Start"} ${group.name} for ${worktree.name}`}
+                              className="min-w-24 justify-start"
+                              disabled={
+                                pending ||
+                                (!running && group.slotState !== "assigned")
+                              }
+                              onClick={() => onToggleAppGroup(worktree, group)}
+                              title={`${status(group)} · Slot ${group.slot}`}
+                              variant="outline"
+                            >
+                              {actionIcon(pending, running)}
+                              Slot {group.slot}
+                            </Button>
+                            <Select
+                              onValueChange={(value) => {
+                                const option = slots.find(
+                                  (candidate) =>
+                                    candidate.slot === Number(value)
+                                );
+                                if (option && option.slot !== group.slot) {
+                                  onSetSlot(worktree, group, option);
+                                }
+                              }}
+                              value={String(group.slot)}
+                            >
+                              <SelectTrigger
+                                aria-label={`Choose slot for ${group.name} in ${worktree.name}`}
+                                className="w-8 [&_[data-slot=select-value]]:hidden"
+                              />
+                              <SelectContent className="min-w-72">
+                                <SelectGroup>
+                                  {slots.map((option) => (
+                                    <SelectItem
+                                      disabled={pending}
+                                      key={option.slot}
+                                      value={String(option.slot)}
+                                    >
+                                      <span className="flex w-full justify-between gap-6">
+                                        <b>Slot {option.slot}</b>
+                                        <span className="text-muted-foreground">
+                                          {option.apps
+                                            .map(
+                                              (app) =>
+                                                `${app.label} :${app.port}`
+                                            )
+                                            .join(" · ")}
+                                        </span>
+                                      </span>
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                              </SelectContent>
+                            </Select>
+                          </ButtonGroup>
+                          <Badge variant="outline">
+                            {group.stop === "process" ? "process" : "command"}
+                          </Badge>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </TableCell>
                 <TableCell>
-                  <div className="grid grid-cols-[8px_max-content_max-content] items-center justify-start gap-x-2 gap-y-0.5">
-                    {worktree.apps.map((app) => (
-                      <Fragment key={app.id}>
-                        <span className={indicatorClass(app)} />
-                        <span>{app.label}</span>
-                        {app.open && app.listening ? (
-                          <a
-                            className="text-right underline underline-offset-3"
-                            href={app.url}
-                            rel="noreferrer"
-                            target="_blank"
+                  <div className="grid gap-2">
+                    {worktree.appGroups.map((group) => (
+                      <div
+                        className="flex flex-wrap gap-x-3 gap-y-1"
+                        key={group.name}
+                      >
+                        {group.apps.map((app) => (
+                          <span
+                            className="flex items-center gap-1"
+                            key={app.id}
                           >
-                            <AppPort port={app.port} />
-                          </a>
-                        ) : (
-                          <AppPort className="text-right" port={app.port} />
-                        )}
-                      </Fragment>
+                            <span
+                              className={
+                                app.listening
+                                  ? "size-1.5 rounded-full bg-foreground"
+                                  : "size-1.5 rounded-full bg-muted-foreground/60"
+                              }
+                            />
+                            {app.label}{" "}
+                            {app.open && app.listening ? (
+                              <a
+                                className="underline"
+                                href={app.url}
+                                rel="noreferrer"
+                                target="_blank"
+                              >
+                                <AppPort port={app.port} />
+                              </a>
+                            ) : (
+                              <AppPort port={app.port} />
+                            )}
+                          </span>
+                        ))}
+                      </div>
                     ))}
                   </div>
                 </TableCell>

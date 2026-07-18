@@ -1,8 +1,8 @@
 import type { WorkspaceController } from "../controller/workspace-controller";
 import type { CommandReceipt } from "../controller/workspace-snapshot";
-import { appsAreRunning } from "../controller/workspace-snapshot";
+import { appGroupIsRunning } from "../controller/workspace-snapshot";
 import { requiredString } from "./command";
-import { startApps } from "./start-apps";
+import { findAppGroup, startApps } from "./start-apps";
 import { stopAppsAndWait } from "./stop-apps-and-wait";
 
 export async function restartApps(
@@ -11,22 +11,32 @@ export async function restartApps(
 ): Promise<CommandReceipt> {
   const repoPath = requiredString(input.repoPath, "Repository path");
   const worktreeId = requiredString(input.worktreeId, "Worktree");
-  const current = controller.worktree(repoPath, worktreeId).worktree;
-  if (!appsAreRunning(current)) {
-    throw new Error("Apps must be running before they can be restarted");
+  const appGroupName = requiredString(input.appGroupName, "App group");
+  const current = findAppGroup(
+    controller.worktree(repoPath, worktreeId).worktree,
+    appGroupName
+  );
+  if (!appGroupIsRunning(current)) {
+    throw new Error(
+      `${appGroupName} must be running before it can be restarted`
+    );
   }
   if (current.slotState !== "assigned") {
-    throw new Error("Assign a unique slot before restarting apps");
+    throw new Error(`Choose a valid slot before restarting ${appGroupName}`);
   }
   await stopAppsAndWait(
     controller,
-    { repoPath, worktreeId },
-    "Apps did not stop within 5 seconds; restart was cancelled"
+    { appGroupName, repoPath, worktreeId },
+    `${appGroupName} did not stop within 5 seconds; restart was cancelled`
   );
-  const started = startApps(controller, { repoPath, worktreeId });
+  const started = await startApps(controller, {
+    appGroupName,
+    repoPath,
+    worktreeId,
+  });
   return {
     ...started,
     command: "restart-apps",
-    message: started.message.replace("Started", "Restarted"),
+    message: `Restarted ${appGroupName}`,
   };
 }

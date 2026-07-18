@@ -68,9 +68,10 @@ export async function fetchWorkspace(
 
 export async function fetchLogs(
   repoPath: string,
-  worktreeId: string
+  worktreeId: string,
+  appGroupName: string
 ): Promise<string[]> {
-  const query = new URLSearchParams({ repoPath, worktreeId });
+  const query = new URLSearchParams({ appGroupName, repoPath, worktreeId });
   const body = LogsResponseSchema.parse(
     await responseJson(await fetch(`/api/logs?${query}`))
   );

@@ -38,13 +38,22 @@ function fingerprintCommand(command: WorkgroveCommand) {
 
 export function repositoryCommandFingerprint(config: WorkgroveConfig): string {
   const commands = {
-    environment: {
-      apps: config.apps,
-      env: config.env ?? {},
-      stride: config.stride,
-    },
+    appGroups: Object.fromEntries(
+      Object.entries(config.appGroups).map(([name, group]) => [
+        name,
+        {
+          apps: group.apps,
+          slot: group.slot,
+          start: fingerprintCommand(group.start),
+          stop:
+            group.stop === "process"
+              ? "process"
+              : fingerprintCommand(group.stop),
+        },
+      ])
+    ),
+    environment: config.env ?? {},
     setup: fingerprintCommand(config.setup),
-    start: fingerprintCommand(config.start),
   };
   return createHash("sha256")
     .update(JSON.stringify(commands))

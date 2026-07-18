@@ -14,20 +14,37 @@ interface StoredConfigDraft {
   source: string;
 }
 
-function hasEditableRequiredCommands(
-  value: unknown
-): value is Pick<WorkgroveConfig, "setup" | "start"> {
+function isCommand(value: unknown): boolean {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Array.isArray((value as Record<string, unknown>).argv)
+  );
+}
+
+function hasEditableRequiredCommands(value: unknown): value is WorkgroveConfig {
   if (!(value && typeof value === "object" && !Array.isArray(value))) {
     return false;
   }
   const candidate = value as Record<string, unknown>;
-  return [candidate.setup, candidate.start].every(
-    (command) =>
-      command !== null &&
-      typeof command === "object" &&
-      !Array.isArray(command) &&
-      Array.isArray((command as Record<string, unknown>).argv)
-  );
+  if (candidate.version !== 2 || !isCommand(candidate.setup)) {
+    return false;
+  }
+  const groups = candidate.appGroups;
+  if (!(groups && typeof groups === "object" && !Array.isArray(groups))) {
+    return false;
+  }
+  return Object.values(groups).every((group) => {
+    if (!(group && typeof group === "object" && !Array.isArray(group))) {
+      return false;
+    }
+    const record = group as Record<string, unknown>;
+    return (
+      isCommand(record.start) &&
+      (record.stop === "process" || isCommand(record.stop))
+    );
+  });
 }
 
 function configDraftStorageKey(configPath: string): string {

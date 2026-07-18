@@ -3,14 +3,24 @@ import { describe, expect, it } from "bun:test";
 import { WorkspaceSnapshotSchema } from "./schemas";
 
 describe("workspace snapshot transport schema", () => {
-  it("preserves the slot collision owner identity", () => {
+  it("preserves exact App group names and independent slot options", () => {
+    const group = {
+      slot: { default: 0, stride: 10 },
+      start: { argv: ["npm", "run", "dev"] },
+      stop: "process" as const,
+      apps: { Web: { basePort: 3000 } },
+    };
+    const option = {
+      apps: [{ label: "Web", port: 3000 }],
+      collisionOwners: [],
+      slot: 0,
+    };
     const snapshot = WorkspaceSnapshotSchema.parse({
+      appGroupSlotOptions: { "Product Apps": [option] },
       config: {
-        version: 1,
-        stride: 10,
+        version: 2,
         setup: { argv: ["npm", "install"] },
-        start: { argv: ["npm", "run", "dev"] },
-        apps: { web: { basePort: 3000 } },
+        appGroups: { "Product Apps": group },
       },
       configPath: "/repo/.workgrove.json",
       configRevision: "revision",
@@ -18,26 +28,17 @@ describe("workspace snapshot transport schema", () => {
       globalProcesses: [],
       globalRunningCount: 0,
       mainWorktreePath: "/repo",
+      primaryAppGroup: "Product Apps",
       repoName: "repo",
       repoPath: "/repo",
-      slotEnv: "WORKGROVE_SLOT",
-      slotFile: ".env.worktree.local",
-      slotOptions: [
-        {
-          apps: [{ label: "Web", port: 3000 }],
-          collisionOwners: [{ id: "main-id", name: "main" }],
-          slot: 0,
-        },
-      ],
-      trustCommands: ["Setup: npm install", "Apps: npm run dev"],
+      slotFile: ".workgrove.local.json",
+      slotOptions: [option],
+      trustCommands: [],
       trustRequired: true,
       trusted: true,
       updatedAt: "2026-07-14T00:00:00.000Z",
       worktrees: [],
     });
-
-    expect(snapshot.slotOptions[0]?.collisionOwners).toEqual([
-      { id: "main-id", name: "main" },
-    ]);
+    expect(snapshot.appGroupSlotOptions["Product Apps"][0]?.slot).toBe(0);
   });
 });

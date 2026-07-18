@@ -1,15 +1,20 @@
 {
   "$schema": "../schema/workgrove.schema.json",
-  "version": 1,
-  "stride": 10,
+  "version": 2,
   "setup": { "argv": ["bun", "install"] },
-  "start": { "argv": ["bun", "run", "dev:workgrove"] },
-  "apps": {
-    "web": { "basePort": 3000 },
-    "api": { "basePort": 8000 }
+  "appGroups": {
+    "Product Apps": {
+      "slot": { "default": 0, "stride": 10 },
+      "start": { "argv": ["bun", "run", "dev:workgrove"] },
+      "stop": "process",
+      "apps": {
+        "Web": { "basePort": 3000 },
+        "API": { "basePort": 8000 }
+      }
+    }
   },
   "env": {
-    "WEB_PORT": "{apps.web.port}",
-    "API_PORT": "{apps.api.port}"
+    "WEB_PORT": "{appGroups.Product Apps.apps.Web.port}",
+    "API_PORT": "{appGroups.Product Apps.apps.API.port}"
   }
 }

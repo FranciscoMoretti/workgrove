@@ -20,6 +20,7 @@ import {
 import { Spinner } from "./ui/spinner";
 
 export interface SlotSwitchTarget {
+  appGroupName: string;
   slot: SlotOption;
   worktree: WorktreeSnapshot;
 }
@@ -61,7 +62,10 @@ export function SwitchSlotDialog({
     });
   }
 
-  const currentSlot = target.worktree.slot ?? "the current slot";
+  const group = target.worktree.appGroups.find(
+    (candidate) => candidate.name === target.appGroupName
+  );
+  const currentSlot = group?.slot ?? "the current slot";
   return (
     <AlertDialog
       onOpenChange={(open) => {
@@ -77,9 +81,10 @@ export function SwitchSlotDialog({
             Switch to Slot {target.slot.slot}?
           </AlertDialogTitle>
           <AlertDialogDescription>
-            {target.worktree.name} is running in Slot {currentSlot}. Workgrove
-            will stop its apps, assign Slot {target.slot.slot}, and start them
-            again. The apps will be briefly unavailable.
+            {target.appGroupName} for {target.worktree.name} is running in Slot{" "}
+            {currentSlot}. Workgrove will stop it, assign Slot{" "}
+            {target.slot.slot}, and start it again. The apps will be briefly
+            unavailable.
           </AlertDialogDescription>
         </AlertDialogHeader>
         {error ? (

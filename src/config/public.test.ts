@@ -7,14 +7,19 @@ import {
 describe("public config contract", () => {
   it("resolves repository app ports through the package subpath", () => {
     const config: WorkgroveConfig = {
-      version: 1,
-      stride: 10,
+      version: 2,
       setup: { argv: ["npm", "install"] },
-      start: { argv: ["npm", "run", "dev"] },
-      apps: { web: { basePort: 3000 } },
+      appGroups: {
+        Apps: {
+          slot: { default: 0, stride: 10 },
+          start: { argv: ["npm", "run", "dev"] },
+          stop: "process",
+          apps: { web: { basePort: 3000 } },
+        },
+      },
     };
-    expect(
-      resolveWorkgroveAppGroup(config, { WORKGROVE_SLOT: "3" }).apps.web.port
-    ).toBe(3030);
+    expect(resolveWorkgroveAppGroup(config, "Apps", 3).apps.web.port).toBe(
+      3030
+    );
   });
 });

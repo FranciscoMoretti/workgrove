@@ -5,7 +5,7 @@ import {
 
 export function commandEnvironment(
   config: WorktreeEnvConfig,
-  slot: number
+  slots: Record<string, number>
 ): Record<string, string> {
-  return workgroveCommandEnvironment(config, slot);
+  return workgroveCommandEnvironment(config, slots);
 }

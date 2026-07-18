@@ -26,14 +26,18 @@ describe("repository initialization", () => {
       expect(preview.detectedSetupCommand).toBe("npm install");
       expect(preview.detectedStartCommand).toBe("npm run dev");
       expect(preview.config.setup.argv).toEqual(["npm", "install"]);
-      expect(preview.config.start.argv).toEqual(["npm", "run", "dev"]);
-      expect(preview.config.apps.app.basePort).toBeGreaterThanOrEqual(10_000);
+      expect(preview.config.appGroups.Apps.start.argv).toEqual([
+        "npm",
+        "run",
+        "dev",
+      ]);
+      expect(
+        preview.config.appGroups.Apps.apps.App.basePort
+      ).toBeGreaterThanOrEqual(10_000);
       expect(Object.keys(preview.config).sort()).toEqual([
         "$schema",
-        "apps",
+        "appGroups",
         "setup",
-        "start",
-        "stride",
         "version",
       ]);
       expect(() => readFileSync(preview.configPath)).toThrow();
@@ -60,7 +64,11 @@ describe("repository initialization", () => {
       expect(preview.detectedSetupCommand).toBe("npm install");
       expect(preview.detectedStartCommand).toBe("npm run dev");
       expect(preview.config.setup.argv).toEqual(["npm", "install"]);
-      expect(preview.config.start.argv).toEqual(["npm", "run", "dev"]);
+      expect(preview.config.appGroups.Apps.start.argv).toEqual([
+        "npm",
+        "run",
+        "dev",
+      ]);
     } finally {
       rmSync(root, { force: true, recursive: true });
     }
@@ -72,7 +80,11 @@ describe("repository initialization", () => {
       spawnSync("git", ["init", "-q"], { cwd: root });
       writeFileSync(join(root, "compose.yaml"), "services: {}\n");
       const preview = planRepositoryInitialization(root);
-      expect(preview.config.start?.argv).toEqual(["docker", "compose", "up"]);
+      expect(preview.config.appGroups.Apps.start.argv).toEqual([
+        "docker",
+        "compose",
+        "up",
+      ]);
     } finally {
       rmSync(root, { force: true, recursive: true });
     }

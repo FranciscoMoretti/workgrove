@@ -1,7 +1,7 @@
 # Workgrove
 
 Workgrove is a local, macOS-first control center for Git worktrees. It assigns
-stable port slots, starts and stops each worktree's app group, detects listeners,
+stable port slots, starts and stops independent app groups, detects listeners,
 and keeps managed logs without requiring terminal juggling.
 
 ## Install
@@ -23,47 +23,62 @@ Commit `.workgrove.json` at the repository root:
 ```json
 {
   "$schema": "https://raw.githubusercontent.com/franciscomoretti/workgrove/main/schema/workgrove.schema.json",
-  "version": 1,
-  "stride": 10,
+  "version": 2,
   "setup": { "argv": ["bun", "install"] },
-  "start": { "argv": ["bun", "run", "dev:workgrove"] },
-  "apps": {
-    "web": { "basePort": 3000 },
-    "api": { "basePort": 8000 }
+  "appGroups": {
+    "Product Apps": {
+      "slot": { "default": 0, "stride": 10 },
+      "start": { "argv": ["bun", "run", "dev:workgrove"] },
+      "stop": "process",
+      "apps": {
+        "Web": { "basePort": 3000 },
+        "API": { "basePort": 8000 }
+      }
+    },
+    "Local Infrastructure": {
+      "slot": { "default": 0, "stride": 10 },
+      "start": { "argv": ["docker", "compose", "up", "-d"] },
+      "stop": { "argv": ["docker", "compose", "down"] },
+      "apps": { "Postgres": { "basePort": 5432 } }
+    }
   },
   "env": {
-    "WEB_PORT": "{apps.web.port}",
-    "API_URL": "{apps.api.url}"
+    "WEB_PORT": "{appGroups.Product Apps.apps.Web.port}",
+    "DATABASE_URL": "{appGroups.Local Infrastructure.apps.Postgres.url}"
   }
 }
 ```
 
-`setup` is the finite command that prepares a worktree. `start` is the
-foreground command that launches every app as one app group. Both commands are
-required; new configurations default to `npm install` and `npm run dev`. Workgrove
-manages the resulting process tree as a unit, so Stop terminates the whole group
-and Restart waits for Stop before launching it again. Commands always run from
-the worktree root.
+`setup` is the finite command that prepares a worktree. Each exact key in
+`appGroups` is also its display name and defines an independently startable and
+stoppable group. Commands always run from the selected worktree root.
+
+With `"stop": "process"`, Start must be a foreground command. Workgrove owns the
+resulting process and Stop terminates it. Alternatively, `stop` can be a finite
+repository command. This is useful for detached infrastructure: status comes
+from the configured listening endpoints, Start is idempotent when they already
+listen, and Stop runs the command for that group and slot regardless of which
+worktree originally started it.
 
 Each app is an observable endpoint with a slot-zero `basePort`. The configurable
-`stride` is the offset between worktree slots, so base port 8000 with stride 10
-resolves to 8000, 8010, and 8020 for slots 0, 1, and 2. The slot is stored in the ignored `.env.worktree.local` file as
-`WORKGROVE_SLOT`.
+group's `stride` is the offset between its slots, so base port 8000 with stride 10
+resolves to 8000, 8010, and 8020 for slots 0, 1, and 2. Each worktree's
+assignments are stored in the ignored `.workgrove.local.json` file.
+Several worktrees may select the same group and slot; listener/process ownership
+determines whether a process-controlled group can be started there.
 
-The start and setup commands receive `WORKGROVE_SLOT` plus the explicit `env`
-entries. Environment values may be literals or use these templates:
+Setup and lifecycle commands receive the explicit `env` entries. Environment
+values may be literals or use exact-name templates:
 
-- `{slot}`
-- `{apps.<id>.port}`
-- `{apps.<id>.url}`
+- `{appGroups.<group name>.slot}`
+- `{appGroups.<group name>.apps.<app name>.port}`
+- `{appGroups.<group name>.apps.<app name>.url}`
 
-Workgrove intentionally starts only one repository command. For a multi-process
-repository, a root script can read names such as `WEB_PORT` and `API_URL`, spawn
-the child apps, and translate them into child-local names such as `PORT`. This
-keeps repository-specific orchestration in the repository while Workgrove owns
-port allocation and the resulting process tree.
+Each app group starts one repository command. A root script can still orchestrate
+multiple child apps while Workgrove owns port allocation and, for process groups,
+the resulting process.
 
-Workgrove asks you to review and trust the setup and start commands whenever
+Workgrove asks you to review and trust setup, Start, and command-based Stop whenever
 their command fingerprint changes. When a repository has no configuration, the
 initialization dialog can detect conservative setup and start commands for
 Node.js, Django, FastAPI, Rust, Go, and Docker Compose projects.

@@ -16,16 +16,20 @@ export function useWorkspace(repoPath: string) {
   });
 }
 
-export function useLogs(repoPath: string, worktreeId: string | null) {
+export function useLogs(
+  repoPath: string,
+  worktreeId: string | null,
+  appGroupName: string | null
+) {
   return useQuery({
-    enabled: repoPath !== "" && worktreeId !== null,
+    enabled: repoPath !== "" && worktreeId !== null && appGroupName !== null,
     queryFn: () => {
-      if (!worktreeId) {
-        throw new Error("No selected worktree");
+      if (!(worktreeId && appGroupName)) {
+        throw new Error("No selected App group");
       }
-      return fetchLogs(repoPath, worktreeId);
+      return fetchLogs(repoPath, worktreeId, appGroupName);
     },
-    queryKey: ["logs", repoPath, worktreeId],
+    queryKey: ["logs", repoPath, worktreeId, appGroupName],
     refetchInterval: 2500,
     refetchOnReconnect: true,
     retry: 2,

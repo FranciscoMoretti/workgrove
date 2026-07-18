@@ -1,7 +1,13 @@
 import { useCallback, useMemo } from "react";
 
-import type { WorktreeSnapshot } from "../controller/workspace-snapshot";
-import { appsAreStopped } from "../controller/workspace-snapshot";
+import type {
+  AppGroupSnapshot,
+  WorktreeSnapshot,
+} from "../controller/workspace-snapshot";
+import {
+  appGroupIsStopped,
+  appsAreStopped,
+} from "../controller/workspace-snapshot";
 import { useCommands } from "./mutations";
 import type { RequestRepositoryTrust } from "./use-repository-trust";
 import type { WorktreeCommandActions } from "./worktree-command-menu";
@@ -69,8 +75,16 @@ export function useWorktreeCommandActions({
 
   const startApps = useCallback(
     (worktree: WorktreeSnapshot) => {
+      const appGroupName = worktree.appGroups[0]?.name;
+      if (!appGroupName) {
+        return;
+      }
       requestRepositoryTrust("Start apps", () => {
-        commands.startApps.mutate({ repoPath, worktreeId: worktree.id });
+        commands.startApps.mutate({
+          appGroupName,
+          repoPath,
+          worktreeId: worktree.id,
+        });
       });
     },
     [commands.startApps, repoPath, requestRepositoryTrust]
@@ -78,15 +92,30 @@ export function useWorktreeCommandActions({
 
   const stopApps = useCallback(
     (worktree: WorktreeSnapshot) => {
-      commands.stopApps.mutate({ repoPath, worktreeId: worktree.id });
+      const appGroupName = worktree.appGroups[0]?.name;
+      if (appGroupName) {
+        commands.stopApps.mutate({
+          appGroupName,
+          repoPath,
+          worktreeId: worktree.id,
+        });
+      }
     },
     [commands.stopApps, repoPath]
   );
 
   const restartApps = useCallback(
     (worktree: WorktreeSnapshot) => {
+      const appGroupName = worktree.appGroups[0]?.name;
+      if (!appGroupName) {
+        return;
+      }
       requestRepositoryTrust("Restart apps", () => {
-        commands.restartApps.mutate({ repoPath, worktreeId: worktree.id });
+        commands.restartApps.mutate({
+          appGroupName,
+          repoPath,
+          worktreeId: worktree.id,
+        });
       });
     },
     [commands.restartApps, repoPath, requestRepositoryTrust]
@@ -123,6 +152,27 @@ export function useWorktreeCommandActions({
       stopApps(worktree);
     },
     [startApps, stopApps]
+  );
+
+  const toggleAppGroup = useCallback(
+    (worktree: WorktreeSnapshot, group: AppGroupSnapshot) => {
+      if (appGroupIsStopped(group)) {
+        requestRepositoryTrust(`Start ${group.name}`, () => {
+          commands.startApps.mutate({
+            appGroupName: group.name,
+            repoPath,
+            worktreeId: worktree.id,
+          });
+        });
+      } else {
+        commands.stopApps.mutate({
+          appGroupName: group.name,
+          repoPath,
+          worktreeId: worktree.id,
+        });
+      }
+    },
+    [commands.startApps, commands.stopApps, repoPath, requestRepositoryTrust]
   );
 
   const visibleActions = useMemo(() => {
@@ -163,6 +213,7 @@ export function useWorktreeCommandActions({
     commands,
     pendingIds,
     restartApps,
+    toggleAppGroup,
     toggleApps,
     visibleActions,
   };

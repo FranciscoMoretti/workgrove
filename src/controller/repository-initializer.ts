@@ -17,7 +17,10 @@ import {
   resolveWorkgroveAppGroup,
   type WorktreeEnvConfig,
 } from "../config/workgrove-config";
-import { WORKGROVE_SLOT_FILE } from "../config/workgrove-schema";
+import {
+  WORKGROVE_LEGACY_SLOT_FILE,
+  WORKGROVE_SLOTS_FILE,
+} from "../config/workgrove-schema";
 
 const LINE_BREAK = /\r?\n/;
 const FASTAPI_DEPENDENCY = /\bfastapi\b/i;
@@ -147,17 +150,22 @@ export function planRepositoryInitialization(
   const config: WorktreeEnvConfig = {
     $schema:
       "https://raw.githubusercontent.com/franciscomoretti/workgrove/main/schema/workgrove.schema.json",
-    version: 1,
-    stride: 10,
+    version: 2,
     setup,
-    start,
-    apps: {
-      app: {
-        basePort: stableBasePort(root),
+    appGroups: {
+      Apps: {
+        slot: { default: 0, stride: 10 },
+        start,
+        stop: "process",
+        apps: {
+          App: {
+            basePort: stableBasePort(root),
+          },
+        },
       },
     },
   };
-  resolveWorkgroveAppGroup(config, {});
+  resolveWorkgroveAppGroup(config, "Apps", 0);
   return {
     config,
     configPath,
@@ -175,7 +183,8 @@ export function initializeRepository(
   writeFileSync(plan.configPath, `${JSON.stringify(plan.config, null, 2)}\n`, {
     flag: "wx",
   });
-  excludeLocalSlotFile(plan.repoPath, WORKGROVE_SLOT_FILE);
+  excludeLocalSlotFile(plan.repoPath, WORKGROVE_SLOTS_FILE);
+  excludeLocalSlotFile(plan.repoPath, WORKGROVE_LEGACY_SLOT_FILE);
   trustRepository(plan.repoPath, plan.config);
   return plan;
 }

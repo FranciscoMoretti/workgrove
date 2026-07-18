@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import type { WorkspaceController } from "../controller/workspace-controller";
 import {
+  appGroupProcessId,
   managedPid,
   startManagedProcess,
   stopManagedProcess,
@@ -12,12 +13,11 @@ import {
 import { switchSlot } from "./switch-slot";
 
 const worktreeId = `switch-slot-test-${process.pid}`;
-const SLOT_PATTERN = /WORKGROVE_SLOT=(\d+)/;
 let root: string | null = null;
 
 afterEach(async () => {
   if (root) {
-    await stopManagedProcess(worktreeId, root);
+    await stopManagedProcess(appGroupProcessId(worktreeId, "Apps"), root);
     rmSync(root, { force: true, recursive: true });
     root = null;
   }
@@ -26,9 +26,10 @@ afterEach(async () => {
 describe("switch slot command", () => {
   it("stops the app group, changes its slot, and starts it again", async () => {
     root = mkdtempSync(join(tmpdir(), "workgrove-switch-slot-"));
-    const slotFile = ".env.worktree.local";
+    const slotFile = ".workgrove.local.json";
     const slotPath = join(root, slotFile);
-    writeFileSync(slotPath, "WORKGROVE_SLOT=0\n");
+    writeFileSync(slotPath, '{"version":1,"slots":{"Apps":0}}\n');
+    const processId = appGroupProcessId(worktreeId, "Apps");
     startManagedProcess({
       argv: [
         process.execPath,
@@ -38,41 +39,72 @@ describe("switch slot command", () => {
       cwd: root,
       env: {},
       ownerRoot: root,
-      worktreeId,
+      worktreeId: processId,
+      logId: processId,
     });
 
     const controller = {
       assertTrusted: () => undefined,
       config: () => ({
-        apps: { app: { basePort: 45_000 } },
-        setup: { argv: ["true"] },
-        start: {
-          argv: [
-            process.execPath,
-            "-e",
-            "process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 1000);",
-          ],
+        appGroups: {
+          Apps: {
+            apps: { app: { basePort: 45_000 } },
+            slot: { default: 0, stride: 10 },
+            stop: "process",
+            start: {
+              argv: [
+                process.execPath,
+                "-e",
+                "process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 1000);",
+              ],
+            },
+          },
         },
-        stride: 10,
-        version: 1,
+        setup: { argv: ["true"] },
+        version: 2,
       }),
       worktree: () => {
-        const slot = Number(
-          readFileSync(slotPath, "utf8").match(SLOT_PATTERN)?.[1]
-        );
+        const slot = JSON.parse(readFileSync(slotPath, "utf8")).slots
+          .Apps as number;
+        const processRunning = managedPid(processId, root as string) !== null;
+        const appGroup = {
+          apps: [],
+          health: "not-running" as const,
+          name: "Apps",
+          processRunning,
+          slot,
+          slotState: "assigned" as const,
+          stop: "process" as const,
+        };
         return {
           workspace: {
-            slotEnv: "WORKGROVE_SLOT",
+            appGroupSlotOptions: {
+              Apps: [{ apps: [], collisionOwners: [], slot: 1 }],
+            },
+            config: {
+              appGroups: {
+                Apps: {
+                  apps: { app: { basePort: 45_000 } },
+                  slot: { default: 0, stride: 10 },
+                  start: { argv: ["true"] },
+                  stop: "process",
+                },
+              },
+              setup: { argv: ["true"] },
+              version: 2,
+            },
             slotFile,
-            slotOptions: [{ apps: [], collisionOwners: [], slot: 1 }],
-            worktrees: [{ id: worktreeId, name: "worktree", slot }],
+            worktrees: [
+              { id: worktreeId, name: "worktree", slot, appGroups: [appGroup] },
+            ],
           },
           worktree: {
             apps: [],
+            appGroups: [appGroup],
             health: "not-running",
             id: worktreeId,
             path: root,
-            processRunning: managedPid(worktreeId, root as string) !== null,
+            processRunning,
             slot,
             slotState: "assigned",
           },
@@ -81,12 +113,13 @@ describe("switch slot command", () => {
     } as unknown as WorkspaceController;
 
     await switchSlot(controller, {
+      appGroupName: "Apps",
       repoPath: root,
       slot: 1,
       worktreeId,
     });
 
-    expect(readFileSync(slotPath, "utf8")).toBe("WORKGROVE_SLOT=1\n");
-    expect(managedPid(worktreeId, root)).not.toBeNull();
+    expect(JSON.parse(readFileSync(slotPath, "utf8")).slots.Apps).toBe(1);
+    expect(managedPid(processId, root)).not.toBeNull();
   });
 });

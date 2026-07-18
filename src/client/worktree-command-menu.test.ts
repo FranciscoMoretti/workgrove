@@ -20,6 +20,17 @@ function worktree(
   return {
     appLabel: "App",
     apps: [],
+    appGroups: [
+      {
+        apps: [],
+        health,
+        name: "Apps",
+        processRunning: false,
+        slot: 0,
+        slotState: "assigned",
+        stop: "process",
+      },
+    ],
     branch: "main",
     health,
     id: "worktree",
@@ -59,21 +70,21 @@ describe("worktree command menu", () => {
     expect(itemIds(worktree("running"))).toEqual(["setup", "stop", "restart"]);
   });
 
-  it("keeps start visible but disabled until a slot is assigned", () => {
+  it("keeps start visible but disabled for an invalid slot", () => {
     const items = worktreeCommandMenuItems({
       actions,
       pending: false,
       worktree: worktree("not-running", {
-        slot: null,
-        slotState: "unassigned",
+        slot: 0,
+        slotState: "invalid",
       }),
     });
     expect(items.find((item) => item.id === "start")?.disabled).toBe(true);
   });
 
-  it("does not offer restart for an unassigned app group", () => {
+  it("does not offer restart for an invalid app group slot", () => {
     expect(
-      itemIds(worktree("running", { slot: null, slotState: "unassigned" }))
+      itemIds(worktree("running", { slot: 0, slotState: "invalid" }))
     ).toEqual(["setup", "stop"]);
   });
 });

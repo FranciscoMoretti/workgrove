@@ -6,10 +6,22 @@ export type AppEndpointSnapshot = ControlledApp & {
   ownership: "owned" | "foreign" | "none";
 };
 
-export interface SlotOption {
+export interface AppGroupSlotOption {
   apps: Array<{ label: string; port: number }>;
   collisionOwners: Array<{ id: string; name: string }>;
   slot: number;
+}
+
+export type SlotOption = AppGroupSlotOption;
+
+export interface AppGroupSnapshot {
+  apps: AppEndpointSnapshot[];
+  health: AppHealth;
+  name: string;
+  processRunning: boolean;
+  slot: number;
+  slotState: "assigned" | "invalid";
+  stop: "command" | "process";
 }
 
 export interface GlobalProcessSnapshot {
@@ -22,6 +34,7 @@ export interface GlobalProcessSnapshot {
 }
 
 export interface WorktreeSnapshot {
+  appGroups: AppGroupSnapshot[];
   appLabel: string;
   apps: AppEndpointSnapshot[];
   branch: string;
@@ -32,8 +45,32 @@ export interface WorktreeSnapshot {
   path: string;
   processRunning: boolean;
   setupState: "failed" | "idle" | "running";
-  slot: number | null;
-  slotState: "assigned" | "conflicting" | "invalid" | "unassigned";
+  slot: number;
+  slotState: "assigned" | "invalid";
+}
+
+export function appGroupIsRunning(
+  group: Pick<AppGroupSnapshot, "health" | "processRunning">
+): boolean {
+  return group.health !== "not-running" || group.processRunning;
+}
+
+export function appGroupIsStopped(
+  group: Pick<AppGroupSnapshot, "health" | "processRunning">
+): boolean {
+  return !appGroupIsRunning(group);
+}
+
+export function appGroupCanRestart(
+  group: Pick<AppGroupSnapshot, "health" | "processRunning" | "slotState">
+): boolean {
+  return appGroupIsRunning(group) && group.slotState === "assigned";
+}
+
+export function worktreeHasRunningAppGroups(
+  worktree: Pick<WorktreeSnapshot, "appGroups">
+): boolean {
+  return worktree.appGroups.some(appGroupIsRunning);
 }
 
 export function appsAreRunning(
@@ -55,6 +92,7 @@ export function appsCanRestart(
 }
 
 export interface WorkspaceSnapshot {
+  appGroupSlotOptions: Record<string, AppGroupSlotOption[]>;
   config: WorkgroveConfig;
   configPath: string;
   configRevision: string;
@@ -62,11 +100,11 @@ export interface WorkspaceSnapshot {
   globalProcesses: GlobalProcessSnapshot[];
   globalRunningCount: number;
   mainWorktreePath: string;
+  primaryAppGroup: string;
   repoName: string;
   repoPath: string;
-  slotEnv: string;
   slotFile: string;
-  slotOptions: SlotOption[];
+  slotOptions: AppGroupSlotOption[];
   trustCommands: string[];
   trusted: boolean;
   trustRequired: boolean;
@@ -75,6 +113,7 @@ export interface WorkspaceSnapshot {
 }
 
 export interface CommandReceipt {
+  appGroupName?: string;
   command: string;
   message: string;
   ok: true;

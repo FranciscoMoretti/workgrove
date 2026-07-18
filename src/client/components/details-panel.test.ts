@@ -11,6 +11,17 @@ const STOPPED_CODE_PORT = /<code class="[^"]*font-mono[^"]*"[^>]*>3002<\/code>/;
 const worktree: WorktreeSnapshot = {
   appLabel: "App",
   apps: [],
+  appGroups: [
+    {
+      apps: [],
+      health: "not-running",
+      name: "Apps",
+      processRunning: false,
+      slot: 0,
+      slotState: "assigned",
+      stop: "process",
+    },
+  ],
   branch: "main",
   health: "not-running",
   id: "worktree",

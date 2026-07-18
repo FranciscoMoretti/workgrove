@@ -1,13 +1,16 @@
 {
   "$schema": "../schema/workgrove.schema.json",
-  "version": 1,
-  "stride": 10,
+  "version": 2,
   "setup": { "argv": ["uv", "sync"] },
-  "start": { "argv": ["uv", "run", "python", "-m", "app"] },
-  "apps": {
-    "api": { "basePort": 8000 }
+  "appGroups": {
+    "API": {
+      "slot": { "default": 0, "stride": 10 },
+      "start": { "argv": ["uv", "run", "python", "-m", "app"] },
+      "stop": "process",
+      "apps": { "API": { "basePort": 8000 } }
+    }
   },
   "env": {
-    "PORT": "{apps.api.port}"
+    "PORT": "{appGroups.API.apps.API.port}"
   }
 }

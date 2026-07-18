@@ -277,6 +277,51 @@ export function startManagedProcess(input: {
   return child.pid;
 }
 
+export async function runFiniteCommand(input: {
+  argv: string[];
+  cwd: string;
+  env: Record<string, string>;
+  label: string;
+  logId: string;
+}): Promise<void> {
+  const [command, ...args] = input.argv;
+  if (!command) {
+    throw new Error(`${input.label} requires at least one argv entry`);
+  }
+  appendManagedLog(
+    input.logId,
+    `[workgrove] ${input.label}: ${input.argv.join(" ")}`
+  );
+  const log = openSync(logPath(input.logId), "a");
+  const child = (() => {
+    try {
+      return spawn(command, args, {
+        cwd: input.cwd,
+        env: { ...process.env, ...input.env },
+        stdio: ["ignore", log, log],
+      });
+    } finally {
+      closeSync(log);
+    }
+  })();
+  await new Promise<void>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code, signal) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(
+        new Error(
+          signal
+            ? `${input.label} exited after ${signal}`
+            : `${input.label} exited with status ${code ?? "unknown"}`
+        )
+      );
+    });
+  });
+}
+
 export interface ManagedProcessSummary {
   argv: string[];
   cwd: string;
@@ -319,6 +364,13 @@ export function listManagedProcesses(): ManagedProcessSummary[] {
 
 export function setupProcessId(worktreeId: string): string {
   return `${worktreeId}--setup`;
+}
+
+export function appGroupProcessId(
+  worktreeId: string,
+  appGroupName: string
+): string {
+  return `${worktreeId}--app-group--${Buffer.from(appGroupName).toString("base64url")}`;
 }
 
 export function managedFailure(worktreeId: string): ProcessFailure | null {

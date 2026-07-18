@@ -1,5 +1,4 @@
 import { resolveSetupCommand } from "../config/workgrove-config";
-import { WORKGROVE_DEFAULT_SLOT } from "../config/workgrove-schema";
 import type { WorkspaceController } from "../controller/workspace-controller";
 import type { CommandReceipt } from "../controller/workspace-snapshot";
 import {
@@ -8,6 +7,7 @@ import {
   startManagedProcess,
 } from "../runtime/process-supervisor";
 import { requiredString, selectRequestedWorktrees } from "./command";
+import { worktreeSlotAssignments } from "./start-apps";
 
 export function setupAllApps(
   controller: WorkspaceController,
@@ -22,8 +22,10 @@ export function setupAllApps(
     input.worktreeIds
   );
   for (const worktree of targets) {
-    const slot = worktree.slot ?? WORKGROVE_DEFAULT_SLOT;
-    const setup = resolveSetupCommand(config, slot);
+    const setup = resolveSetupCommand(
+      config,
+      worktreeSlotAssignments(worktree)
+    );
     appendManagedLog(
       worktree.id,
       `[workgrove] Running setup: ${setup.argv.join(" ")}`

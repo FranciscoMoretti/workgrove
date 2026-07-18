@@ -19,8 +19,7 @@ import {
   MAX_WORKGROVE_PORT,
   MIN_WORKGROVE_PORT,
   resolveWorkgroveAppPort,
-  WORKGROVE_DEFAULT_SLOT,
-  WORKGROVE_SLOT_ENV,
+  type WorkgroveAppGroup,
   type WorkgroveConfig,
   WorkgroveConfigSchema,
 } from "./workgrove-schema";
@@ -28,17 +27,19 @@ import { renderWorkgroveTemplate } from "./workgrove-template";
 
 // biome-ignore lint/performance/noBarrelFile: preserve the package's internal config-module exports.
 export {
+  maximumWorkgroveAppGroupSlot,
   maximumWorkgroveSlot,
   resolveWorkgroveAppPort,
   type WorkgroveApp,
+  type WorkgroveAppGroup,
+  WorkgroveAppGroupNameSchema,
+  WorkgroveAppGroupSchema,
   WorkgroveAppIdSchema,
   WorkgroveAppSchema,
   type WorkgroveConfig,
   WorkgroveConfigSchema,
   type WorktreeEnvConfig,
 } from "./workgrove-schema";
-
-const SLOT_PATTERN = /^\d+$/;
 
 export interface ResolvedWorkgroveApp {
   port: number;
@@ -47,6 +48,7 @@ export interface ResolvedWorkgroveApp {
 
 export interface ResolvedWorkgroveAppGroup {
   apps: Record<string, ResolvedWorkgroveApp>;
+  name: string;
   slot: number;
 }
 
@@ -60,45 +62,79 @@ export interface WorkgroveConfigDocument {
   revision: string;
 }
 
+export type WorkgroveSlotAssignments = Record<string, number>;
+
+function group(config: WorkgroveConfig, groupName: string): WorkgroveAppGroup {
+  const value = config.appGroups[groupName];
+  if (!value) {
+    throw new Error(`Unknown App group "${groupName}"`);
+  }
+  return value;
+}
+
+export function defaultWorkgroveSlots(
+  config: WorkgroveConfig
+): WorkgroveSlotAssignments {
+  return Object.fromEntries(
+    Object.entries(config.appGroups).map(([name, value]) => [
+      name,
+      value.slot.default,
+    ])
+  );
+}
+
 export function resolveWorkgroveAppGroup(
   config: WorkgroveConfig,
-  environment: Record<string, string | undefined>
+  groupName: string,
+  slot: number
 ): ResolvedWorkgroveAppGroup {
   WorkgroveConfigSchema.parse(config);
-  const rawSlot =
-    environment[WORKGROVE_SLOT_ENV] ?? String(WORKGROVE_DEFAULT_SLOT);
-  if (!SLOT_PATTERN.test(rawSlot)) {
-    throw new Error(`Invalid ${WORKGROVE_SLOT_ENV} "${rawSlot}"`);
+  if (!(Number.isSafeInteger(slot) && slot >= 0)) {
+    throw new Error(`Invalid slot "${slot}" for App group "${groupName}"`);
   }
-  const slot = Number(rawSlot);
+  const configured = group(config, groupName);
   const apps = Object.fromEntries(
-    Object.entries(config.apps).map(([id, app]) => {
-      const port = resolveWorkgroveAppPort(app, slot, config.stride);
+    Object.entries(configured.apps).map(([id, app]) => {
+      const port = resolveWorkgroveAppPort(app, slot, configured.slot.stride);
       if (port < MIN_WORKGROVE_PORT || port > MAX_WORKGROVE_PORT) {
-        throw new Error(`App "${id}" computed invalid port ${port}`);
+        throw new Error(
+          `App "${id}" in App group "${groupName}" computed invalid port ${port}`
+        );
       }
       return [id, { port, url: `http://localhost:${port}` }];
     })
   );
-  return { apps, slot };
+  return { apps, name: groupName, slot };
+}
+
+export function resolveWorkgroveAppGroups(
+  config: WorkgroveConfig,
+  assignments: Partial<WorkgroveSlotAssignments>
+): Record<string, ResolvedWorkgroveAppGroup> {
+  const slots = { ...defaultWorkgroveSlots(config), ...assignments };
+  return Object.fromEntries(
+    Object.keys(config.appGroups).map((name) => [
+      name,
+      resolveWorkgroveAppGroup(
+        config,
+        name,
+        slots[name] ?? config.appGroups[name].slot.default
+      ),
+    ])
+  );
 }
 
 export function workgroveCommandEnvironment(
   config: WorkgroveConfig,
-  slot: number
+  assignments: Partial<WorkgroveSlotAssignments>
 ): Record<string, string> {
-  const appGroup = resolveWorkgroveAppGroup(config, {
-    [WORKGROVE_SLOT_ENV]: String(slot),
-  });
-  return {
-    [WORKGROVE_SLOT_ENV]: String(slot),
-    ...Object.fromEntries(
-      Object.entries(config.env ?? {}).map(([name, template]) => [
-        name,
-        renderWorkgroveTemplate(template, appGroup),
-      ])
-    ),
-  };
+  const appGroups = resolveWorkgroveAppGroups(config, assignments);
+  return Object.fromEntries(
+    Object.entries(config.env ?? {}).map(([name, template]) => [
+      name,
+      renderWorkgroveTemplate(template, { appGroups }),
+    ])
+  );
 }
 
 export function findWorkgroveConfig(root: string): string | null {
@@ -110,33 +146,77 @@ function contentRevision(content: string): string {
   return createHash("sha256").update(content).digest("base64url");
 }
 
+interface LegacyConfig {
+  $schema?: string;
+  apps?: Record<string, { basePort: number }>;
+  env?: Record<string, string>;
+  setup?: WorkgroveCommand;
+  start?: WorkgroveCommand;
+  stride?: number;
+  version?: 1;
+}
+
+function migrateLegacyTemplate(template: string): string {
+  return template
+    .replaceAll("{slot}", "{appGroups.Apps.slot}")
+    .replace(
+      /\{apps\.([^{}]+)\.(port|url)\}/g,
+      (_match, app, field) => `{appGroups.Apps.apps.${app}.${field}}`
+    );
+}
+
+function normalizeConfig(raw: unknown): unknown {
+  if (!(raw && typeof raw === "object" && !Array.isArray(raw))) {
+    return raw;
+  }
+  const candidate = raw as LegacyConfig & Record<string, unknown>;
+  if ((candidate as Record<string, unknown>).version === 2) {
+    return raw;
+  }
+  const apps = candidate.apps;
+  if (!(apps && typeof apps === "object")) {
+    return raw;
+  }
+  return {
+    ...(candidate.$schema ? { $schema: candidate.$schema } : {}),
+    version: 2,
+    setup: candidate.setup ?? defaultWorkgroveSetupCommand(),
+    appGroups: {
+      Apps: {
+        slot: {
+          default: 0,
+          stride: candidate.stride ?? 10,
+        },
+        start: candidate.start ?? defaultWorkgroveStartCommand(),
+        stop: "process",
+        apps,
+      },
+    },
+    env: {
+      WORKGROVE_SLOT: "{appGroups.Apps.slot}",
+      ...Object.fromEntries(
+        Object.entries(candidate.env ?? {}).map(([name, template]) => [
+          name,
+          migrateLegacyTemplate(template),
+        ])
+      ),
+    },
+  };
+}
+
 export function loadWorkgroveConfigDocument(
   path: string
 ): WorkgroveConfigDocument {
   const content = readFileSync(path, "utf8");
-  const raw = JSON.parse(content) as Record<string, unknown>;
-  const versioned = raw.version === undefined ? { ...raw, version: 1 } : raw;
-  const candidate =
-    versioned.version === 1
-      ? {
-          ...versioned,
-          setup:
-            versioned.setup === undefined
-              ? defaultWorkgroveSetupCommand()
-              : versioned.setup,
-          start:
-            versioned.start === undefined
-              ? defaultWorkgroveStartCommand()
-              : versioned.start,
-        }
-      : versioned;
-  const result = WorkgroveConfigSchema.safeParse(candidate);
+  const result = WorkgroveConfigSchema.safeParse(
+    normalizeConfig(JSON.parse(content))
+  );
   if (!result.success) {
     throw new Error(
       `Invalid Workgrove config: ${z.prettifyError(result.error)}`
     );
   }
-  resolveWorkgroveAppGroup(result.data, {});
+  resolveWorkgroveAppGroups(result.data, {});
   return { config: result.data, revision: contentRevision(content) };
 }
 
@@ -156,7 +236,7 @@ export function updateWorkgroveConfig(
     );
   }
   const validated = WorkgroveConfigSchema.parse(cloneWorkgroveConfig(config));
-  resolveWorkgroveAppGroup(validated, {});
+  resolveWorkgroveAppGroups(validated, {});
   const content = `${JSON.stringify(validated, null, 2)}\n`;
   const temporaryPath = `${configPath}.tmp-${process.pid}-${Date.now()}`;
   writeFileSync(temporaryPath, content, { flag: "wx" });
@@ -172,24 +252,34 @@ export function updateWorkgroveConfig(
 function resolveCommand(
   config: WorkgroveConfig,
   command: WorkgroveCommand,
-  slot: number
+  assignments: Partial<WorkgroveSlotAssignments>
 ): ResolvedWorkgroveCommand {
   return {
     argv: [...command.argv],
-    env: workgroveCommandEnvironment(config, slot),
+    env: workgroveCommandEnvironment(config, assignments),
   };
 }
 
 export function resolveStartCommand(
   config: WorkgroveConfig,
-  slot: number
+  groupName: string,
+  assignments: Partial<WorkgroveSlotAssignments>
 ): ResolvedWorkgroveCommand {
-  return resolveCommand(config, config.start, slot);
+  return resolveCommand(config, group(config, groupName).start, assignments);
+}
+
+export function resolveStopCommand(
+  config: WorkgroveConfig,
+  groupName: string,
+  assignments: Partial<WorkgroveSlotAssignments>
+): ResolvedWorkgroveCommand | null {
+  const stop = group(config, groupName).stop;
+  return stop === "process" ? null : resolveCommand(config, stop, assignments);
 }
 
 export function resolveSetupCommand(
   config: WorkgroveConfig,
-  slot: number
+  assignments: Partial<WorkgroveSlotAssignments>
 ): ResolvedWorkgroveCommand {
-  return resolveCommand(config, config.setup, slot);
+  return resolveCommand(config, config.setup, assignments);
 }

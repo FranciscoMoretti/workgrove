@@ -5,13 +5,16 @@ const RepositoryPathSchema = z.object({
   repoPath: z.string().min(1),
 });
 const StartStopSchema = RepositoryPathSchema.extend({
+  appGroupName: z.string().min(1),
   worktreeId: z.string().min(1),
 });
 const VisibleBulkSchema = RepositoryPathSchema.extend({
+  appGroupName: z.string().min(1).optional(),
   worktreeIds: z.array(z.string().min(1)),
 });
 
 export const CommandReceiptSchema = z.object({
+  appGroupName: z.string().optional(),
   command: z.string(),
   message: z.string(),
   ok: z.literal(true),

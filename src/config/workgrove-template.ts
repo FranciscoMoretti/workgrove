@@ -1,28 +1,47 @@
+import type { WorkgroveAppGroup } from "./workgrove-schema";
+
 const TOKEN_PATTERN = /\{([^{}]+)\}/g;
-const APP_TOKEN_PATTERN = /^apps\.([A-Za-z0-9_-]+)\.(port|url)$/;
 const BRACE_PATTERN = /[{}]/;
 
 export interface WorkgroveTemplateContext {
-  apps: Record<string, { port: number; url: string }>;
-  slot: number;
+  appGroups: Record<
+    string,
+    {
+      apps: Record<string, { port: number; url: string }>;
+      slot: number;
+    }
+  >;
+}
+
+function templateValues(
+  appGroups: Record<
+    string,
+    WorkgroveAppGroup | WorkgroveTemplateContext["appGroups"][string]
+  >
+): Map<string, string | null> {
+  const values = new Map<string, string | null>();
+  for (const [groupName, group] of Object.entries(appGroups)) {
+    const prefix = `appGroups.${groupName}`;
+    values.set(`${prefix}.slot`, "slot" in group ? String(group.slot) : null);
+    for (const appName of Object.keys(group.apps)) {
+      const appPrefix = `${prefix}.apps.${appName}`;
+      const app = group.apps[appName];
+      values.set(`${appPrefix}.port`, "port" in app ? String(app.port) : null);
+      values.set(`${appPrefix}.url`, "url" in app ? app.url : null);
+    }
+  }
+  return values;
 }
 
 export function workgroveTemplateError(
   template: string,
-  appIds: ReadonlySet<string>
+  appGroups: Record<string, WorkgroveAppGroup>
 ): string | null {
+  const values = templateValues(appGroups);
   let error: string | null = null;
   const remainder = template.replace(TOKEN_PATTERN, (_match, token: string) => {
-    if (token === "slot") {
-      return "";
-    }
-    const appToken = APP_TOKEN_PATTERN.exec(token);
-    if (!appToken) {
+    if (!values.has(token)) {
       error ??= `Unsupported template token {${token}}`;
-      return "";
-    }
-    if (!appIds.has(appToken[1])) {
-      error ??= `Template references unknown app "${appToken[1]}"`;
     }
     return "";
   });
@@ -36,29 +55,35 @@ export function renderWorkgroveTemplate(
   template: string,
   context: WorkgroveTemplateContext
 ): string {
-  const error = workgroveTemplateError(
-    template,
-    new Set(Object.keys(context.apps))
-  );
-  if (error) {
-    throw new Error(error);
-  }
+  const values = templateValues(context.appGroups);
   return template.replace(TOKEN_PATTERN, (_match, token: string) => {
-    if (token === "slot") {
-      return String(context.slot);
-    }
-    const appToken = APP_TOKEN_PATTERN.exec(token);
-    if (!appToken) {
+    const value = values.get(token);
+    if (value === undefined || value === null) {
       throw new Error(`Unsupported template token {${token}}`);
     }
-    return String(context.apps[appToken[1]][appToken[2] as "port" | "url"]);
+    return value;
   });
 }
 
 export function renameWorkgroveAppTemplateReferences(
   template: string,
+  groupName: string,
   previousId: string,
   nextId: string
 ): string {
-  return template.replaceAll(`{apps.${previousId}.`, `{apps.${nextId}.`);
+  return template.replaceAll(
+    `{appGroups.${groupName}.apps.${previousId}.`,
+    `{appGroups.${groupName}.apps.${nextId}.`
+  );
+}
+
+export function renameWorkgroveAppGroupTemplateReferences(
+  template: string,
+  previousName: string,
+  nextName: string
+): string {
+  return template.replaceAll(
+    `{appGroups.${previousName}.`,
+    `{appGroups.${nextName}.`
+  );
 }

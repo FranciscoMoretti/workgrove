@@ -1,6 +1,6 @@
 import type { WorkspaceController } from "../controller/workspace-controller";
 import type { CommandReceipt } from "../controller/workspace-snapshot";
-import { appsAreRunning } from "../controller/workspace-snapshot";
+import { appGroupIsRunning } from "../controller/workspace-snapshot";
 import { requiredString, selectRequestedWorktrees } from "./command";
 import { stopApps } from "./stop-apps";
 
@@ -9,17 +9,37 @@ export async function stopAllApps(
   input: Record<string, unknown>
 ): Promise<CommandReceipt> {
   const repoPath = requiredString(input.repoPath, "Repository path");
-  const workspace = controller.inspect(repoPath);
-  const running = selectRequestedWorktrees(
-    workspace.worktrees,
+  const requestedGroup =
+    typeof input.appGroupName === "string" ? input.appGroupName : null;
+  const worktrees = selectRequestedWorktrees(
+    controller.inspect(repoPath).worktrees,
     input.worktreeIds
-  ).filter(appsAreRunning);
-  for (const worktree of running) {
-    await stopApps(controller, { repoPath, worktreeId: worktree.id });
+  );
+  const seenCommandInstances = new Set<string>();
+  const targets = worktrees.flatMap((worktree) =>
+    worktree.appGroups.flatMap((group) => {
+      if (
+        (requestedGroup && group.name !== requestedGroup) ||
+        !appGroupIsRunning(group)
+      ) {
+        return [];
+      }
+      if (group.stop === "command") {
+        const instance = `${group.name}\0${group.slot}`;
+        if (seenCommandInstances.has(instance)) {
+          return [];
+        }
+        seenCommandInstances.add(instance);
+      }
+      return [{ appGroupName: group.name, worktreeId: worktree.id }];
+    })
+  );
+  for (const target of targets) {
+    await stopApps(controller, { repoPath, ...target });
   }
   return {
     command: "stop-all-apps",
-    message: `Stopped apps in ${running.length} worktree${running.length === 1 ? "" : "s"}`,
+    message: `Stopped ${targets.length} App group${targets.length === 1 ? "" : "s"}`,
     ok: true,
   };
 }

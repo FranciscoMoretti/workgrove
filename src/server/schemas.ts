@@ -3,6 +3,7 @@ import { WorkgroveConfigSchema } from "../config/workgrove-schema";
 
 export const WorkspaceQuerySchema = z.object({ repoPath: z.string().min(1) });
 export const LogsQuerySchema = WorkspaceQuerySchema.extend({
+  appGroupName: z.string().min(1),
   worktreeId: z.string().min(1),
 });
 
@@ -18,10 +19,28 @@ const AppEndpointSchema = z.object({
   url: z.string(),
 });
 
+const AppGroupSchema = z.object({
+  apps: z.array(AppEndpointSchema),
+  health: z.enum(["not-running", "partially-running", "running"]),
+  name: z.string().min(1),
+  processRunning: z.boolean(),
+  slot: z.number().int().nonnegative(),
+  slotState: z.enum(["assigned", "invalid"]),
+  stop: z.enum(["command", "process"]),
+});
+
+const SlotOptionSchema = z.object({
+  apps: z.array(z.object({ label: z.string(), port: z.number().int() })),
+  collisionOwners: z.array(z.object({ id: z.string(), name: z.string() })),
+  slot: z.number().int().nonnegative(),
+});
+
 export const WorkspaceSnapshotSchema = z.object({
+  appGroupSlotOptions: z.record(z.string(), z.array(SlotOptionSchema)),
   config: WorkgroveConfigSchema,
   configPath: z.string(),
   configRevision: z.string().min(1),
+  defaultSlot: z.number().int().nonnegative(),
   globalProcesses: z.array(
     z.object({
       argv: z.array(z.string()),
@@ -33,25 +52,19 @@ export const WorkspaceSnapshotSchema = z.object({
     })
   ),
   globalRunningCount: z.number().int().nonnegative(),
-  defaultSlot: z.number().int().nonnegative(),
   mainWorktreePath: z.string(),
+  primaryAppGroup: z.string().min(1),
   repoName: z.string(),
   repoPath: z.string(),
-  slotEnv: z.string(),
   slotFile: z.string(),
-  slotOptions: z.array(
-    z.object({
-      apps: z.array(z.object({ label: z.string(), port: z.number().int() })),
-      collisionOwners: z.array(z.object({ id: z.string(), name: z.string() })),
-      slot: z.number().int().nonnegative(),
-    })
-  ),
+  slotOptions: z.array(SlotOptionSchema),
   trustCommands: z.array(z.string()),
   trustRequired: z.boolean(),
   trusted: z.boolean(),
   updatedAt: z.string(),
   worktrees: z.array(
     z.object({
+      appGroups: z.array(AppGroupSchema),
       appLabel: z.string(),
       apps: z.array(AppEndpointSchema),
       branch: z.string(),
@@ -62,8 +75,8 @@ export const WorkspaceSnapshotSchema = z.object({
       path: z.string(),
       processRunning: z.boolean(),
       setupState: z.enum(["failed", "idle", "running"]),
-      slot: z.number().int().nonnegative().nullable(),
-      slotState: z.enum(["assigned", "conflicting", "invalid", "unassigned"]),
+      slot: z.number().int().nonnegative(),
+      slotState: z.enum(["assigned", "invalid"]),
     })
   ),
 });

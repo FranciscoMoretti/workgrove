@@ -5,7 +5,10 @@ import {
   type WorkgroveApp,
   type WorkgroveConfig,
 } from "./workgrove-schema";
-import { renameWorkgroveAppTemplateReferences } from "./workgrove-template";
+import {
+  renameWorkgroveAppGroupTemplateReferences,
+  renameWorkgroveAppTemplateReferences,
+} from "./workgrove-template";
 
 export function nextAvailableWorkgroveAppBasePort(
   apps: Record<string, WorkgroveApp>
@@ -24,24 +27,68 @@ export function nextAvailableWorkgroveAppBasePort(
   throw new Error("No app base port is available");
 }
 
-export function renameWorkgroveApp(
+export function renameWorkgroveAppGroup(
   config: WorkgroveConfig,
-  previousId: string,
-  nextId: string
+  previousName: string,
+  nextName: string
 ): WorkgroveConfig {
   return {
     ...config,
-    apps: Object.fromEntries(
-      Object.entries(config.apps).map(([id, app]) => [
-        id === previousId ? nextId : id,
-        app,
+    appGroups: Object.fromEntries(
+      Object.entries(config.appGroups).map(([name, group]) => [
+        name === previousName ? nextName : name,
+        group,
       ])
     ),
     env: config.env
       ? Object.fromEntries(
           Object.entries(config.env).map(([name, template]) => [
             name,
-            renameWorkgroveAppTemplateReferences(template, previousId, nextId),
+            renameWorkgroveAppGroupTemplateReferences(
+              template,
+              previousName,
+              nextName
+            ),
+          ])
+        )
+      : undefined,
+  };
+}
+
+export function renameWorkgroveApp(
+  config: WorkgroveConfig,
+  groupName: string,
+  previousId: string,
+  nextId: string
+): WorkgroveConfig {
+  const group = config.appGroups[groupName];
+  if (!group) {
+    return config;
+  }
+  return {
+    ...config,
+    appGroups: {
+      ...config.appGroups,
+      [groupName]: {
+        ...group,
+        apps: Object.fromEntries(
+          Object.entries(group.apps).map(([id, app]) => [
+            id === previousId ? nextId : id,
+            app,
+          ])
+        ),
+      },
+    },
+    env: config.env
+      ? Object.fromEntries(
+          Object.entries(config.env).map(([name, template]) => [
+            name,
+            renameWorkgroveAppTemplateReferences(
+              template,
+              groupName,
+              previousId,
+              nextId
+            ),
           ])
         )
       : undefined,
@@ -57,12 +104,16 @@ export function addWorkgroveEnvironment(
     name = `APP_PORT_${suffix}`;
     suffix += 1;
   }
-  const firstApp = Object.keys(config.apps)[0];
+  const [groupName, group] = Object.entries(config.appGroups)[0] ?? [];
+  const firstApp = group ? Object.keys(group.apps)[0] : undefined;
   return {
     ...config,
     env: {
       ...config.env,
-      [name]: firstApp ? `{apps.${firstApp}.port}` : "",
+      [name]:
+        groupName && firstApp
+          ? `{appGroups.${groupName}.apps.${firstApp}.port}`
+          : "",
     },
   };
 }
@@ -97,11 +148,16 @@ export function deleteWorkgroveEnvironment(
 
 export function resolveWorkgroveAppEndpoints(
   config: WorkgroveConfig,
+  groupName: string,
   slot: number
 ): Record<string, { port: number; url: string }> {
+  const group = config.appGroups[groupName];
+  if (!group) {
+    return {};
+  }
   return Object.fromEntries(
-    Object.entries(config.apps).map(([id, app]) => {
-      const port = resolveWorkgroveAppPort(app, slot, config.stride);
+    Object.entries(group.apps).map(([id, app]) => {
+      const port = resolveWorkgroveAppPort(app, slot, group.slot.stride);
       return [id, { port, url: `http://localhost:${port}` }];
     })
   );

@@ -112,13 +112,15 @@ function handleGetApi(url: URL, response: ServerResponse): boolean {
   if (url.pathname !== "/api/logs") {
     return false;
   }
-  const { repoPath, worktreeId } = LogsQuerySchema.parse(
+  const { appGroupName, repoPath, worktreeId } = LogsQuerySchema.parse(
     Object.fromEntries(url.searchParams)
   );
   sendJson(
     response,
     200,
-    LogsResponseSchema.parse({ lines: controller.logs(repoPath, worktreeId) })
+    LogsResponseSchema.parse({
+      lines: controller.logs(repoPath, worktreeId, appGroupName),
+    })
   );
   return true;
 }

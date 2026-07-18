@@ -1,40 +1,15 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 
+import { maximumWorkgroveAppGroupSlot } from "../config/workgrove-schema";
 import type { WorkspaceController } from "../controller/workspace-controller";
-import type {
-  CommandReceipt,
-  WorkspaceSnapshot,
-} from "../controller/workspace-snapshot";
+import type { CommandReceipt } from "../controller/workspace-snapshot";
 import {
+  parseSlotAssignments,
   resolveSlotFilePath,
-  updateSlotFileContent,
+  slotAssignmentsContent,
 } from "../runtime/slot-file";
 import { requiredSlot, requiredString } from "./command";
-
-export function assertSlotTargetAvailable(
-  workspace: WorkspaceSnapshot,
-  worktreeId: string,
-  slot: number
-): void {
-  const occupied = workspace.worktrees.find(
-    (item) => item.id !== worktreeId && item.slot === slot
-  );
-  if (occupied) {
-    throw new Error(`Slot ${slot} is already assigned to ${occupied.name}`);
-  }
-  const option = workspace.slotOptions.find((item) => item.slot === slot);
-  if (!option) {
-    throw new Error(`Slot ${slot} is outside the supported range`);
-  }
-  const collisionOwner = option.collisionOwners.find(
-    (owner) => owner.id !== worktreeId
-  );
-  if (collisionOwner) {
-    throw new Error(
-      `Slot ${slot} has a port collision with ${collisionOwner.name}`
-    );
-  }
-}
+import { findAppGroup, worktreeSlotAssignments } from "./start-apps";
 
 export function setSlot(
   controller: WorkspaceController,
@@ -42,26 +17,42 @@ export function setSlot(
 ): CommandReceipt {
   const repoPath = requiredString(input.repoPath, "Repository path");
   const worktreeId = requiredString(input.worktreeId, "Worktree");
+  const appGroupName = requiredString(input.appGroupName, "App group");
   const slot = requiredSlot(input.slot);
   const { workspace, worktree } = controller.worktree(repoPath, worktreeId);
-  const hasListener = worktree.apps.some(
-    (app) => app.probe === "tcp" && app.ownership !== "none"
-  );
-  if (hasListener || worktree.processRunning) {
-    throw new Error("Stop apps before changing the slot");
+  const appGroup = findAppGroup(worktree, appGroupName);
+  if (
+    appGroup.stop === "process" &&
+    (appGroup.processRunning || appGroup.health !== "not-running")
+  ) {
+    throw new Error(`Stop ${appGroupName} before changing its slot`);
   }
-  assertSlotTargetAvailable(workspace, worktreeId, slot);
+  const configured = workspace.config.appGroups[appGroupName];
+  if (!configured) {
+    throw new Error(`Unknown App group "${appGroupName}"`);
+  }
+  if (slot > maximumWorkgroveAppGroupSlot(configured)) {
+    throw new Error(`Slot ${slot} is outside the supported range`);
+  }
   const file = resolveSlotFilePath(worktree.path, workspace.slotFile);
-  const content = existsSync(file) ? readFileSync(file, "utf8") : "";
-  const temporary = `${file}.workgrove-${process.pid}`;
-  writeFileSync(
-    temporary,
-    updateSlotFileContent(content, workspace.slotEnv, slot)
+  const parsed = parseSlotAssignments(
+    existsSync(file) ? readFileSync(file, "utf8") : ""
   );
+  if (parsed.kind === "invalid") {
+    throw new Error(`Repair or remove invalid local state at ${file}`);
+  }
+  const slots = {
+    ...worktreeSlotAssignments(worktree),
+    ...(parsed.kind === "value" ? parsed.slots : {}),
+    [appGroupName]: slot,
+  };
+  const temporary = `${file}.workgrove-${process.pid}`;
+  writeFileSync(temporary, slotAssignmentsContent(slots));
   renameSync(temporary, file);
   return {
+    appGroupName,
     command: "set-slot",
-    message: `Assigned slot ${slot}`,
+    message: `Assigned ${appGroupName} slot ${slot}`,
     ok: true,
     worktreeId,
   };

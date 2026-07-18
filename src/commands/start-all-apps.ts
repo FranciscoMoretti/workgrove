@@ -1,26 +1,36 @@
 import type { WorkspaceController } from "../controller/workspace-controller";
 import type { CommandReceipt } from "../controller/workspace-snapshot";
-import { appsAreStopped } from "../controller/workspace-snapshot";
+import { appGroupIsStopped } from "../controller/workspace-snapshot";
 import { requiredString, selectRequestedWorktrees } from "./command";
 import { startApps } from "./start-apps";
 
-export function startAllApps(
+export async function startAllApps(
   controller: WorkspaceController,
   input: Record<string, unknown>
-): CommandReceipt {
+): Promise<CommandReceipt> {
   const repoPath = requiredString(input.repoPath, "Repository path");
-  const targets = selectRequestedWorktrees(
+  const requestedGroup =
+    typeof input.appGroupName === "string" ? input.appGroupName : null;
+  const worktrees = selectRequestedWorktrees(
     controller.inspect(repoPath).worktrees,
     input.worktreeIds
-  ).filter(
-    (worktree) => worktree.slotState === "assigned" && appsAreStopped(worktree)
   );
-  for (const worktree of targets) {
-    startApps(controller, { repoPath, worktreeId: worktree.id });
+  const targets = worktrees.flatMap((worktree) =>
+    worktree.appGroups
+      .filter(
+        (group) =>
+          (!requestedGroup || group.name === requestedGroup) &&
+          group.slotState === "assigned" &&
+          appGroupIsStopped(group)
+      )
+      .map((group) => ({ appGroupName: group.name, worktreeId: worktree.id }))
+  );
+  for (const target of targets) {
+    await startApps(controller, { repoPath, ...target });
   }
   return {
     command: "start-all-apps",
-    message: `Started apps in ${targets.length} worktree${targets.length === 1 ? "" : "s"}`,
+    message: `Started ${targets.length} App group${targets.length === 1 ? "" : "s"}`,
     ok: true,
   };
 }

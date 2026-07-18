@@ -1,5 +1,6 @@
 import type { WorkspaceController } from "../controller/workspace-controller";
-import { appsAreStopped } from "../controller/workspace-snapshot";
+import { appGroupIsStopped } from "../controller/workspace-snapshot";
+import { findAppGroup } from "./start-apps";
 import { stopApps } from "./stop-apps";
 
 const STOP_ATTEMPTS = 50;
@@ -11,16 +12,16 @@ function delay(milliseconds: number): Promise<void> {
 
 export async function stopAppsAndWait(
   controller: WorkspaceController,
-  input: { repoPath: string; worktreeId: string },
+  input: { appGroupName: string; repoPath: string; worktreeId: string },
   timeoutMessage: string
 ): Promise<void> {
   await stopApps(controller, input);
   for (let attempt = 0; attempt < STOP_ATTEMPTS; attempt += 1) {
-    if (
-      appsAreStopped(
-        controller.worktree(input.repoPath, input.worktreeId).worktree
-      )
-    ) {
+    const group = findAppGroup(
+      controller.worktree(input.repoPath, input.worktreeId).worktree,
+      input.appGroupName
+    );
+    if (appGroupIsStopped(group)) {
       return;
     }
     await delay(STOP_POLL_MS);

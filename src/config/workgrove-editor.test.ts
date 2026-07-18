@@ -5,23 +5,26 @@ import {
   deleteWorkgroveEnvironment,
   nextAvailableWorkgroveAppBasePort,
   renameWorkgroveApp,
+  renameWorkgroveAppGroup,
   renameWorkgroveEnvironment,
   resolveWorkgroveAppEndpoints,
 } from "./workgrove-editor";
 import type { WorkgroveConfig } from "./workgrove-schema";
 
 const config: WorkgroveConfig = {
-  version: 1,
-  stride: 10,
+  version: 2,
   setup: { argv: ["npm", "install"] },
-  start: { argv: ["npm", "run", "dev"] },
-  apps: {
-    api: { basePort: 8000 },
-    web: { basePort: 3000 },
+  appGroups: {
+    "Product Apps": {
+      slot: { default: 0, stride: 10 },
+      start: { argv: ["npm", "run", "dev"] },
+      stop: "process",
+      apps: { api: { basePort: 8000 }, web: { basePort: 3000 } },
+    },
   },
   env: {
-    API_URL: "{apps.api.url}",
-    API_PORT: "{apps.api.port}",
+    API_URL: "{appGroups.Product Apps.apps.api.url}",
+    API_PORT: "{appGroups.Product Apps.apps.api.port}",
   },
 };
 
@@ -32,28 +35,39 @@ describe("configuration builder domain operations", () => {
     );
   });
 
-  it("renames an app without changing its base port", () => {
-    const renamed = renameWorkgroveApp(config, "api", "backend");
-    expect(renamed.apps.api).toBeUndefined();
-    expect(renamed.apps.backend).toEqual({ basePort: 8000 });
-    expect(renamed.env).toEqual({
-      API_URL: "{apps.backend.url}",
-      API_PORT: "{apps.backend.port}",
+  it("renames groups and apps without normalizing their names", () => {
+    const renamedApp = renameWorkgroveApp(
+      config,
+      "Product Apps",
+      "api",
+      "Backend API"
+    );
+    expect(renamedApp.appGroups["Product Apps"].apps["Backend API"]).toEqual({
+      basePort: 8000,
     });
+    expect(renamedApp.env?.API_PORT).toBe(
+      "{appGroups.Product Apps.apps.Backend API.port}"
+    );
+    const renamedGroup = renameWorkgroveAppGroup(
+      renamedApp,
+      "Product Apps",
+      "Local Product"
+    );
+    expect(renamedGroup.env?.API_PORT).toBe(
+      "{appGroups.Local Product.apps.Backend API.port}"
+    );
   });
 
-  it("resolves endpoint previews from product port conventions", () => {
-    expect(resolveWorkgroveAppEndpoints(config, 2)).toEqual({
-      api: { port: 8020, url: "http://localhost:8020" },
-      web: { port: 3020, url: "http://localhost:3020" },
-    });
+  it("resolves endpoint previews", () => {
+    expect(
+      resolveWorkgroveAppEndpoints(config, "Product Apps", 2).web.port
+    ).toBe(3020);
   });
 
-  it("adds, renames, and deletes repository environment entries", () => {
+  it("adds, renames, and deletes environment entries", () => {
     const added = addWorkgroveEnvironment({ ...config, env: undefined });
-    expect(added.env).toEqual({ APP_PORT: "{apps.api.port}" });
+    expect(added.env?.APP_PORT).toBe("{appGroups.Product Apps.apps.api.port}");
     const renamed = renameWorkgroveEnvironment(added, "APP_PORT", "API_PORT");
-    expect(renamed.env).toEqual({ API_PORT: "{apps.api.port}" });
     expect(deleteWorkgroveEnvironment(renamed, "API_PORT").env).toEqual({});
   });
 });

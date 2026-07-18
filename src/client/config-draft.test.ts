@@ -10,15 +10,16 @@ import {
 
 function createConfig(): WorkgroveConfig {
   return {
-    stride: 10,
     setup: { argv: ["npm", "install"] },
-    apps: {
-      web: {
-        basePort: 3000,
+    appGroups: {
+      Apps: {
+        slot: { default: 0, stride: 10 },
+        start: { argv: ["bun", "run", "dev"] },
+        stop: "process",
+        apps: { web: { basePort: 3000 } },
       },
     },
-    start: { argv: ["bun", "run", "dev"] },
-    version: 1,
+    version: 2,
   };
 }
 
@@ -41,7 +42,12 @@ describe("configuration drafts", () => {
     const source = createConfig();
     const draft = {
       ...source,
-      apps: { web: { basePort: Number.NaN } },
+      appGroups: {
+        Apps: {
+          ...source.appGroups.Apps,
+          apps: { web: { basePort: Number.NaN } },
+        },
+      },
     };
     const storage = createMemoryStorage();
 
@@ -49,7 +55,7 @@ describe("configuration drafts", () => {
 
     const restored = loadConfigDraft("/repo/.workgrove.json", source, storage);
     expect(restored).not.toBeNull();
-    expect(Number.isNaN(restored?.apps.web.basePort)).toBe(true);
+    expect(Number.isNaN(restored?.appGroups.Apps.apps.web.basePort)).toBe(true);
 
     clearConfigDraft("/repo/.workgrove.json", storage);
     expect(
@@ -64,15 +70,19 @@ describe("configuration drafts", () => {
     saveConfigDraft(
       "/repo/.workgrove.json",
       source,
-      { ...source, apps: { web: { basePort: 3100 } } },
+      {
+        ...source,
+        appGroups: {
+          Apps: { ...source.appGroups.Apps, apps: { web: { basePort: 3100 } } },
+        },
+      },
       storage
     );
 
     const changedSource = {
       ...source,
-      apps: {
-        ...source.apps,
-        web: { basePort: 4000 },
+      appGroups: {
+        Apps: { ...source.appGroups.Apps, apps: { web: { basePort: 4000 } } },
       },
     };
     expect(

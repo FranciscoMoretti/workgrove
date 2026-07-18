@@ -1,9 +1,9 @@
 import type { WorkspaceController } from "../controller/workspace-controller";
 import type { CommandReceipt } from "../controller/workspace-snapshot";
-import { appsAreRunning } from "../controller/workspace-snapshot";
+import { appGroupIsRunning } from "../controller/workspace-snapshot";
 import { requiredSlot, requiredString } from "./command";
-import { assertSlotTargetAvailable, setSlot } from "./set-slot";
-import { startApps } from "./start-apps";
+import { setSlot } from "./set-slot";
+import { findAppGroup, startApps } from "./start-apps";
 import { stopAppsAndWait } from "./stop-apps-and-wait";
 
 export async function switchSlot(
@@ -12,23 +12,33 @@ export async function switchSlot(
 ): Promise<CommandReceipt> {
   const repoPath = requiredString(input.repoPath, "Repository path");
   const worktreeId = requiredString(input.worktreeId, "Worktree");
+  const appGroupName = requiredString(input.appGroupName, "App group");
   const slot = requiredSlot(input.slot);
   controller.assertTrusted(repoPath);
   const current = controller.worktree(repoPath, worktreeId);
-  if (!appsAreRunning(current.worktree)) {
-    throw new Error("Apps must be running before switching their slot");
+  const group = findAppGroup(current.worktree, appGroupName);
+  if (group.stop !== "process") {
+    return setSlot(controller, { appGroupName, repoPath, slot, worktreeId });
   }
-  assertSlotTargetAvailable(current.workspace, worktreeId, slot);
+  if (!appGroupIsRunning(group)) {
+    throw new Error(
+      `${appGroupName} must be running before switching its slot`
+    );
+  }
   await stopAppsAndWait(
     controller,
-    { repoPath, worktreeId },
-    "Apps did not stop within 5 seconds; slot switch cancelled"
+    { appGroupName, repoPath, worktreeId },
+    `${appGroupName} did not stop within 5 seconds; slot switch cancelled`
   );
-  setSlot(controller, { repoPath, slot, worktreeId });
-  const started = startApps(controller, { repoPath, worktreeId });
+  setSlot(controller, { appGroupName, repoPath, slot, worktreeId });
+  const started = await startApps(controller, {
+    appGroupName,
+    repoPath,
+    worktreeId,
+  });
   return {
     ...started,
     command: "switch-slot",
-    message: `Switched to slot ${slot} and restarted apps`,
+    message: `Switched ${appGroupName} to slot ${slot} and restarted it`,
   };
 }

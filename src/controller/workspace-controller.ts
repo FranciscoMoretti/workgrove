@@ -24,17 +24,18 @@ import {
 } from "../config/repository-trust";
 import type { WorkgroveCommand } from "../config/workgrove-command";
 import {
+  defaultWorkgroveSlots,
   findWorkgroveConfig,
   loadWorkgroveConfig,
   loadWorkgroveConfigDocument,
   updateWorkgroveConfig,
+  type WorkgroveSlotAssignments,
   type WorktreeEnvConfig,
 } from "../config/workgrove-config";
 import {
-  maximumWorkgroveSlot,
-  WORKGROVE_DEFAULT_SLOT,
-  WORKGROVE_SLOT_ENV,
-  WORKGROVE_SLOT_FILE,
+  maximumWorkgroveAppGroupSlot,
+  WORKGROVE_LEGACY_SLOT_FILE,
+  WORKGROVE_SLOTS_FILE,
   type WorkgroveConfig,
 } from "../config/workgrove-schema";
 import { parseWorktreeList } from "../git/discover-worktrees";
@@ -42,6 +43,7 @@ import { appHealth, resolveControlledApps } from "../runtime/app-health";
 import { commandEnvironment } from "../runtime/command-environment";
 import { inspectListeningPorts, portOwnership } from "../runtime/ports";
 import {
+  appGroupProcessId,
   listManagedProcesses,
   managedFailure,
   managedPid,
@@ -49,8 +51,8 @@ import {
   setupProcessId,
 } from "../runtime/process-supervisor";
 import {
-  type ParsedSlot,
-  parseSlotFromContent,
+  parseLegacySlot,
+  parseSlotAssignments,
   resolveSlotFilePath,
 } from "../runtime/slot-file";
 import {
@@ -60,10 +62,6 @@ import {
   type WorkgroveCommandName,
   type WorkgroveCommandResult,
 } from "./command-contract";
-import {
-  conflictingWorkgroveSlotIndexes,
-  workgroveSlotCollisionOwners,
-} from "./slot-collisions";
 import type { WorkspaceSnapshot } from "./workspace-snapshot";
 
 type CommandHandler = (
@@ -116,27 +114,12 @@ function worktreeId(path: string): string {
   return Buffer.from(realpathSync(path)).toString("base64url");
 }
 
-function slotContent(path: string): string {
+function fileContent(path: string): string {
   return existsSync(path) ? readFileSync(path, "utf8") : "";
 }
 
 function commandSummary(label: string, command: WorkgroveCommand): string {
   return `${label}: ${command.argv.join(" ")}`;
-}
-
-function slotState(
-  parsed: ParsedSlot,
-  slot: number | null,
-  index: number,
-  conflictingIndexes: ReadonlySet<number>
-): "assigned" | "conflicting" | "invalid" | "unassigned" {
-  if (parsed.kind === "invalid") {
-    return "invalid";
-  }
-  if (slot === null) {
-    return "unassigned";
-  }
-  return conflictingIndexes.has(index) ? "conflicting" : "assigned";
 }
 
 function worktreeSetupState(
@@ -148,6 +131,37 @@ function worktreeSetupState(
     return "running";
   }
   return managedFailure(processId) ? "failed" : "idle";
+}
+
+function primaryAppGroup(config: WorkgroveConfig): string {
+  const entries = Object.entries(config.appGroups);
+  return (
+    entries.find(([, group]) => group.stop === "process")?.[0] ?? entries[0][0]
+  );
+}
+
+function worktreeSlots(
+  path: string,
+  config: WorkgroveConfig,
+  primaryGroup: string
+): { invalid: boolean; slots: WorkgroveSlotAssignments } {
+  const defaults = defaultWorkgroveSlots(config);
+  const statePath = resolveSlotFilePath(path, WORKGROVE_SLOTS_FILE);
+  const parsed = parseSlotAssignments(fileContent(statePath));
+  let overrides: Record<string, number> = {};
+  if (parsed.kind === "value") {
+    overrides = parsed.slots;
+  } else if (parsed.kind === "missing") {
+    const legacyPath = resolveSlotFilePath(path, WORKGROVE_LEGACY_SLOT_FILE);
+    const legacy = parseLegacySlot(fileContent(legacyPath));
+    if (legacy !== null) {
+      overrides = { [primaryGroup]: legacy };
+    }
+  }
+  return {
+    invalid: parsed.kind === "invalid",
+    slots: { ...defaults, ...overrides },
+  };
 }
 
 export class WorkspaceController {
@@ -174,129 +188,139 @@ export class WorkspaceController {
     }
     const configDocument = loadWorkgroveConfigDocument(configPath);
     const config = configDocument.config;
-    const setupCommand = config.setup;
     const discovered = parseWorktreeList(
       git(selectedRoot, ["worktree", "list", "--porcelain"])
     ).filter((item) => !item.prunable && existsSync(item.path));
     if (discovered.length === 0) {
       throw new Error("No Git worktrees were discovered");
     }
-    const maxSlot = maximumWorkgroveSlot(config);
-    const slotFile = WORKGROVE_SLOT_FILE;
-    const parsedSlots = discovered.map((item) => {
-      const file = resolveSlotFilePath(item.path, slotFile);
-      const parsed = parseSlotFromContent(
-        slotContent(file),
-        WORKGROVE_SLOT_ENV
-      );
-      return parsed.kind === "value" && parsed.slot > maxSlot
-        ? ({ kind: "invalid", raw: String(parsed.slot) } as const)
-        : parsed;
-    });
-    const rawSlots = parsedSlots.map((parsed) =>
-      parsed.kind === "value" ? parsed.slot : null
-    );
-    const conflictingSlotIndexes = conflictingWorkgroveSlotIndexes(
-      config,
-      rawSlots
-    );
+
+    const primaryGroup = primaryAppGroup(config);
     const ports = inspectListeningPorts();
-    const appLabel = resolveControlledApps(config, WORKGROVE_DEFAULT_SLOT)
-      .map((app) => app.label)
-      .join(" + ");
     const worktrees = discovered.map((item, index) => {
       const id = worktreeId(item.path);
       const path = realpathSync(item.path);
-      const slot = rawSlots[index];
-      const controlledApps =
-        slot === null ? [] : resolveControlledApps(config, slot);
-      const apps = controlledApps.map((app) => {
-        const ownership = portOwnership(ports, app.port, item.path);
-        return { ...app, listening: ownership === "owned", ownership };
-      });
-      const listening = new Set(
-        apps.filter((app) => app.listening).map((app) => app.port)
+      const resolvedSlots = worktreeSlots(path, config, primaryGroup);
+      const appGroups = Object.entries(config.appGroups).map(
+        ([name, configured]) => {
+          const slot = resolvedSlots.slots[name] ?? configured.slot.default;
+          const slotInvalid =
+            resolvedSlots.invalid ||
+            slot > maximumWorkgroveAppGroupSlot(configured);
+          const controlledApps = slotInvalid
+            ? []
+            : resolveControlledApps(config, name, slot);
+          const commandControlled = configured.stop !== "process";
+          const apps = controlledApps.map((app) => {
+            const ownership = portOwnership(ports, app.port, path);
+            return {
+              ...app,
+              listening: commandControlled
+                ? ownership !== "none"
+                : ownership === "owned",
+              ownership,
+            };
+          });
+          const listening = new Set(
+            apps.filter((app) => app.listening).map((app) => app.port)
+          );
+          return {
+            apps,
+            health: appHealth(controlledApps, listening),
+            name,
+            processRunning:
+              configured.stop === "process" &&
+              managedPid(appGroupProcessId(id, name), path) !== null,
+            slot,
+            slotState: slotInvalid
+              ? ("invalid" as const)
+              : ("assigned" as const),
+            stop: commandControlled
+              ? ("command" as const)
+              : ("process" as const),
+          };
+        }
       );
+      const primary =
+        appGroups.find((group) => group.name === primaryGroup) ?? appGroups[0];
       return {
-        appLabel: appLabel || "Apps",
-        apps,
+        appLabel: primary.name,
+        apps: primary.apps,
+        appGroups,
         branch:
           item.branch ?? `detached ${item.head?.slice(0, 7) ?? "unknown"}`,
-        health: appHealth(controlledApps, listening),
+        health: primary.health,
         id,
         isMain: index === 0,
-        name: basename(item.path),
+        name: basename(path),
         path,
-        processRunning: managedPid(id, path) !== null,
+        processRunning: primary.processRunning,
         setupState: worktreeSetupState(id, path),
-        slot,
-        slotState: slotState(
-          parsedSlots[index],
-          slot,
-          index,
-          conflictingSlotIndexes
-        ),
+        slot: primary.slot,
+        slotState: primary.slotState,
       };
     });
-    const occupied = new Map<number, string>();
-    for (const worktree of worktrees) {
-      if (worktree.slot !== null && !occupied.has(worktree.slot)) {
-        occupied.set(worktree.slot, worktree.name);
-      }
-    }
-    const visibleSlots = new Set<number>(occupied.keys());
-    const unassignedCount = worktrees.filter(
-      (worktree) => worktree.slotState === "unassigned"
-    ).length;
-    const suggestedSlotCount = Math.max(12, unassignedCount + 3);
-    for (
-      let slot = 0;
-      slot <= maxSlot && visibleSlots.size < occupied.size + suggestedSlotCount;
-      slot += 1
-    ) {
-      visibleSlots.add(slot);
-    }
-    const assignedSlots = worktrees.flatMap((worktree) =>
-      worktree.slot === null
-        ? []
-        : [{ id: worktree.id, name: worktree.name, slot: worktree.slot }]
-    );
-    const slotOptions = [...visibleSlots]
-      .sort((left, right) => left - right)
-      .map((slot) => {
-        const collisionOwners = workgroveSlotCollisionOwners(
-          config,
-          slot,
-          assignedSlots
+
+    const appGroupSlotOptions = Object.fromEntries(
+      Object.entries(config.appGroups).map(([name, configured]) => {
+        const occupied = new Set(
+          worktrees.map(
+            (worktree) =>
+              worktree.appGroups.find((group) => group.name === name)?.slot ??
+              configured.slot.default
+          )
         );
-        return {
-          apps: resolveControlledApps(config, slot)
-            .filter((app) => app.probe === "tcp")
-            .map((app) => ({ label: app.label, port: app.port })),
-          collisionOwners: collisionOwners.map(({ id, name }) => ({
-            id,
-            name,
-          })),
-          slot,
-        };
-      });
+        const visible = new Set(occupied);
+        const maximum = maximumWorkgroveAppGroupSlot(configured);
+        for (
+          let slot = 0;
+          slot <= maximum && visible.size < occupied.size + 12;
+          slot += 1
+        ) {
+          visible.add(slot);
+        }
+        return [
+          name,
+          [...visible]
+            .sort((left, right) => left - right)
+            .map((slot) => ({
+              apps: resolveControlledApps(config, name, slot).map((app) => ({
+                label: app.label,
+                port: app.port,
+              })),
+              collisionOwners: [],
+              slot,
+            })),
+        ];
+      })
+    );
+
     const globalProcesses = listManagedProcesses();
+    const lifecycleCommands = Object.entries(config.appGroups).flatMap(
+      ([name, group]) => [
+        commandSummary(`${name} Start`, group.start),
+        ...(group.stop === "process"
+          ? []
+          : [commandSummary(`${name} Stop`, group.stop)]),
+      ]
+    );
     return {
+      appGroupSlotOptions,
       config,
       configPath,
       configRevision: configDocument.revision,
+      defaultSlot: config.appGroups[primaryGroup].slot.default,
       globalProcesses,
       globalRunningCount: globalProcesses.length,
-      defaultSlot: WORKGROVE_DEFAULT_SLOT,
       mainWorktreePath: worktrees[0].path,
+      primaryAppGroup: primaryGroup,
       repoName: basename(worktrees[0].path),
       repoPath: selectedRoot,
-      slotEnv: WORKGROVE_SLOT_ENV,
-      slotFile,
-      slotOptions,
+      slotFile: WORKGROVE_SLOTS_FILE,
+      slotOptions: appGroupSlotOptions[primaryGroup],
       trustCommands: [
-        commandSummary("Setup", setupCommand),
-        commandSummary("Apps", config.start),
+        commandSummary("Setup", config.setup),
+        ...lifecycleCommands,
       ],
       trustRequired: repositoryRequiresTrust(config),
       trusted: repositoryIsTrusted(selectedRoot, config),
@@ -320,30 +344,30 @@ export class WorkspaceController {
     revision: string
   ): void {
     const workspace = this.inspect(repoPath);
-    const topology = (value: WorkgroveConfig) => ({
-      apps: Object.fromEntries(
-        Object.entries(value.apps).map(([id, app]) => [id, app.basePort])
-      ),
-    });
+    const topology = (value: WorkgroveConfig) => value.appGroups;
     const topologyChanged =
       JSON.stringify(topology(workspace.config)) !==
       JSON.stringify(topology(config));
     const hasRunningProcesses = workspace.worktrees.some(
       (worktree) =>
-        worktree.processRunning ||
-        worktree.health !== "not-running" ||
-        worktree.setupState === "running"
+        worktree.setupState === "running" ||
+        worktree.appGroups.some(
+          (group) => group.processRunning || group.health !== "not-running"
+        )
     );
     if (topologyChanged && hasRunningProcesses) {
       throw new Error(
-        "Stop repository apps and setup processes before changing app ports."
+        "Stop repository App groups and setup processes before changing their configuration."
       );
     }
     updateWorkgroveConfig(workspace.configPath, config, revision);
   }
 
-  environment(repoPath: string, slot: number): Record<string, string> {
-    return commandEnvironment(this.config(repoPath), slot);
+  environment(
+    repoPath: string,
+    slots: Record<string, number>
+  ): Record<string, string> {
+    return commandEnvironment(this.config(repoPath), slots);
   }
 
   assertTrusted(repoPath: string): void {
@@ -362,8 +386,10 @@ export class WorkspaceController {
     return { workspace, worktree };
   }
 
-  logs(repoPath: string, id: string): string[] {
+  logs(repoPath: string, id: string, appGroupName?: string): string[] {
     this.worktree(repoPath, id);
-    return readManagedLog(id);
+    return readManagedLog(
+      appGroupName ? appGroupProcessId(id, appGroupName) : id
+    );
   }
 }

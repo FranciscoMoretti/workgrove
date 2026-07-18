@@ -36,6 +36,7 @@ const worktree: WorktreeSnapshot = {
       url: "http://localhost:3002",
     },
   ],
+  appGroups: [],
   branch: "main",
   health: "partially-running",
   id: "worktree",
@@ -50,6 +51,20 @@ const worktree: WorktreeSnapshot = {
 
 describe("worktree table", () => {
   it("renders every app port in the monospace font", () => {
+    const withGroup = {
+      ...worktree,
+      appGroups: [
+        {
+          apps: worktree.apps,
+          health: worktree.health,
+          name: "Product Apps",
+          processRunning: true,
+          slot: 0,
+          slotState: "assigned" as const,
+          stop: "process" as const,
+        },
+      ],
+    };
     const markup = renderToStaticMarkup(
       createElement(WorktreeTable, {
         actionPending: () => false,
@@ -59,21 +74,13 @@ describe("worktree table", () => {
           onStart: () => undefined,
           onStop: () => undefined,
         },
-        defaultSlot: 0,
+        appGroupSlots: { "Product Apps": [] },
         onDelete: () => undefined,
         onInspect: () => undefined,
         onSetSlot: () => undefined,
-        onToggleApps: () => undefined,
+        onToggleAppGroup: () => undefined,
         selectedId: null,
-        slots: [],
-        visibleActions: {
-          onRestart: () => undefined,
-          onSetup: () => undefined,
-          onStart: () => undefined,
-          onStop: () => undefined,
-          pending: false,
-        },
-        worktrees: [worktree],
+        worktrees: [withGroup],
       })
     );
 

@@ -14,36 +14,41 @@ import { parseWorktreeList } from "../git/discover-worktrees";
 import { appHealth, resolveControlledApps } from "../runtime/app-health";
 import { commandEnvironment } from "../runtime/command-environment";
 import {
-  parseSlotFromContent,
+  parseSlotAssignments,
   resolveSlotFilePath,
-  updateSlotFileContent,
+  slotAssignmentsContent,
 } from "../runtime/slot-file";
 import { WorkspaceController } from "./workspace-controller";
 import { appsCanRestart } from "./workspace-snapshot";
 
 const config = {
-  version: 1,
-  stride: 10,
+  version: 2,
   setup: { argv: ["npm", "install"] },
-  start: { argv: ["bun", "run", "dev:all"] },
-  apps: {
-    chat: { basePort: 3000 },
-    electron: { basePort: 3001 },
-    site: { basePort: 3002 },
+  appGroups: {
+    Apps: {
+      slot: { default: 0, stride: 10 },
+      start: { argv: ["bun", "run", "dev:all"] },
+      stop: "process",
+      apps: {
+        chat: { basePort: 3000 },
+        electron: { basePort: 3001 },
+        site: { basePort: 3002 },
+      },
+    },
   },
   env: {
-    CHAT_PORT: "{apps.chat.port}",
-    ELECTRON_PORT: "{apps.electron.port}",
-    SITE_PORT: "{apps.site.port}",
+    CHAT_PORT: "{appGroups.Apps.apps.chat.port}",
+    ELECTRON_PORT: "{appGroups.Apps.apps.electron.port}",
+    SITE_PORT: "{appGroups.Apps.apps.site.port}",
   },
 } satisfies WorktreeEnvConfig;
 
 describe("controlled app configuration", () => {
   it("derives app labels and ports entirely from worktree config", () => {
-    expect(resolveControlledApps(config, 6)).toEqual([
+    expect(resolveControlledApps(config, "Apps", 6)).toEqual([
       {
         id: "chat",
-        label: "Chat",
+        label: "chat",
         open: true,
         port: 3060,
         probe: "tcp",
@@ -52,7 +57,7 @@ describe("controlled app configuration", () => {
       },
       {
         id: "electron",
-        label: "Electron",
+        label: "electron",
         open: true,
         port: 3061,
         probe: "tcp",
@@ -61,7 +66,7 @@ describe("controlled app configuration", () => {
       },
       {
         id: "site",
-        label: "Site",
+        label: "site",
         open: true,
         port: 3062,
         probe: "tcp",
@@ -74,23 +79,26 @@ describe("controlled app configuration", () => {
   it("injects explicitly configured repository environment variables", () => {
     const singleAppConfig = {
       ...config,
-      apps: { app: config.apps.chat },
-      env: { APP_PORT: "{apps.app.port}" },
+      appGroups: {
+        Apps: {
+          ...config.appGroups.Apps,
+          apps: { app: config.appGroups.Apps.apps.chat },
+        },
+      },
+      env: { APP_PORT: "{appGroups.Apps.apps.app.port}" },
     } satisfies WorktreeEnvConfig;
-    expect(commandEnvironment(singleAppConfig, 4)).toEqual({
+    expect(commandEnvironment(singleAppConfig, { Apps: 4 })).toEqual({
       APP_PORT: "3040",
-      WORKGROVE_SLOT: "4",
     });
-    expect(commandEnvironment(config, 4)).toEqual({
+    expect(commandEnvironment(config, { Apps: 4 })).toEqual({
       CHAT_PORT: "3040",
       ELECTRON_PORT: "3041",
       SITE_PORT: "3042",
-      WORKGROVE_SLOT: "4",
     });
   });
 
   it("reports stopped, partial, and running from required configured probes", () => {
-    const apps = resolveControlledApps(config, 6);
+    const apps = resolveControlledApps(config, "Apps", 6);
 
     expect(appHealth(apps, new Set())).toBe("not-running");
     expect(appHealth(apps, new Set([3060]))).toBe("partially-running");
@@ -99,29 +107,23 @@ describe("controlled app configuration", () => {
 });
 
 describe("slot file updates", () => {
-  it("changes only the configured slot variable and preserves dialog-worthy context", () => {
+  it("serializes named App group slots", () => {
     expect(
-      updateSlotFileContent(
-        "# local worktree settings\nKEEP_ME=yes\nCHATJS_DEV_SLOT=2\n",
-        "CHATJS_DEV_SLOT",
-        7
+      parseSlotAssignments(
+        slotAssignmentsContent({ Apps: 3, Infrastructure: 0 })
       )
-    ).toBe("# local worktree settings\nKEEP_ME=yes\nCHATJS_DEV_SLOT=7\n");
-  });
-
-  it("appends a missing slot variable", () => {
-    expect(updateSlotFileContent("KEEP_ME=yes", "CHATJS_DEV_SLOT", 3)).toBe(
-      "KEEP_ME=yes\nCHATJS_DEV_SLOT=3\n"
-    );
+    ).toEqual({
+      kind: "value",
+      slots: { Apps: 3, Infrastructure: 0 },
+    });
   });
 
   it("distinguishes malformed values from missing assignments", () => {
-    expect(parseSlotFromContent("KEEP_ME=yes\n", "CHATJS_DEV_SLOT")).toEqual({
-      kind: "missing",
+    expect(parseSlotAssignments("")).toEqual({ kind: "missing", slots: {} });
+    expect(parseSlotAssignments("not json")).toEqual({
+      kind: "invalid",
+      raw: "not json",
     });
-    expect(
-      parseSlotFromContent("CHATJS_DEV_SLOT=oops\n", "CHATJS_DEV_SLOT")
-    ).toEqual({ kind: "invalid", raw: "oops" });
   });
 
   it("rejects paths that escape the worktree or traverse a symlink", () => {
@@ -192,7 +194,7 @@ describe("app lifecycle availability", () => {
       appsCanRestart({
         health: "running",
         processRunning: true,
-        slotState: "conflicting",
+        slotState: "invalid",
       })
     ).toBe(false);
     expect(

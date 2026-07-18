@@ -2,7 +2,6 @@ import {
   resolveWorkgroveAppGroup,
   type WorktreeEnvConfig,
 } from "../config/workgrove-config";
-import { WORKGROVE_SLOT_ENV } from "../config/workgrove-schema";
 
 export type AppHealth = "not-running" | "partially-running" | "running";
 
@@ -16,22 +15,15 @@ export interface ControlledApp {
   url: string;
 }
 
-function displayName(id: string): string {
-  return id
-    .replace(/[-_]+/g, " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
 export function resolveControlledApps(
   config: WorktreeEnvConfig,
+  groupName: string,
   slot: number
 ): ControlledApp[] {
-  const appGroup = resolveWorkgroveAppGroup(config, {
-    [WORKGROVE_SLOT_ENV]: String(slot),
-  });
+  const appGroup = resolveWorkgroveAppGroup(config, groupName, slot);
   return Object.entries(appGroup.apps).map(([id, app]) => ({
     id,
-    label: displayName(id),
+    label: id,
     open: true,
     port: app.port,
     probe: "tcp",

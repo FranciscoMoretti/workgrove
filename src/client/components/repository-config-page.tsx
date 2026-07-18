@@ -13,11 +13,13 @@ import {
   deleteWorkgroveEnvironment,
   nextAvailableWorkgroveAppBasePort,
   renameWorkgroveApp,
+  renameWorkgroveAppGroup,
   renameWorkgroveEnvironment,
   resolveWorkgroveAppEndpoints,
 } from "../../config/workgrove-editor";
 import {
   cloneWorkgroveConfig,
+  WorkgroveAppGroupNameSchema,
   WorkgroveAppIdSchema,
   type WorkgroveConfig,
   WorkgroveConfigSchema,
@@ -34,6 +36,13 @@ import { Button } from "./ui/button";
 import { Field, FieldError, FieldLabel } from "./ui/field";
 import { Input } from "./ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "./ui/input-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
 import { Separator } from "./ui/separator";
 import {
   Table,
@@ -48,7 +57,7 @@ function editableCommandLine(argv: string[]): string {
   return argv.length === 1 && argv[0] === "" ? "" : formatCommandLine(argv);
 }
 
-function CommandLineField({
+function CommandField({
   command,
   id,
   label,
@@ -58,145 +67,79 @@ function CommandLineField({
   command: WorkgroveCommand;
   id: string;
   label: string;
-  onChange: (argv: string[]) => void;
+  onChange: (command: WorkgroveCommand) => void;
   placeholder: string;
 }) {
   const externalValue = editableCommandLine(command.argv);
-  const [draft, setDraft] = useState(() => externalValue);
-  const [parseError, setParseError] = useState<string | null>(null);
-  const submittedValue = useRef(externalValue);
-
+  const [draft, setDraft] = useState(externalValue);
+  const [error, setError] = useState<string | null>(null);
+  const submitted = useRef(externalValue);
   useEffect(() => {
-    if (externalValue !== submittedValue.current) {
+    if (externalValue !== submitted.current) {
       setDraft(externalValue);
-      setParseError(null);
     }
-    submittedValue.current = externalValue;
+    submitted.current = externalValue;
   }, [externalValue]);
-
-  function update(nextDraft: string, normalize: boolean): void {
-    setDraft(nextDraft);
+  function update(value: string, normalize: boolean) {
+    setDraft(value);
     try {
-      const argv = parseCommandLine(nextDraft);
+      const argv = parseCommandLine(value);
       if (argv.length === 0) {
         throw new Error("Enter a command to run");
       }
       const formatted = formatCommandLine(argv);
-      submittedValue.current = formatted;
-      setParseError(null);
+      submitted.current = formatted;
+      setError(null);
       if (normalize) {
         setDraft(formatted);
       }
-      onChange(argv);
+      onChange({ argv });
     } catch (caught) {
-      submittedValue.current = "";
-      setParseError(
+      submitted.current = "";
+      setError(
         caught instanceof Error ? caught.message : "Enter a valid command"
       );
-      onChange([]);
+      onChange({ argv: [] });
     }
   }
-
   return (
-    <Field data-invalid={Boolean(parseError)}>
-      <FieldLabel htmlFor={`${id}-command`}>{label}</FieldLabel>
+    <Field data-invalid={Boolean(error)}>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
       <InputGroup>
         <InputGroupAddon>
           <TerminalSquareIcon />
         </InputGroupAddon>
         <InputGroupInput
-          aria-invalid={Boolean(parseError)}
-          id={`${id}-command`}
+          aria-invalid={Boolean(error)}
+          id={id}
           onBlur={() => update(draft, true)}
           onChange={(event) => update(event.target.value, false)}
           placeholder={placeholder}
           value={draft}
         />
       </InputGroup>
-      <FieldError>{parseError}</FieldError>
+      <FieldError>{error}</FieldError>
     </Field>
   );
 }
 
-function CommandEditor({
-  description,
-  id,
-  label,
-  onChange,
-  placeholder,
-  value,
-}: {
-  description: string;
-  id: string;
-  label: string;
-  onChange: (value: WorkgroveCommand) => void;
-  placeholder: string;
-  value: WorkgroveCommand;
-}) {
-  return (
-    <section className="space-y-4">
-      <div className="space-y-1">
-        <h3 className="font-medium text-sm">{label}</h3>
-        <p className="text-muted-foreground text-sm">{description}</p>
-      </div>
-      <CommandLineField
-        command={value}
-        id={id}
-        label="Command"
-        onChange={(argv) => onChange({ argv })}
-        placeholder={placeholder}
-      />
-    </section>
-  );
-}
-
-function AppIdInput({
-  id,
-  onRename,
-}: {
-  id: string;
-  onRename: (nextId: string) => string | null;
-}) {
-  const [draft, setDraft] = useState(id);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => setDraft(id), [id]);
-
-  return (
-    <div className="space-y-1">
-      <Input
-        aria-invalid={Boolean(error)}
-        aria-label={`App identifier ${id}`}
-        id={`app-${id}-id`}
-        onBlur={() => setError(onRename(draft))}
-        onChange={(event) => {
-          setDraft(event.target.value);
-          setError(null);
-        }}
-        value={draft}
-      />
-      {error ? <p className="text-destructive text-xs">{error}</p> : null}
-    </div>
-  );
-}
-
-function EnvironmentNameInput({
+function EditableName({
+  ariaLabel,
   name,
   onRename,
 }: {
+  ariaLabel: string;
   name: string;
   onRename: (nextName: string) => string | null;
 }) {
   const [draft, setDraft] = useState(name);
   const [error, setError] = useState<string | null>(null);
-
   useEffect(() => setDraft(name), [name]);
-
   return (
     <div className="space-y-1">
       <Input
         aria-invalid={Boolean(error)}
-        aria-label={`Environment variable ${name}`}
+        aria-label={ariaLabel}
         onBlur={() => setError(onRename(draft))}
         onChange={(event) => {
           setDraft(event.target.value);
@@ -209,13 +152,7 @@ function EnvironmentNameInput({
   );
 }
 
-function SectionHeading({
-  description,
-  title,
-}: {
-  description: string;
-  title: string;
-}) {
+function heading(title: string, description: string) {
   return (
     <div className="space-y-1">
       <h2 className="font-medium text-base">{title}</h2>
@@ -247,7 +184,7 @@ export function RepositoryConfigPage({
   const [draft, setDraft] = useState<WorkgroveConfig>(
     () => loadConfigDraft(configPath, sourceConfig) ?? sourceConfig
   );
-  const [discardConfirmationOpen, setDiscardConfirmationOpen] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
   const isDirty = JSON.stringify(draft) !== JSON.stringify(sourceConfig);
   const validation = WorkgroveConfigSchema.safeParse(draft);
 
@@ -258,116 +195,117 @@ export function RepositoryConfigPage({
       clearConfigDraft(configPath);
     }
   }, [configPath, draft, isDirty, sourceConfig]);
-
-  useEffect(() => {
-    if (!isDirty) {
-      return;
-    }
-    const preventUnsavedNavigation = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", preventUnsavedNavigation);
-    return () =>
-      window.removeEventListener("beforeunload", preventUnsavedNavigation);
-  }, [isDirty]);
-
   useEffect(() => {
     onDirtyChange(isDirty);
     return () => onDirtyChange(false);
   }, [isDirty, onDirtyChange]);
-
   useEffect(() => {
     if (navigationRequest > 0) {
-      setDiscardConfirmationOpen(true);
+      setDiscardOpen(true);
     }
   }, [navigationRequest]);
+  useEffect(() => {
+    if (!isDirty) {
+      return;
+    }
+    const prevent = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", prevent);
+    return () => window.removeEventListener("beforeunload", prevent);
+  }, [isDirty]);
 
-  function requestClose(): void {
+  function requestClose() {
     if (isDirty) {
-      setDiscardConfirmationOpen(true);
+      setDiscardOpen(true);
     } else {
       onClose();
     }
   }
-
-  function renameApp(id: string, nextId: string): string | null {
-    if (nextId === id) {
+  function renameGroup(name: string, next: string): string | null {
+    if (name === next) {
       return null;
     }
-    const parsed = WorkgroveAppIdSchema.safeParse(nextId);
-    if (!parsed.success) {
-      return "Use only letters, numbers, underscores, and hyphens";
+    if (!WorkgroveAppGroupNameSchema.safeParse(next).success) {
+      return "Enter a group name";
     }
-    if (Object.hasOwn(draft.apps, nextId)) {
-      return `App ${nextId} already exists`;
+    if (Object.hasOwn(draft.appGroups, next)) {
+      return `${next} already exists`;
     }
-    setDraft((current) => renameWorkgroveApp(current, id, nextId));
+    setDraft((current) => renameWorkgroveAppGroup(current, name, next));
     return null;
   }
-
-  function addApp(): void {
-    let id = "app";
+  function addGroup() {
+    let name = "New App Group";
     let suffix = 2;
-    while (Object.hasOwn(draft.apps, id)) {
-      id = `app${suffix}`;
-      suffix += 1;
+    while (Object.hasOwn(draft.appGroups, name)) {
+      name = `New App Group ${suffix++}`;
     }
     setDraft((current) => ({
       ...current,
-      apps: {
-        ...current.apps,
-        [id]: { basePort: nextAvailableWorkgroveAppBasePort(current.apps) },
+      appGroups: {
+        ...current.appGroups,
+        [name]: {
+          slot: { default: 0, stride: 10 },
+          start: { argv: [""] },
+          stop: "process",
+          apps: { App: { basePort: 3000 } },
+        },
       },
     }));
   }
-
-  function renameEnvironment(name: string, nextName: string): string | null {
-    if (nextName === name) {
-      return null;
-    }
-    if (!WorkgroveEnvironmentNameSchema.safeParse(nextName).success) {
-      return "Use a valid environment variable name";
-    }
-    if (Object.hasOwn(draft.env ?? {}, nextName)) {
-      return `${nextName} already exists`;
-    }
-    setDraft((current) => renameWorkgroveEnvironment(current, name, nextName));
-    return null;
-  }
-
-  function addEnvironment(): void {
-    setDraft(addWorkgroveEnvironment);
-  }
-
-  function deleteEnvironment(name: string): void {
-    setDraft((current) => deleteWorkgroveEnvironment(current, name));
-  }
-
-  function deleteApp(id: string): void {
+  function updateGroup(
+    name: string,
+    update: (
+      group: WorkgroveConfig["appGroups"][string]
+    ) => WorkgroveConfig["appGroups"][string]
+  ) {
     setDraft((current) => ({
       ...current,
-      apps: Object.fromEntries(
-        Object.entries(current.apps).filter(([appId]) => appId !== id)
-      ),
+      appGroups: {
+        ...current.appGroups,
+        [name]: update(current.appGroups[name]),
+      },
     }));
   }
-
-  async function save(): Promise<void> {
+  function renameApp(
+    groupName: string,
+    name: string,
+    next: string
+  ): string | null {
+    if (name === next) {
+      return null;
+    }
+    if (!WorkgroveAppIdSchema.safeParse(next).success) {
+      return "Enter an app name";
+    }
+    if (Object.hasOwn(draft.appGroups[groupName].apps, next)) {
+      return `${next} already exists`;
+    }
+    setDraft((current) => renameWorkgroveApp(current, groupName, name, next));
+    return null;
+  }
+  function renameEnvironment(name: string, next: string): string | null {
+    if (name === next) {
+      return null;
+    }
+    if (!WorkgroveEnvironmentNameSchema.safeParse(next).success) {
+      return "Use a valid environment variable name";
+    }
+    if (Object.hasOwn(draft.env ?? {}, next)) {
+      return `${next} already exists`;
+    }
+    setDraft((current) => renameWorkgroveEnvironment(current, name, next));
+    return null;
+  }
+  async function save() {
     if (!validation.success) {
       return;
     }
     await onSave(validation.data);
     clearConfigDraft(configPath);
   }
-
-  const endpoints = (() => {
-    try {
-      return resolveWorkgroveAppEndpoints(draft, 0);
-    } catch {
-      return {};
-    }
-  })();
   const issues = validation.success ? [] : validation.error.issues;
 
   return (
@@ -378,251 +316,361 @@ export function RepositoryConfigPage({
             aria-label="Back to worktrees"
             onClick={requestClose}
             size="icon"
-            type="button"
             variant="ghost"
           >
             <ArrowLeftIcon />
           </Button>
-          <div className="space-y-1">
-            <h1 className="font-heading font-medium text-xl tracking-tight">
+          <div>
+            <h1 className="font-heading font-medium text-xl">
               Repository settings
             </h1>
             <p className="text-muted-foreground text-sm">
-              Configure one setup command, one start command, and the apps they
-              expose.
+              Configure independently managed App groups and their endpoints.
             </p>
           </div>
         </div>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-7 px-6 py-8">
-          <p className="max-w-3xl text-muted-foreground text-sm">
-            Workgrove allocates endpoints and starts one repository command.
-            Your repository owns how that command orchestrates its apps.
-          </p>
-
-          <section className="space-y-5">
-            <SectionHeading
-              description="Commands run from the repository root and share the environment configured below."
-              title="Commands"
+          <section className="space-y-4">
+            {heading("Setup", "This finite command prepares each worktree.")}
+            <CommandField
+              command={draft.setup}
+              id="repository-setup"
+              label="Command"
+              onChange={(setup) =>
+                setDraft((current) => ({ ...current, setup }))
+              }
+              placeholder="bun install"
             />
-            <div className="grid gap-6 md:grid-cols-2">
-              <CommandEditor
-                description="A finite command that prepares each worktree."
-                id="repository-setup"
-                label="Setup"
-                onChange={(setup) =>
-                  setDraft((current) => ({ ...current, setup }))
-                }
-                placeholder="npm install"
-                value={draft.setup}
-              />
-              <CommandEditor
-                description="A foreground command that starts all apps together."
-                id="repository-start"
-                label="Start"
-                onChange={(start) =>
-                  setDraft((current) => ({ ...current, start }))
-                }
-                placeholder="npm run dev"
-                value={draft.start}
-              />
+          </section>
+          <Separator />
+          <section className="space-y-5">
+            <div className="flex items-start justify-between gap-4">
+              {heading(
+                "App groups",
+                "Each group has independent lifecycle, slot allocation, and observed endpoints."
+              )}
+              <Button onClick={addGroup} variant="outline">
+                <PlusIcon />
+                Add group
+              </Button>
             </div>
-          </section>
-
-          <Separator />
-
-          <section className="grid gap-5 md:grid-cols-[1fr_14rem]">
-            <SectionHeading
-              description="The stride is the port offset between worktree slots. Slot 2 with stride 10 adds 20 to every base port."
-              title="Port allocation"
-            />
-            <Field>
-              <FieldLabel htmlFor="repository-stride">Stride</FieldLabel>
-              <Input
-                className="font-mono tabular-nums"
-                id="repository-stride"
-                max={65_535}
-                min={1}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    stride:
-                      event.target.value === ""
-                        ? Number.NaN
-                        : Number(event.target.value),
-                  }))
-                }
-                type="number"
-                value={Number.isNaN(draft.stride) ? "" : draft.stride}
-              />
-            </Field>
-          </section>
-
-          <Separator />
-
-          <section className="space-y-5">
-            <SectionHeading
-              description="Each app is an observable local endpoint. Its port is base port + slot × stride."
-              title="Apps"
-            />
-            <div className="overflow-hidden rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Identifier</TableHead>
-                    <TableHead className="w-40">Base port</TableHead>
-                    <TableHead>Slot 0 endpoint</TableHead>
-                    <TableHead className="w-12">
-                      <span className="sr-only">Actions</span>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {Object.entries(draft.apps).map(([id, app]) => (
-                    <TableRow key={id}>
-                      <TableCell className="min-w-48 whitespace-normal align-top">
-                        <AppIdInput
-                          id={id}
-                          onRename={(nextId) => renameApp(id, nextId)}
-                        />
-                      </TableCell>
-                      <TableCell className="align-top">
-                        <Input
-                          aria-label={`Base port for ${id}`}
-                          className="font-mono tabular-nums"
-                          id={`app-${id}-port`}
-                          max={65_535}
-                          min={1024}
-                          onChange={(event) =>
-                            setDraft((current) => ({
-                              ...current,
-                              apps: {
-                                ...current.apps,
-                                [id]: {
-                                  basePort:
-                                    event.target.value === ""
-                                      ? Number.NaN
-                                      : Number(event.target.value),
-                                },
-                              },
-                            }))
-                          }
-                          type="number"
-                          value={Number.isNaN(app.basePort) ? "" : app.basePort}
-                        />
-                      </TableCell>
-                      <TableCell className="align-top text-muted-foreground">
-                        <code className="font-mono tabular-nums">
-                          {endpoints[id]?.url ?? "Invalid port"}
-                        </code>
-                      </TableCell>
-                      <TableCell className="align-top">
-                        <Button
-                          aria-label={`Delete ${id}`}
-                          disabled={Object.keys(draft.apps).length === 1}
-                          onClick={() => deleteApp(id)}
-                          size="icon"
-                          type="button"
-                          variant="ghost"
-                        >
-                          <Trash2Icon />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            <Button onClick={addApp} type="button" variant="outline">
-              <PlusIcon data-icon="inline-start" />
-              Add app
-            </Button>
-          </section>
-
-          <Separator />
-
-          <section className="space-y-5">
-            <SectionHeading
-              description="Expose only the values your repository start script needs. Values may use {slot}, {apps.<id>.port}, or {apps.<id>.url}."
-              title="Environment"
-            />
-            <div className="overflow-hidden rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-64">Variable</TableHead>
-                    <TableHead>Value</TableHead>
-                    <TableHead className="w-12">
-                      <span className="sr-only">Actions</span>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {Object.entries(draft.env ?? {}).length === 0 ? (
-                    <TableRow>
-                      <TableCell
-                        className="py-6 text-center text-muted-foreground"
-                        colSpan={3}
+            {Object.entries(draft.appGroups).map(([groupName, group]) => {
+              const endpoints = resolveWorkgroveAppEndpoints(
+                draft,
+                groupName,
+                group.slot.default
+              );
+              return (
+                <div
+                  className="space-y-5 rounded-lg border p-5"
+                  key={groupName}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="max-w-md flex-1">
+                      <EditableName
+                        ariaLabel={`App group name ${groupName}`}
+                        name={groupName}
+                        onRename={(next) => renameGroup(groupName, next)}
+                      />
+                    </div>
+                    <Button
+                      aria-label={`Delete ${groupName}`}
+                      disabled={Object.keys(draft.appGroups).length === 1}
+                      onClick={() =>
+                        setDraft((current) => ({
+                          ...current,
+                          appGroups: Object.fromEntries(
+                            Object.entries(current.appGroups).filter(
+                              ([name]) => name !== groupName
+                            )
+                          ),
+                        }))
+                      }
+                      size="icon"
+                      variant="ghost"
+                    >
+                      <Trash2Icon />
+                    </Button>
+                  </div>
+                  <div className="grid gap-5 md:grid-cols-2">
+                    <CommandField
+                      command={group.start}
+                      id={`${groupName}-start`}
+                      label="Start command"
+                      onChange={(start) =>
+                        updateGroup(groupName, (current) => ({
+                          ...current,
+                          start,
+                        }))
+                      }
+                      placeholder="bun dev"
+                    />
+                    <Field>
+                      <FieldLabel htmlFor={`${groupName}-stop-mode`}>
+                        Stop
+                      </FieldLabel>
+                      <Select
+                        onValueChange={(value) =>
+                          updateGroup(groupName, (current) => ({
+                            ...current,
+                            stop:
+                              value === "process" ? "process" : { argv: [""] },
+                          }))
+                        }
+                        value={group.stop === "process" ? "process" : "command"}
                       >
-                        No repository environment variables exposed.
-                      </TableCell>
-                    </TableRow>
-                  ) : null}
-                  {Object.entries(draft.env ?? {}).map(([name, value]) => (
-                    <TableRow key={name}>
-                      <TableCell className="align-top">
-                        <EnvironmentNameInput
-                          name={name}
-                          onRename={(nextName) =>
-                            renameEnvironment(name, nextName)
-                          }
-                        />
-                      </TableCell>
-                      <TableCell className="align-top">
-                        <Input
-                          aria-label={`Value for ${name}`}
-                          onChange={(event) =>
-                            setDraft((current) => ({
-                              ...current,
-                              env: {
-                                ...current.env,
-                                [name]: event.target.value,
-                              },
-                            }))
-                          }
-                          placeholder={`{apps.${Object.keys(draft.apps)[0] ?? "app"}.port}`}
-                          value={value}
-                        />
-                      </TableCell>
-                      <TableCell className="align-top">
-                        <Button
-                          aria-label={`Delete ${name}`}
-                          onClick={() => deleteEnvironment(name)}
-                          size="icon"
-                          type="button"
-                          variant="ghost"
-                        >
-                          <Trash2Icon />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            <Button onClick={addEnvironment} type="button" variant="outline">
-              <PlusIcon data-icon="inline-start" />
+                        <SelectTrigger id={`${groupName}-stop-mode`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="process">
+                            Stop the process
+                          </SelectItem>
+                          <SelectItem value="command">Run a command</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-muted-foreground text-xs">
+                        Process is for a foreground Start command. Command is
+                        for services shared by slot.
+                      </p>
+                    </Field>
+                    {group.stop === "process" ? null : (
+                      <CommandField
+                        command={group.stop}
+                        id={`${groupName}-stop-command`}
+                        label="Stop command"
+                        onChange={(stop) =>
+                          updateGroup(groupName, (current) => ({
+                            ...current,
+                            stop,
+                          }))
+                        }
+                        placeholder="docker compose down"
+                      />
+                    )}
+                    <Field>
+                      <FieldLabel>Default slot</FieldLabel>
+                      <Input
+                        min={0}
+                        onChange={(event) =>
+                          updateGroup(groupName, (current) => ({
+                            ...current,
+                            slot: {
+                              ...current.slot,
+                              default:
+                                event.target.value === ""
+                                  ? Number.NaN
+                                  : Number(event.target.value),
+                            },
+                          }))
+                        }
+                        type="number"
+                        value={
+                          Number.isNaN(group.slot.default)
+                            ? ""
+                            : group.slot.default
+                        }
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel>Slot stride</FieldLabel>
+                      <Input
+                        min={1}
+                        onChange={(event) =>
+                          updateGroup(groupName, (current) => ({
+                            ...current,
+                            slot: {
+                              ...current.slot,
+                              stride:
+                                event.target.value === ""
+                                  ? Number.NaN
+                                  : Number(event.target.value),
+                            },
+                          }))
+                        }
+                        type="number"
+                        value={
+                          Number.isNaN(group.slot.stride)
+                            ? ""
+                            : group.slot.stride
+                        }
+                      />
+                    </Field>
+                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>App name</TableHead>
+                        <TableHead>Base port</TableHead>
+                        <TableHead>Default-slot endpoint</TableHead>
+                        <TableHead />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {Object.entries(group.apps).map(([appName, app]) => (
+                        <TableRow key={appName}>
+                          <TableCell>
+                            <EditableName
+                              ariaLabel={`App name ${appName}`}
+                              name={appName}
+                              onRename={(next) =>
+                                renameApp(groupName, appName, next)
+                              }
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              aria-label={`Base port for ${appName}`}
+                              min={1024}
+                              onChange={(event) =>
+                                updateGroup(groupName, (current) => ({
+                                  ...current,
+                                  apps: {
+                                    ...current.apps,
+                                    [appName]: {
+                                      basePort:
+                                        event.target.value === ""
+                                          ? Number.NaN
+                                          : Number(event.target.value),
+                                    },
+                                  },
+                                }))
+                              }
+                              type="number"
+                              value={
+                                Number.isNaN(app.basePort) ? "" : app.basePort
+                              }
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <code>
+                              {endpoints[appName]?.url ?? "Invalid port"}
+                            </code>
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              aria-label={`Delete ${appName}`}
+                              disabled={Object.keys(group.apps).length === 1}
+                              onClick={() =>
+                                updateGroup(groupName, (current) => ({
+                                  ...current,
+                                  apps: Object.fromEntries(
+                                    Object.entries(current.apps).filter(
+                                      ([name]) => name !== appName
+                                    )
+                                  ),
+                                }))
+                              }
+                              size="icon"
+                              variant="ghost"
+                            >
+                              <Trash2Icon />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  <Button
+                    onClick={() =>
+                      updateGroup(groupName, (current) => {
+                        let name = "App";
+                        let suffix = 2;
+                        while (Object.hasOwn(current.apps, name)) {
+                          name = `App ${suffix++}`;
+                        }
+                        return {
+                          ...current,
+                          apps: {
+                            ...current.apps,
+                            [name]: {
+                              basePort: nextAvailableWorkgroveAppBasePort(
+                                current.apps
+                              ),
+                            },
+                          },
+                        };
+                      })
+                    }
+                    variant="outline"
+                  >
+                    <PlusIcon />
+                    Add app
+                  </Button>
+                </div>
+              );
+            })}
+          </section>
+          <Separator />
+          <section className="space-y-5">
+            {heading(
+              "Environment",
+              "Use exact tokens such as {appGroups.Product Apps.apps.Web.port} or {appGroups.Infrastructure.slot}."
+            )}
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Variable</TableHead>
+                  <TableHead>Value</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {Object.entries(draft.env ?? {}).map(([name, value]) => (
+                  <TableRow key={name}>
+                    <TableCell>
+                      <EditableName
+                        ariaLabel={`Environment variable ${name}`}
+                        name={name}
+                        onRename={(next) => renameEnvironment(name, next)}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        aria-label={`Value for ${name}`}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            env: { ...current.env, [name]: event.target.value },
+                          }))
+                        }
+                        value={value}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        aria-label={`Delete ${name}`}
+                        onClick={() =>
+                          setDraft((current) =>
+                            deleteWorkgroveEnvironment(current, name)
+                          )
+                        }
+                        size="icon"
+                        variant="ghost"
+                      >
+                        <Trash2Icon />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <Button
+              onClick={() => setDraft(addWorkgroveEnvironment)}
+              variant="outline"
+            >
+              <PlusIcon />
               Add variable
             </Button>
           </section>
-
-          {issues.length > 0 ? (
+          {issues.length ? (
             <Alert variant="destructive">
               <CircleAlertIcon />
               <AlertTitle>Configuration needs attention</AlertTitle>
               <AlertDescription>
-                {issues.slice(0, 3).map((issue) => (
+                {issues.slice(0, 4).map((issue) => (
                   <div key={`${issue.path.join(".")}:${issue.message}`}>
                     {issue.path.join(".") || "config"}: {issue.message}
                   </div>
@@ -641,16 +689,12 @@ export function RepositoryConfigPage({
       </div>
       <footer className="shrink-0 border-t bg-background">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-end gap-2 px-6 py-4">
-          {discardConfirmationOpen ? (
+          {discardOpen ? (
             <>
               <p className="mr-auto text-muted-foreground">
                 Discard unsaved configuration changes?
               </p>
-              <Button
-                onClick={() => setDiscardConfirmationOpen(false)}
-                type="button"
-                variant="outline"
-              >
+              <Button onClick={() => setDiscardOpen(false)} variant="outline">
                 Keep editing
               </Button>
               <Button
@@ -658,7 +702,6 @@ export function RepositoryConfigPage({
                   clearConfigDraft(configPath);
                   onClose();
                 }}
-                type="button"
                 variant="destructive"
               >
                 Discard changes
@@ -666,13 +709,12 @@ export function RepositoryConfigPage({
             </>
           ) : (
             <>
-              <Button onClick={requestClose} type="button" variant="outline">
+              <Button onClick={requestClose} variant="outline">
                 Cancel
               </Button>
               <Button
                 disabled={!(isDirty && validation.success) || pending}
                 onClick={save}
-                type="button"
               >
                 {pending ? "Saving…" : "Save configuration"}
               </Button>

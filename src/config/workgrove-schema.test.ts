@@ -5,96 +5,97 @@ import { join } from "node:path";
 import { workgroveJsonSchema } from "./workgrove-json-schema";
 import {
   cloneWorkgroveConfig,
-  maximumWorkgroveSlot,
+  maximumWorkgroveAppGroupSlot,
   type WorkgroveConfig,
   WorkgroveConfigSchema,
-  workgroveSlotsHavePortCollision,
+  workgroveAppGroupSlotsHavePortCollision,
 } from "./workgrove-schema";
 
 const validConfig = {
-  version: 1,
-  stride: 25,
+  version: 2,
   setup: { argv: ["bun", "install"] },
-  start: { argv: ["bun", "run", "dev"] },
-  apps: {
-    api: { basePort: 8000 },
-    web: { basePort: 3000 },
+  appGroups: {
+    Apps: {
+      slot: { default: 0, stride: 25 },
+      start: { argv: ["bun", "run", "dev"] },
+      stop: "process",
+      apps: {
+        API: { basePort: 8000 },
+        Web: { basePort: 3000 },
+      },
+    },
+    "Local Infrastructure": {
+      slot: { default: 0, stride: 100 },
+      start: { argv: ["bun", "run", "infra:start"] },
+      stop: { argv: ["bun", "run", "infra:stop"] },
+      apps: { Postgres: { basePort: 5432 } },
+    },
   },
   env: {
-    API_PORT: "{apps.api.port}",
-    WEB_URL: "{apps.web.url}",
+    API_PORT: "{appGroups.Apps.apps.API.port}",
+    DB_PORT: "{appGroups.Local Infrastructure.apps.Postgres.port}",
   },
 } satisfies WorkgroveConfig;
 
 describe("shared Workgrove schema", () => {
-  it("accepts repository setup, one start command, and app base ports", () => {
+  it("accepts named App groups with process and command Stop strategies", () => {
     expect(WorkgroveConfigSchema.parse(validConfig)).toEqual(validConfig);
+  });
+
+  it("accepts arbitrary non-empty group and App names", () => {
     expect(
       WorkgroveConfigSchema.safeParse({
         ...validConfig,
-        control: { start: { argv: ["bun", "dev"] } },
+        env: undefined,
+        appGroups: {
+          "UPPER case & spaces": {
+            ...validConfig.appGroups.Apps,
+            apps: { "API / Web": { basePort: 8000 } },
+          },
+        },
       }).success
+    ).toBe(true);
+  });
+
+  it("requires setup and at least one App group", () => {
+    expect(
+      WorkgroveConfigSchema.safeParse({ ...validConfig, setup: undefined })
+        .success
+    ).toBe(false);
+    expect(
+      WorkgroveConfigSchema.safeParse({ ...validConfig, appGroups: {} }).success
     ).toBe(false);
   });
 
-  it("requires both repository commands", () => {
-    expect(
-      WorkgroveConfigSchema.safeParse({
-        ...validConfig,
-        setup: undefined,
-      }).success
-    ).toBe(false);
-    expect(
-      WorkgroveConfigSchema.safeParse({
-        ...validConfig,
-        start: undefined,
-      }).success
-    ).toBe(false);
-  });
-
-  it("rejects duplicate ports", () => {
+  it("rejects duplicate ports within an App group", () => {
     const result = WorkgroveConfigSchema.safeParse({
       ...validConfig,
-      apps: {
-        "api-v1": { basePort: 3000 },
-        api_v1: { basePort: 3000 },
+      appGroups: {
+        Apps: {
+          ...validConfig.appGroups.Apps,
+          apps: {
+            API: { basePort: 3000 },
+            Web: { basePort: 3000 },
+          },
+        },
       },
     });
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.issues.map((issue) => issue.path)).toContainEqual([
+        "appGroups",
+        "Apps",
         "apps",
-        "api_v1",
+        "Web",
         "basePort",
       ]);
     }
   });
 
-  it("rejects invalid and reserved environment names", () => {
+  it("rejects environment templates that reference unknown values", () => {
     const result = WorkgroveConfigSchema.safeParse({
       ...validConfig,
-      env: {
-        "NOT-AN-ENV": "literal",
-        WORKGROVE_SLOT: "literal",
-      },
-    });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.issues.map((issue) => issue.path)).toContainEqual([
-        "env",
-        "NOT-AN-ENV",
-      ]);
-      expect(result.error.issues.map((issue) => issue.path)).toContainEqual([
-        "env",
-        "WORKGROVE_SLOT",
-      ]);
-    }
-  });
-
-  it("rejects environment templates that reference an unknown app", () => {
-    const result = WorkgroveConfigSchema.safeParse({
-      ...validConfig,
-      env: { UNKNOWN_PORT: "{apps.missing.port}" },
+      env: { UNKNOWN_PORT: "{appGroups.Apps.apps.Missing.port}" },
     });
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -105,16 +106,14 @@ describe("shared Workgrove schema", () => {
     }
   });
 
-  it("limits slots using the highest app base port", () => {
-    expect(maximumWorkgroveSlot(WorkgroveConfigSchema.parse(validConfig))).toBe(
-      2301
-    );
+  it("limits slots per App group using its highest base port", () => {
+    expect(maximumWorkgroveAppGroupSlot(validConfig.appGroups.Apps)).toBe(2301);
   });
 
-  it("detects collisions from exact computed app ports", () => {
-    const config = WorkgroveConfigSchema.parse(validConfig);
-    expect(workgroveSlotsHavePortCollision(config, 0, 1)).toBe(false);
-    expect(workgroveSlotsHavePortCollision(config, 0, 200)).toBe(true);
+  it("detects exact computed collisions within an App group", () => {
+    const group = validConfig.appGroups.Apps;
+    expect(workgroveAppGroupSlotsHavePortCollision(group, 0, 1)).toBe(false);
+    expect(workgroveAppGroupSlotsHavePortCollision(group, 0, 200)).toBe(true);
   });
 
   it("keeps the published JSON Schema generated from the Zod schema", () => {

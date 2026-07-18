@@ -14,11 +14,16 @@ export function deleteWorktree(
   if (worktree.isMain) {
     throw new Error("The main worktree cannot be deleted");
   }
-  const hasListener = worktree.apps.some(
-    (app) => app.probe === "tcp" && app.ownership !== "none"
+  const hasOwnedProcessGroup = worktree.appGroups.some(
+    (group) =>
+      group.stop === "process" &&
+      (group.processRunning ||
+        group.apps.some((app) => app.ownership === "owned"))
   );
-  if (hasListener || worktree.processRunning) {
-    throw new Error("Stop apps before deleting this worktree");
+  if (hasOwnedProcessGroup) {
+    throw new Error(
+      "Stop process-controlled App groups before deleting this worktree"
+    );
   }
   const result = spawnSync("git", ["worktree", "remove", worktree.path], {
     cwd: workspace.mainWorktreePath,

@@ -9,11 +9,12 @@ import type { FormEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
-  SlotOption,
+  AppGroupSlotOption,
+  AppGroupSnapshot,
   WorkspaceSnapshot,
   WorktreeSnapshot,
 } from "../controller/workspace-snapshot";
-import { appsAreRunning } from "../controller/workspace-snapshot";
+import { appGroupIsRunning } from "../controller/workspace-snapshot";
 import {
   repositoryPageFromSearch,
   repositoryPathFromSearch,
@@ -251,11 +252,13 @@ export function App() {
     useState<SlotSwitchTarget | null>(null);
   const workspace = useWorkspace(repoPath);
   const queryClient = useQueryClient();
-  const logs = useLogs(repoPath, selectedId);
   const quickRepository = useRepositoryOpen(openRepository);
   const selected =
     workspace.data?.worktrees.find((worktree) => worktree.id === selectedId) ??
     null;
+  const selectedAppGroupName =
+    selected?.appGroups[0]?.name ?? workspace.data?.primaryAppGroup ?? null;
+  const logs = useLogs(repoPath, selectedId, selectedAppGroupName);
   const visibleWorktrees = workspace.data?.worktrees ?? EMPTY_WORKTREES;
   const repositoryTrust = useRepositoryTrust({
     repoPath,
@@ -267,7 +270,7 @@ export function App() {
     requestRepositoryTrust: repositoryTrust.requestTrust,
     worktrees: visibleWorktrees,
   });
-  const { commandActions, commands, pendingIds, toggleApps, visibleActions } =
+  const { commandActions, commands, pendingIds, toggleAppGroup, toggleApps } =
     worktreeActions;
 
   useEffect(() => {
@@ -365,12 +368,17 @@ export function App() {
     );
     setRepositoryPage("workspace");
   }
-  function selectSlot(worktree: WorktreeSnapshot, slot: SlotOption): void {
-    if (appsAreRunning(worktree)) {
-      setSlotSwitchTarget({ slot, worktree });
+  function selectSlot(
+    worktree: WorktreeSnapshot,
+    group: AppGroupSnapshot,
+    slot: AppGroupSlotOption
+  ): void {
+    if (group.stop === "process" && appGroupIsRunning(group)) {
+      setSlotSwitchTarget({ appGroupName: group.name, slot, worktree });
       return;
     }
     commands.setSlot.mutate({
+      appGroupName: group.name,
       repoPath,
       slot: slot.slot,
       worktreeId: worktree.id,
@@ -402,15 +410,13 @@ export function App() {
     return (
       <WorktreeTable
         actionPending={(id) => pendingIds.has(id)}
+        appGroupSlots={data.appGroupSlotOptions}
         commandActions={commandActions}
-        defaultSlot={data.defaultSlot}
         onDelete={setDeleteTarget}
         onInspect={setSelectedId}
         onSetSlot={selectSlot}
-        onToggleApps={toggleApps}
+        onToggleAppGroup={toggleAppGroup}
         selectedId={selectedId}
-        slots={data.slotOptions}
-        visibleActions={visibleActions}
         worktrees={visibleWorktrees}
       />
     );
@@ -489,6 +495,7 @@ export function App() {
                 logs={logs.data ?? []}
                 onClearLogs={() =>
                   commands.clearLogs.mutate({
+                    appGroupName: selectedAppGroupName,
                     repoPath,
                     worktreeId: selected.id,
                   })
@@ -543,6 +550,7 @@ export function App() {
         onConfirm={(target) =>
           commands.switchSlot.mutateAsync({
             repoPath,
+            appGroupName: target.appGroupName,
             slot: target.slot.slot,
             worktreeId: target.worktree.id,
           })

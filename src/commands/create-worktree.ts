@@ -16,6 +16,7 @@ const BRANCH_PATTERN = /^[A-Za-z0-9._/@-]+$/;
 const FOLDER_PATTERN = /^[A-Za-z0-9._-]+$/;
 
 import { setSlot } from "./set-slot";
+import { worktreeSlotAssignments } from "./start-apps";
 
 function run(argv: string[], cwd: string, env = process.env): string {
   const [command, ...args] = argv;
@@ -46,17 +47,12 @@ export function createWorktree(
     throw new Error("Branch contains unsupported characters");
   }
   const workspace = controller.inspect(repoPath);
-  const slotOption = workspace.slotOptions.find(
+  const appGroupName = workspace.primaryAppGroup;
+  const slotOption = workspace.appGroupSlotOptions[appGroupName]?.find(
     (option) => option.slot === slot
   );
   if (!slotOption) {
     throw new Error(`Slot ${slot} is outside the supported range`);
-  }
-  const collisionOwner = slotOption.collisionOwners[0];
-  if (collisionOwner) {
-    throw new Error(
-      `Slot ${slot} has a port collision with ${collisionOwner.name}`
-    );
   }
   const folderName =
     typeof input.folderName === "string" && input.folderName.trim()
@@ -85,9 +81,15 @@ export function createWorktree(
   if (!created) {
     throw new Error("Worktree was created but could not be rediscovered");
   }
-  setSlot(controller, { repoPath: target, slot, worktreeId: created.id });
+  setSlot(controller, {
+    appGroupName,
+    repoPath: target,
+    slot,
+    worktreeId: created.id,
+  });
   const config = controller.config(target);
-  const setup = resolveSetupCommand(config, slot);
+  const refreshed = controller.worktree(target, created.id).worktree;
+  const setup = resolveSetupCommand(config, worktreeSlotAssignments(refreshed));
   appendManagedLog(
     created.id,
     `[workgrove] Running setup: ${setup.argv.join(" ")}`
