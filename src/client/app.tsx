@@ -72,6 +72,11 @@ import {
   ResizablePanelGroup,
 } from "./components/ui/resizable";
 import { Spinner } from "./components/ui/spinner";
+import {
+  type IntegrationPrototypeVariant,
+  integrationPrototypeVariantFromSearch,
+  WorkgroveTaskIntegrationPrototype,
+} from "./components/workgrove-task-integration-prototype";
 import { WorktreeTable } from "./components/worktree-table";
 import { useLogs, useWorkspace } from "./queries";
 import { useRepositoryOpen } from "./use-repository-open";
@@ -277,13 +282,23 @@ function Onboarding({
 
 function WorkspaceRegionContent({
   fallback,
+  integrationVariant,
   prototypeVariant,
   workspace,
 }: {
   fallback: ReactNode;
+  integrationVariant: IntegrationPrototypeVariant | null;
   prototypeVariant: CodexPrototypeVariant | null;
   workspace: WorkspaceSnapshot;
 }) {
+  if (integrationVariant) {
+    return (
+      <WorkgroveTaskIntegrationPrototype
+        initialVariant={integrationVariant}
+        workspace={workspace}
+      />
+    );
+  }
   if (prototypeVariant) {
     return (
       <CodexTasksPrototype
@@ -299,6 +314,14 @@ function developmentPrototypeVariant(
   search: string
 ): CodexPrototypeVariant | null {
   return import.meta.env.DEV ? codexPrototypeVariantFromSearch(search) : null;
+}
+
+function developmentIntegrationVariant(
+  search: string
+): IntegrationPrototypeVariant | null {
+  return import.meta.env.DEV
+    ? integrationPrototypeVariantFromSearch(search)
+    : null;
 }
 
 export function App() {
@@ -451,6 +474,9 @@ export function App() {
   }
   const data = workspace.data;
   const prototypeVariant = developmentPrototypeVariant(window.location.search);
+  const integrationVariant = developmentIntegrationVariant(
+    window.location.search
+  );
   function openRepositorySettings(): void {
     window.history.pushState(
       null,
@@ -560,6 +586,7 @@ export function App() {
       <section className="worktree-region min-h-0 flex-1 overflow-hidden px-5 pb-5">
         <WorkspaceRegionContent
           fallback={worktreeTable()}
+          integrationVariant={integrationVariant}
           prototypeVariant={prototypeVariant}
           workspace={data}
         />
