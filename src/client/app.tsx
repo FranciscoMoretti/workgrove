@@ -5,7 +5,7 @@ import {
   FolderOpenIcon,
   TreesIcon,
 } from "lucide-react";
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
@@ -20,6 +20,11 @@ import {
   repositoryPathFromSearch,
   repositoryUrl,
 } from "../repository-context";
+import {
+  type CodexPrototypeVariant,
+  CodexTasksPrototype,
+  codexPrototypeVariantFromSearch,
+} from "./components/codex-tasks-prototype";
 import { CreateWorktreeDialog } from "./components/create-worktree-dialog";
 import { DeleteWorktreeDialog } from "./components/delete-worktree-dialog";
 import { DetailsPanel } from "./components/details-panel";
@@ -270,6 +275,32 @@ function Onboarding({
   );
 }
 
+function WorkspaceRegionContent({
+  fallback,
+  prototypeVariant,
+  workspace,
+}: {
+  fallback: ReactNode;
+  prototypeVariant: CodexPrototypeVariant | null;
+  workspace: WorkspaceSnapshot;
+}) {
+  if (prototypeVariant) {
+    return (
+      <CodexTasksPrototype
+        initialVariant={prototypeVariant}
+        workspace={workspace}
+      />
+    );
+  }
+  return fallback;
+}
+
+function developmentPrototypeVariant(
+  search: string
+): CodexPrototypeVariant | null {
+  return import.meta.env.DEV ? codexPrototypeVariantFromSearch(search) : null;
+}
+
 export function App() {
   const [repoPath, setRepoPath] = useState(
     () => repositoryPathFromSearch(window.location.search) ?? ""
@@ -419,6 +450,7 @@ export function App() {
     );
   }
   const data = workspace.data;
+  const prototypeVariant = developmentPrototypeVariant(window.location.search);
   function openRepositorySettings(): void {
     window.history.pushState(
       null,
@@ -526,7 +558,11 @@ export function App() {
         </Alert>
       ) : null}
       <section className="worktree-region min-h-0 flex-1 overflow-hidden px-5 pb-5">
-        {worktreeTable()}
+        <WorkspaceRegionContent
+          fallback={worktreeTable()}
+          prototypeVariant={prototypeVariant}
+          workspace={data}
+        />
       </section>
     </div>
   );
