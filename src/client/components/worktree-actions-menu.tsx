@@ -18,6 +18,7 @@ import {
 export function WorktreeActionsMenu({
   bordered = false,
   commandActions,
+  includeLifecycle = true,
   onDelete,
   onInspect,
   pending,
@@ -25,6 +26,7 @@ export function WorktreeActionsMenu({
 }: {
   bordered?: boolean;
   commandActions: WorktreeCommandActions;
+  includeLifecycle?: boolean;
   onDelete: () => void;
   onInspect: () => void;
   pending: boolean;
@@ -37,7 +39,12 @@ export function WorktreeActionsMenu({
       label: "View details",
       onSelect: onInspect,
     },
-    ...worktreeCommandMenuItems({ actions: commandActions, pending, worktree }),
+    ...worktreeCommandMenuItems({
+      actions: commandActions,
+      includeLifecycle,
+      pending,
+      worktree,
+    }),
     ...(worktree.isMain
       ? []
       : [

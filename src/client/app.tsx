@@ -295,8 +295,14 @@ export function App() {
     requestRepositoryTrust: repositoryTrust.requestTrust,
     worktrees: visibleWorktrees,
   });
-  const { commandActions, commands, pendingIds, toggleAppGroup, toggleApps } =
-    worktreeActions;
+  const {
+    commandActions,
+    commands,
+    pendingIds,
+    restartAppGroup,
+    toggleAppGroup,
+    toggleApps,
+  } = worktreeActions;
 
   useEffect(() => {
     function syncLocation(): void {
@@ -439,6 +445,7 @@ export function App() {
         commandActions={commandActions}
         onDelete={setDeleteTarget}
         onInspect={setSelectedId}
+        onRestartAppGroup={restartAppGroup}
         onSetSlot={selectSlot}
         onToggleAppGroup={toggleAppGroup}
         selectedId={selectedId}

@@ -9,6 +9,10 @@ const MONO_LINKED_PORT =
   /<a[^>]*><code class="[^"]*font-mono[^"]*"[^>]*>3000<\/code><\/a>/;
 const MONO_STOPPED_PORT =
   /<code[^>]*class="[^"]*font-mono[^"]*"[^>]*>3002<\/code>/;
+const PRODUCT_GROUP_WITH_ENDPOINT =
+  /data-app-group="Product Apps"[^>]*>[\s\S]*?3000/;
+const INFRASTRUCTURE_GROUP_WITH_ENDPOINT =
+  /data-app-group="Infrastructure"[^>]*>[\s\S]*?5432/;
 
 const worktree: WorktreeSnapshot = {
   appLabel: "App",
@@ -50,6 +54,66 @@ const worktree: WorktreeSnapshot = {
 };
 
 describe("worktree table", () => {
+  it("keeps each group's controls and endpoints in one fluid console", () => {
+    const withGroups = {
+      ...worktree,
+      appGroups: [
+        {
+          apps: worktree.apps,
+          health: worktree.health,
+          name: "Product Apps",
+          processRunning: true,
+          slot: 0,
+          slotState: "assigned" as const,
+          stop: "process" as const,
+        },
+        {
+          apps: [
+            {
+              ...worktree.apps[0],
+              id: "database",
+              label: "Postgres",
+              port: 5432,
+              url: "http://localhost:5432",
+            },
+          ],
+          health: "running" as const,
+          name: "Infrastructure",
+          processRunning: false,
+          slot: 0,
+          slotState: "assigned" as const,
+          stop: "command" as const,
+        },
+      ],
+    };
+    const markup = renderToStaticMarkup(
+      createElement(WorktreeTable, {
+        actionPending: () => false,
+        appGroupSlots: { Infrastructure: [], "Product Apps": [] },
+        commandActions: {
+          onRestart: () => undefined,
+          onSetup: () => undefined,
+          onStart: () => undefined,
+          onStop: () => undefined,
+        },
+        onDelete: () => undefined,
+        onInspect: () => undefined,
+        onRestartAppGroup: () => undefined,
+        onSetSlot: () => undefined,
+        onToggleAppGroup: () => undefined,
+        selectedId: null,
+        worktrees: [withGroups],
+      })
+    );
+
+    expect(markup).not.toContain(">Endpoints<");
+    expect(markup).toContain('data-slot="app-group-grid"');
+    expect(markup).toContain('data-app-group="Product Apps"');
+    expect(markup).toContain('data-app-group="Infrastructure"');
+    expect(markup).toMatch(PRODUCT_GROUP_WITH_ENDPOINT);
+    expect(markup).toMatch(INFRASTRUCTURE_GROUP_WITH_ENDPOINT);
+  });
+
   it("renders every app port in the monospace font", () => {
     const withGroup = {
       ...worktree,
@@ -77,6 +141,7 @@ describe("worktree table", () => {
         appGroupSlots: { "Product Apps": [] },
         onDelete: () => undefined,
         onInspect: () => undefined,
+        onRestartAppGroup: () => undefined,
         onSetSlot: () => undefined,
         onToggleAppGroup: () => undefined,
         selectedId: null,
@@ -116,6 +181,7 @@ describe("worktree table", () => {
         },
         onDelete: () => undefined,
         onInspect: () => undefined,
+        onRestartAppGroup: () => undefined,
         onSetSlot: () => undefined,
         onToggleAppGroup: () => undefined,
         selectedId: null,

@@ -54,6 +54,17 @@ function itemIds(target: WorktreeSnapshot): string[] {
 }
 
 describe("worktree command menu", () => {
+  it("can keep lifecycle controls out of a worktree-level menu", () => {
+    expect(
+      worktreeCommandMenuItems({
+        actions,
+        includeLifecycle: false,
+        pending: false,
+        worktree: worktree("running"),
+      }).map((item) => item.id)
+    ).toEqual(["setup"]);
+  });
+
   it("offers setup and start when stopped", () => {
     expect(itemIds(worktree("not-running"))).toEqual(["setup", "start"]);
   });

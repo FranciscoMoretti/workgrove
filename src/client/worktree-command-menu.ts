@@ -22,10 +22,12 @@ export interface WorktreeCommandActions {
 
 export function worktreeCommandMenuItems({
   actions,
+  includeLifecycle = true,
   pending,
   worktree,
 }: {
   actions: WorktreeCommandActions;
+  includeLifecycle?: boolean;
   pending: boolean;
   worktree: WorktreeSnapshot;
 }): CommandMenuItem[] {
@@ -40,7 +42,7 @@ export function worktreeCommandMenuItems({
       onSelect: () => actions.onSetup(worktree),
       separatorBefore: true,
     },
-    ...(stopped
+    ...(includeLifecycle && stopped
       ? [
           {
             disabled: pending || worktree.slotState !== "assigned",
@@ -51,7 +53,7 @@ export function worktreeCommandMenuItems({
           },
         ]
       : []),
-    ...(running
+    ...(includeLifecycle && running
       ? [
           {
             disabled: pending,
@@ -62,7 +64,7 @@ export function worktreeCommandMenuItems({
           },
         ]
       : []),
-    ...(appsCanRestart(worktree)
+    ...(includeLifecycle && appsCanRestart(worktree)
       ? [
           {
             disabled: pending,

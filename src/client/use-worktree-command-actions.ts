@@ -182,6 +182,19 @@ export function useWorktreeCommandActions({
     [commands.startApps, commands.stopApps, repoPath, requestRepositoryTrust]
   );
 
+  const restartAppGroup = useCallback(
+    (worktree: WorktreeSnapshot, group: AppGroupSnapshot) => {
+      requestRepositoryTrust(`Restart ${group.name}`, () => {
+        commands.restartApps.mutate({
+          appGroupName: group.name,
+          repoPath,
+          worktreeId: worktree.id,
+        });
+      });
+    },
+    [commands.restartApps, repoPath, requestRepositoryTrust]
+  );
+
   const visibleActions = useMemo(() => {
     const worktreeIds = worktrees.map((worktree) => worktree.id);
     const pending =
@@ -219,6 +232,7 @@ export function useWorktreeCommandActions({
     commandActions,
     commands,
     pendingIds,
+    restartAppGroup,
     restartApps,
     toggleAppGroup,
     toggleApps,

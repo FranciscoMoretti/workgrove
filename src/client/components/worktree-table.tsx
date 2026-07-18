@@ -7,6 +7,7 @@ import type {
 } from "../../controller/workspace-snapshot";
 import { appGroupIsRunning } from "../../controller/workspace-snapshot";
 import type { WorktreeCommandActions } from "../worktree-command-menu";
+import { AppGroupActionsMenu } from "./app-group-actions-menu";
 import { AppPort } from "./app-port";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -48,19 +49,13 @@ function actionIcon(pending: boolean, running: boolean) {
   return running ? <SquareIcon /> : <PlayIcon />;
 }
 
-function groupMode(group: AppGroupSnapshot): string {
-  if (group.slotState === "conflicting") {
-    return "port conflict";
-  }
-  return group.stop;
-}
-
 export function WorktreeTable({
   actionPending,
   appGroupSlots,
   commandActions,
   onDelete,
   onInspect,
+  onRestartAppGroup,
   onSetSlot,
   onToggleAppGroup,
   selectedId,
@@ -71,6 +66,10 @@ export function WorktreeTable({
   commandActions: WorktreeCommandActions;
   onDelete: (worktree: WorktreeSnapshot) => void;
   onInspect: (worktreeId: string) => void;
+  onRestartAppGroup: (
+    worktree: WorktreeSnapshot,
+    group: AppGroupSnapshot
+  ) => void;
   onSetSlot: (
     worktree: WorktreeSnapshot,
     group: AppGroupSnapshot,
@@ -94,10 +93,9 @@ export function WorktreeTable({
       >
         <TableHeader className="sticky top-0 z-10 bg-muted">
           <TableRow>
-            <TableHead className="w-[28%]">Worktree</TableHead>
-            <TableHead className="w-[18%]">Branch</TableHead>
-            <TableHead className="w-[34%]">App groups</TableHead>
-            <TableHead>Endpoints</TableHead>
+            <TableHead className="w-[24%]">Worktree</TableHead>
+            <TableHead className="w-[16%]">Branch</TableHead>
+            <TableHead>App groups</TableHead>
             <TableHead>
               <span className="sr-only">Actions</span>
             </TableHead>
@@ -145,18 +143,22 @@ export function WorktreeTable({
                     </span>
                   </div>
                 </TableCell>
-                <TableCell>
-                  <div className="grid gap-2">
+                <TableCell className="whitespace-normal">
+                  <div
+                    className="grid grid-cols-[repeat(auto-fit,minmax(24rem,1fr))] gap-x-4 gap-y-2"
+                    data-slot="app-group-grid"
+                  >
                     {worktree.appGroups.map((group) => {
                       const running = appGroupIsRunning(group);
                       const slots = appGroupSlots[group.name] ?? [];
                       return (
                         <div
-                          className="flex items-center gap-2"
+                          className="grid min-w-0 grid-cols-[minmax(7rem,auto)_auto_minmax(0,1fr)_auto] items-center gap-2 border-l pl-4"
+                          data-app-group={group.name}
                           key={group.name}
                         >
                           <span
-                            className="w-32 truncate font-medium"
+                            className="min-w-0 truncate font-medium"
                             title={group.name}
                           >
                             {group.name}
@@ -220,61 +222,58 @@ export function WorktreeTable({
                               </SelectContent>
                             </Select>
                           </ButtonGroup>
-                          <Badge
-                            variant={
-                              group.slotState === "conflicting"
-                                ? "destructive"
-                                : "outline"
-                            }
-                          >
-                            {groupMode(group)}
-                          </Badge>
+                          <div className="flex min-w-0 flex-wrap gap-x-3 gap-y-1">
+                            {group.apps.map((app) => (
+                              <span
+                                className="flex items-center gap-1"
+                                key={app.id}
+                              >
+                                <span
+                                  className={
+                                    app.listening
+                                      ? "size-1.5 rounded-full bg-foreground"
+                                      : "size-1.5 rounded-full bg-muted-foreground/60"
+                                  }
+                                />
+                                {app.label}{" "}
+                                {app.open && app.listening ? (
+                                  <a
+                                    className="underline"
+                                    href={app.url}
+                                    rel="noreferrer"
+                                    target="_blank"
+                                  >
+                                    <AppPort port={app.port} />
+                                  </a>
+                                ) : (
+                                  <AppPort port={app.port} />
+                                )}
+                              </span>
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {group.slotState === "conflicting" ? (
+                              <Badge variant="destructive">port conflict</Badge>
+                            ) : null}
+                            <AppGroupActionsMenu
+                              group={group}
+                              onRestart={() =>
+                                onRestartAppGroup(worktree, group)
+                              }
+                              onToggle={() => onToggleAppGroup(worktree, group)}
+                              pending={pending}
+                              worktree={worktree}
+                            />
+                          </div>
                         </div>
                       );
                     })}
                   </div>
                 </TableCell>
-                <TableCell>
-                  <div className="grid gap-2">
-                    {worktree.appGroups.map((group) => (
-                      <div
-                        className="flex flex-wrap gap-x-3 gap-y-1"
-                        key={group.name}
-                      >
-                        {group.apps.map((app) => (
-                          <span
-                            className="flex items-center gap-1"
-                            key={app.id}
-                          >
-                            <span
-                              className={
-                                app.listening
-                                  ? "size-1.5 rounded-full bg-foreground"
-                                  : "size-1.5 rounded-full bg-muted-foreground/60"
-                              }
-                            />
-                            {app.label}{" "}
-                            {app.open && app.listening ? (
-                              <a
-                                className="underline"
-                                href={app.url}
-                                rel="noreferrer"
-                                target="_blank"
-                              >
-                                <AppPort port={app.port} />
-                              </a>
-                            ) : (
-                              <AppPort port={app.port} />
-                            )}
-                          </span>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                </TableCell>
                 <TableCell onClick={(event) => event.stopPropagation()}>
                   <WorktreeActionsMenu
                     commandActions={commandActions}
+                    includeLifecycle={false}
                     onDelete={() => onDelete(worktree)}
                     onInspect={() => onInspect(worktree.id)}
                     pending={pending}
@@ -286,7 +285,7 @@ export function WorktreeTable({
           })}
           {worktrees.length === 0 ? (
             <TableRow>
-              <TableCell className="h-48" colSpan={5}>
+              <TableCell className="h-48" colSpan={4}>
                 <Empty>
                   <EmptyHeader>
                     <EmptyTitle>No Git worktrees found</EmptyTitle>
