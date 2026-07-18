@@ -88,4 +88,41 @@ describe("worktree table", () => {
     expect(markup).toMatch(MONO_STOPPED_PORT);
     expect(markup).not.toContain("lucide-chevron-right");
   });
+
+  it("exposes running health to the status color styles", () => {
+    const running = {
+      ...worktree,
+      appGroups: [
+        {
+          apps: worktree.apps,
+          health: "running" as const,
+          name: "Product Apps",
+          processRunning: true,
+          slot: 0,
+          slotState: "assigned" as const,
+          stop: "process" as const,
+        },
+      ],
+    };
+    const markup = renderToStaticMarkup(
+      createElement(WorktreeTable, {
+        actionPending: () => false,
+        appGroupSlots: { "Product Apps": [] },
+        commandActions: {
+          onRestart: () => undefined,
+          onSetup: () => undefined,
+          onStart: () => undefined,
+          onStop: () => undefined,
+        },
+        onDelete: () => undefined,
+        onInspect: () => undefined,
+        onSetSlot: () => undefined,
+        onToggleAppGroup: () => undefined,
+        selectedId: null,
+        worktrees: [running],
+      })
+    );
+
+    expect(markup).toContain('data-health="running"');
+  });
 });

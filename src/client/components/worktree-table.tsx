@@ -167,6 +167,7 @@ export function WorktreeTable({
                             <Button
                               aria-label={`${running ? "Stop" : "Start"} ${group.name} for ${worktree.name}`}
                               className="min-w-24 justify-start"
+                              data-health={group.health}
                               disabled={
                                 pending ||
                                 (!running && group.slotState !== "assigned")
