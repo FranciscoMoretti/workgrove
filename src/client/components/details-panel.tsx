@@ -66,7 +66,7 @@ function codexActivity(task: CodexTaskSnapshot): {
       label: "Waiting approval",
     };
   }
-  if (task.activity?.state === "unknown") {
+  if (!task.activity || task.activity.state === "unknown") {
     return { className: "bg-muted-foreground", label: "Activity unknown" };
   }
   return { className: "bg-muted-foreground", label: "Ready" };

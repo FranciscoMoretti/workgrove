@@ -49,10 +49,15 @@ export interface CodexIntegrationAdapterSnapshot {
   updatedAt: string;
 }
 
+export interface CodexIntegrationLoadOptions {
+  force?: boolean;
+}
+
 export interface CodexIntegrationAdapter {
   close(): Promise<void>;
   loadAssociatedTasks(
-    worktrees: readonly CodexWorktreeReference[]
+    worktrees: readonly CodexWorktreeReference[],
+    options?: CodexIntegrationLoadOptions
   ): Promise<CodexIntegrationAdapterSnapshot>;
 }
 

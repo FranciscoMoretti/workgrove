@@ -156,11 +156,20 @@ describe("details panel", () => {
           title: "Review the task integration",
           updatedAt: "2026-07-18T10:01:00.000Z",
         },
+        {
+          activity: null,
+          contextSharedAt: null,
+          createdAt: "2026-07-18T08:00:00.000Z",
+          id: "task-without-observation",
+          title: "Unobserved task",
+          updatedAt: "2026-07-18T08:30:00.000Z",
+        },
       ],
     });
 
     expect(markup).toContain("Codex tasks");
     expect(markup).toContain("Context shared");
+    expect(markup).toContain("Activity unknown");
     expect(markup).toContain("codex://new?path=%2Ftmp%2Fproject");
     expect(markup).toContain("codex://threads/task%2Fwith%20spaces");
   });

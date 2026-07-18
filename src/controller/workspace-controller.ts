@@ -7,6 +7,7 @@ import {
 } from "../codex/codex-hook-activity";
 import {
   type CodexIntegrationAdapter,
+  type CodexIntegrationLoadOptions,
   type CodexIntegrationSnapshot,
   projectCodexIntegration,
 } from "../codex/codex-integration";
@@ -213,10 +214,16 @@ export class WorkspaceController {
     return this.codexAdapter.close();
   }
 
-  async inspectCodex(repoPath: string): Promise<CodexIntegrationSnapshot> {
+  async inspectCodex(
+    repoPath: string,
+    options?: CodexIntegrationLoadOptions
+  ): Promise<CodexIntegrationSnapshot> {
     const workspace = this.inspect(repoPath);
     const worktrees = workspace.worktrees.map(({ id, path }) => ({ id, path }));
-    const discovered = await this.codexAdapter.loadAssociatedTasks(worktrees);
+    const discovered = await this.codexAdapter.loadAssociatedTasks(
+      worktrees,
+      options
+    );
     for (const { path } of worktrees) {
       this.knownCodexTasksByPath.set(path, new Set());
     }
@@ -588,7 +595,7 @@ export class WorkspaceController {
     if (this.codexRefreshes.has(root)) {
       return;
     }
-    const refresh = this.inspectCodex(root)
+    const refresh = this.inspectCodex(root, { force: true })
       .then(() => undefined)
       .catch(() => undefined)
       .finally(() => {

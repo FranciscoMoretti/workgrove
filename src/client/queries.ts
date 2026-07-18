@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchCodexIntegration, fetchLogs, fetchWorkspace } from "./api";
 
 export const REFRESH_INTERVAL = 30_000;
+const CODEX_REFRESH_INTERVAL = 2500;
 
 export function useWorkspace(repoPath: string) {
   return useQuery({
@@ -21,10 +22,11 @@ export function useCodexIntegration(repoPath: string) {
     enabled: repoPath !== "",
     queryFn: () => fetchCodexIntegration(repoPath),
     queryKey: ["codex-integration", repoPath],
-    refetchInterval: (query) =>
-      query.state.status === "error" ? false : REFRESH_INTERVAL,
-    retry: false,
-    staleTime: REFRESH_INTERVAL,
+    refetchInterval: CODEX_REFRESH_INTERVAL,
+    refetchOnReconnect: true,
+    retry: 2,
+    retryDelay: 500,
+    staleTime: CODEX_REFRESH_INTERVAL,
   });
 }
 

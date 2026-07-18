@@ -109,6 +109,9 @@ describe("persisted Codex task discovery", () => {
       adapter.loadAssociatedTasks(worktrees),
     ]);
     const cached = await adapter.loadAssociatedTasks(worktrees);
+    const forced = await adapter.loadAssociatedTasks(worktrees, {
+      force: true,
+    });
     now = new Date("2026-07-18T15:00:31.000Z");
     const refreshed = await adapter.loadAssociatedTasks(worktrees);
 
@@ -117,7 +120,8 @@ describe("persisted Codex task discovery", () => {
       "task-request-1",
     ]);
     expect(cached.tasks[0]?.task.id).toBe("task-request-1");
-    expect(refreshed.tasks[0]?.task.id).toBe("task-request-2");
+    expect(forced.tasks[0]?.task.id).toBe("task-request-2");
+    expect(refreshed.tasks[0]?.task.id).toBe("task-request-3");
   });
 
   it("rejects a repeated pagination cursor instead of looping", async () => {

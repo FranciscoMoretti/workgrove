@@ -10,6 +10,7 @@ import {
 import {
   type CodexIntegrationAdapter,
   type CodexIntegrationAdapterSnapshot,
+  type CodexIntegrationLoadOptions,
   CodexIntegrationUnavailableError,
   type CodexWorktreeReference,
 } from "./codex-integration";
@@ -115,7 +116,8 @@ export class CodexTaskDiscoveryAdapter implements CodexIntegrationAdapter {
   }
 
   async loadAssociatedTasks(
-    worktrees: readonly CodexWorktreeReference[]
+    worktrees: readonly CodexWorktreeReference[],
+    options: CodexIntegrationLoadOptions = {}
   ): Promise<CodexIntegrationAdapterSnapshot> {
     const paths = [...new Set(worktrees.map(({ path }) => path))].sort();
     if (paths.some((path) => !isAbsolute(path))) {
@@ -128,10 +130,18 @@ export class CodexTaskDiscoveryAdapter implements CodexIntegrationAdapter {
     }
     const key = JSON.stringify(paths);
     const now = this.now().valueOf();
-    if (this.cache?.key === key && this.cache.expiresAt > now) {
+    if (
+      !options.force &&
+      this.cache?.key === key &&
+      this.cache.expiresAt > now
+    ) {
       return this.cache.snapshot;
     }
-    if (this.failure?.key === key && this.failure.expiresAt > now) {
+    if (
+      !options.force &&
+      this.failure?.key === key &&
+      this.failure.expiresAt > now
+    ) {
       throw this.failure.error;
     }
     if (this.inFlight?.key === key) {
