@@ -6,9 +6,22 @@ import {
   CODEX_HOOK_EVENTS,
   type CodexHookObservation,
 } from "../codex/codex-hook-activity";
+import { MAX_WORKGROVE_CONTEXT_BYTES } from "../codex/workgrove-context";
 
 const MAX_HOOK_BODY = 16 * 1024;
 const LoopbackAddresses = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
+
+const CodexHookResponseSchema = z.object({
+  additionalContext: z
+    .string()
+    .min(1)
+    .max(MAX_WORKGROVE_CONTEXT_BYTES)
+    .optional(),
+});
+
+export interface CodexHookResponse {
+  additionalContext?: string;
+}
 
 export const CodexHookObservationSchema = z
   .object({
@@ -93,7 +106,7 @@ function rejectedRequest(
 }
 
 export function createCodexHookRequestHandler(options: {
-  observe(observation: CodexHookObservation): void;
+  observe(observation: CodexHookObservation): CodexHookResponse | undefined;
   token: string;
 }): (request: IncomingMessage, response: ServerResponse) => Promise<void> {
   return async (request, response) => {
@@ -106,12 +119,23 @@ export function createCodexHookRequestHandler(options: {
       const observation = CodexHookObservationSchema.parse(
         await readHookBody(request)
       );
+      let hookResponse: CodexHookResponse = {};
       try {
-        options.observe(observation);
+        const candidate = CodexHookResponseSchema.safeParse(
+          options.observe(observation) ?? {}
+        );
+        if (
+          candidate.success &&
+          (!candidate.data.additionalContext ||
+            Buffer.byteLength(candidate.data.additionalContext) <=
+              MAX_WORKGROVE_CONTEXT_BYTES)
+        ) {
+          hookResponse = candidate.data;
+        }
       } catch {
         // Hook observation is optional and must never block Codex.
       }
-      sendJson(response, 200, {});
+      sendJson(response, 200, hookResponse);
     } catch (error) {
       sendJson(response, error instanceof RangeError ? 413 : 400, {
         error: "Invalid Codex hook observation",

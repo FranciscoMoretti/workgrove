@@ -16,7 +16,8 @@ const EVENTS = new Set([
 ]);
 const SOURCES = new Set(["startup", "resume", "clear", "compact"]);
 const MAX_STDIN_BYTES = 1024 * 1024;
-const MAX_CONTEXT_BYTES = 8 * 1024;
+const MAX_CONTEXT_BYTES = 64 * 1024;
+const MAX_RESPONSE_BYTES = MAX_CONTEXT_BYTES + 16 * 1024;
 
 interface Capability {
   endpoint: string;
@@ -117,7 +118,7 @@ async function readBoundedResponse(response: Response): Promise<string> {
     }
     const chunk = Buffer.from(value);
     size += chunk.length;
-    if (size > 16 * 1024) {
+    if (size > MAX_RESPONSE_BYTES) {
       await reader.cancel();
       throw new Error("Workgrove hook response is too large");
     }

@@ -11,6 +11,7 @@ import {
   projectCodexIntegration,
 } from "../codex/codex-integration";
 import { CodexTaskDiscoveryAdapter } from "../codex/codex-task-discovery";
+import { CodexContextStore } from "../codex/workgrove-context";
 import { clearLogs } from "../commands/clear-logs";
 import { createWorktree } from "../commands/create-worktree";
 import { deleteWorktree } from "../commands/delete-worktree";
@@ -179,12 +180,19 @@ function appGroupInstanceKey(name: string, slot: number): string {
 }
 
 export interface WorkspaceControllerRuntimeOptions {
+  codexContext?: CodexContextStore;
   codexHooks?: CodexHookActivityStore;
+}
+
+export interface CodexHookResult {
+  accepted: boolean;
+  additionalContext?: string;
 }
 
 export class WorkspaceController {
   private readonly codexAdapter: CodexIntegrationAdapter;
   private readonly codexActivity: CodexHookActivityStore;
+  private readonly codexContext: CodexContextStore;
   private readonly codexRefreshes = new Map<string, Promise<void>>();
   private readonly knownCodexTasksByPath = new Map<string, Set<string>>();
   private readonly pendingCodexObservations = new Map<
@@ -198,6 +206,7 @@ export class WorkspaceController {
   ) {
     this.codexAdapter = codexAdapter;
     this.codexActivity = runtime.codexHooks ?? new CodexHookActivityStore();
+    this.codexContext = runtime.codexContext ?? new CodexContextStore();
   }
 
   close(): Promise<void> {
@@ -214,22 +223,56 @@ export class WorkspaceController {
     for (const { task, worktreePath } of discovered.tasks) {
       this.knownCodexTasksByPath.get(worktreePath)?.add(task.id);
     }
-    const adapterSnapshot = this.codexActivity.applyToSnapshot(
+    const activitySnapshot = this.codexActivity.applyToSnapshot(
       discovered,
       new Date(),
       (worktreePath) => this.codexEnabledWorktree(worktreePath)
     );
+    const adapterSnapshot = this.codexContext.applyToSnapshot(activitySnapshot);
     return projectCodexIntegration(worktrees, adapterSnapshot);
   }
 
   observeCodexHook(observation: CodexHookObservation): boolean {
+    return this.acceptCodexHook(observation, new Date()) !== null;
+  }
+
+  handleCodexHook(
+    observation: CodexHookObservation,
+    observedAt = new Date()
+  ): CodexHookResult {
+    const accepted = this.acceptCodexHook(observation, observedAt);
+    if (!accepted) {
+      return { accepted: false };
+    }
+    if (accepted.cwd !== accepted.root) {
+      return { accepted: true };
+    }
+    try {
+      const worktree = this.inspect(accepted.root).worktrees.find(
+        ({ path }) => path === accepted.cwd
+      );
+      const additionalContext = worktree
+        ? this.codexContext.share(observation, worktree, observedAt)
+        : undefined;
+      return additionalContext
+        ? { accepted: true, additionalContext }
+        : { accepted: true };
+    } catch {
+      return { accepted: true };
+    }
+  }
+
+  private acceptCodexHook(
+    observation: CodexHookObservation,
+    observedAt: Date
+  ): { cwd: string; root: string } | null {
     try {
       const cwd = realpathSync(observation.cwd);
       const root = realpathSync(git(cwd, ["rev-parse", "--show-toplevel"]));
       if (!this.codexEnabledWorktree(root)) {
-        return false;
+        return null;
       }
-      this.codexActivity.observe({ ...observation, cwd });
+      this.codexActivity.observe({ ...observation, cwd }, observedAt);
       if (!this.knownCodexTasksByPath.get(cwd)?.has(observation.sessionId)) {
         const pending = this.pendingCodexObservations.get(root) ?? new Map();
         pending.set(`${cwd}\0${observation.sessionId}`, {
@@ -239,9 +282,9 @@ export class WorkspaceController {
         this.pendingCodexObservations.set(root, pending);
         this.requestCodexRefresh(root);
       }
-      return true;
+      return { cwd, root };
     } catch {
-      return false;
+      return null;
     }
   }
 
@@ -567,6 +610,7 @@ export class WorkspaceController {
           ?.has(observation.sessionId)
       ) {
         this.codexActivity.discard(observation.cwd, observation.sessionId);
+        this.codexContext.discard(observation.cwd, observation.sessionId);
       }
     }
   }

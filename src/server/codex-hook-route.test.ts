@@ -14,6 +14,7 @@ describe("Codex hook HTTP route", () => {
     const handler = createCodexHookRequestHandler({
       observe: (observation) => {
         observations.push(observation);
+        return undefined;
       },
       token: "hook-secret",
     });
@@ -65,6 +66,49 @@ describe("Codex hook HTTP route", () => {
         version: 1,
       },
     ]);
+  });
+
+  it("returns the safe context produced while handling a model-visible event", async () => {
+    const contextServer = createServer((request, response) => {
+      createCodexHookRequestHandler({
+        observe: () => ({ additionalContext: "Safe Workgrove context" }),
+        token: "hook-secret",
+      })(request, response).catch(() => response.end());
+    });
+    await new Promise<void>((resolve) => {
+      contextServer.listen(0, "127.0.0.1", resolve);
+    });
+    try {
+      const address = contextServer.address();
+      if (!(address && typeof address === "object")) {
+        throw new Error("Missing context test server address");
+      }
+      const response = await fetch(
+        `http://127.0.0.1:${address.port}/api/codex/hooks`,
+        {
+          body: JSON.stringify({
+            cwd: "/repo/worktree",
+            event: "SessionStart",
+            sessionId: "task-a",
+            source: "resume",
+            version: 1,
+          }),
+          headers: {
+            authorization: "Bearer hook-secret",
+            "content-type": "application/json",
+          },
+          method: "POST",
+        }
+      );
+
+      expect(await response.json()).toEqual({
+        additionalContext: "Safe Workgrove context",
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        contextServer.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
   });
 
   it("rejects browser origins, invalid tokens, and content-bearing fields", async () => {

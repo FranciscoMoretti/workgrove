@@ -56,7 +56,7 @@ function enableCodexHooks(): void {
       processStartMarker: processStartMarker(process.pid),
     });
     handleCodexHook = createCodexHookRequestHandler({
-      observe: (observation) => controller.observeCodexHook(observation),
+      observe: (observation) => controller.handleCodexHook(observation),
       token: codexHookCapability.record.token,
     });
   } catch {

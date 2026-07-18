@@ -182,13 +182,31 @@ describe("Workgrove Codex hook runner", () => {
     expect(result.stderr).toBe("");
 
     hookResponse = { additionalContext: "x".repeat(17 * 1024) };
-    const oversized = await run(
+    const largerContext = await run(
       "UserPromptSubmit",
       {
         cwd: "/repo/worktree",
         hook_event_name: "UserPromptSubmit",
         session_id: "task-a",
         turn_id: "turn-2",
+      },
+      capability.file
+    );
+    expect(JSON.parse(largerContext.stdout)).toEqual({
+      hookSpecificOutput: {
+        additionalContext: "x".repeat(17 * 1024),
+        hookEventName: "UserPromptSubmit",
+      },
+    });
+
+    hookResponse = { additionalContext: "x".repeat(65 * 1024) };
+    const oversized = await run(
+      "UserPromptSubmit",
+      {
+        cwd: "/repo/worktree",
+        hook_event_name: "UserPromptSubmit",
+        session_id: "task-a",
+        turn_id: "turn-3",
       },
       capability.file
     );
