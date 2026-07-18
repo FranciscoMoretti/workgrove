@@ -90,6 +90,10 @@ try {
   for (const requiredPath of [
     "package/scripts/daemon.ts",
     "package/dist/index.html",
+    "package/plugins/workgrove/.codex-plugin/plugin.json",
+    "package/plugins/workgrove/hooks/hooks.json",
+    "package/plugins/workgrove/hooks/workgrove-hook",
+    "package/plugins/workgrove/hooks/workgrove-hook.ts",
     "package/schema/workgrove.schema.json",
     "package/src/config/public.ts",
   ]) {

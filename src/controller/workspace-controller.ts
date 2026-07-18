@@ -2,6 +2,10 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { basename, join } from "node:path";
 import {
+  CodexHookActivityStore,
+  type CodexHookObservation,
+} from "../codex/codex-hook-activity";
+import {
   type CodexIntegrationAdapter,
   type CodexIntegrationSnapshot,
   projectCodexIntegration,
@@ -174,13 +178,26 @@ function appGroupInstanceKey(name: string, slot: number): string {
   return `${name}\0${slot}`;
 }
 
+export interface WorkspaceControllerRuntimeOptions {
+  codexHooks?: CodexHookActivityStore;
+}
+
 export class WorkspaceController {
   private readonly codexAdapter: CodexIntegrationAdapter;
+  private readonly codexActivity: CodexHookActivityStore;
+  private readonly codexRefreshes = new Map<string, Promise<void>>();
+  private readonly knownCodexTasksByPath = new Map<string, Set<string>>();
+  private readonly pendingCodexObservations = new Map<
+    string,
+    Map<string, { cwd: string; sessionId: string }>
+  >();
 
   constructor(
-    codexAdapter: CodexIntegrationAdapter = new CodexTaskDiscoveryAdapter()
+    codexAdapter: CodexIntegrationAdapter = new CodexTaskDiscoveryAdapter(),
+    runtime: WorkspaceControllerRuntimeOptions = {}
   ) {
     this.codexAdapter = codexAdapter;
+    this.codexActivity = runtime.codexHooks ?? new CodexHookActivityStore();
   }
 
   close(): Promise<void> {
@@ -190,9 +207,42 @@ export class WorkspaceController {
   async inspectCodex(repoPath: string): Promise<CodexIntegrationSnapshot> {
     const workspace = this.inspect(repoPath);
     const worktrees = workspace.worktrees.map(({ id, path }) => ({ id, path }));
-    const adapterSnapshot =
-      await this.codexAdapter.loadAssociatedTasks(worktrees);
+    const discovered = await this.codexAdapter.loadAssociatedTasks(worktrees);
+    for (const { path } of worktrees) {
+      this.knownCodexTasksByPath.set(path, new Set());
+    }
+    for (const { task, worktreePath } of discovered.tasks) {
+      this.knownCodexTasksByPath.get(worktreePath)?.add(task.id);
+    }
+    const adapterSnapshot = this.codexActivity.applyToSnapshot(
+      discovered,
+      new Date(),
+      (worktreePath) => this.codexEnabledWorktree(worktreePath)
+    );
     return projectCodexIntegration(worktrees, adapterSnapshot);
+  }
+
+  observeCodexHook(observation: CodexHookObservation): boolean {
+    try {
+      const cwd = realpathSync(observation.cwd);
+      const root = realpathSync(git(cwd, ["rev-parse", "--show-toplevel"]));
+      if (!this.codexEnabledWorktree(root)) {
+        return false;
+      }
+      this.codexActivity.observe({ ...observation, cwd });
+      if (!this.knownCodexTasksByPath.get(cwd)?.has(observation.sessionId)) {
+        const pending = this.pendingCodexObservations.get(root) ?? new Map();
+        pending.set(`${cwd}\0${observation.sessionId}`, {
+          cwd,
+          sessionId: observation.sessionId,
+        });
+        this.pendingCodexObservations.set(root, pending);
+        this.requestCodexRefresh(root);
+      }
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async execute<Name extends WorkgroveCommandName>(
@@ -475,5 +525,49 @@ export class WorkspaceController {
     return readManagedLog(
       appGroupName ? appGroupProcessId(id, appGroupName) : id
     );
+  }
+
+  private codexEnabledWorktree(path: string): boolean {
+    try {
+      const root = realpathSync(path);
+      const configPath = findWorkgroveConfig(root);
+      if (!configPath) {
+        return false;
+      }
+      loadWorkgroveConfigDocument(configPath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private requestCodexRefresh(root: string): void {
+    if (this.codexRefreshes.has(root)) {
+      return;
+    }
+    const refresh = this.inspectCodex(root)
+      .then(() => undefined)
+      .catch(() => undefined)
+      .finally(() => {
+        this.discardUnmatchedCodexObservations(root);
+        if (this.codexRefreshes.get(root) === refresh) {
+          this.codexRefreshes.delete(root);
+        }
+      });
+    this.codexRefreshes.set(root, refresh);
+  }
+
+  private discardUnmatchedCodexObservations(root: string): void {
+    const pending = this.pendingCodexObservations.get(root);
+    this.pendingCodexObservations.delete(root);
+    for (const observation of pending?.values() ?? []) {
+      if (
+        !this.knownCodexTasksByPath
+          .get(observation.cwd)
+          ?.has(observation.sessionId)
+      ) {
+        this.codexActivity.discard(observation.cwd, observation.sessionId);
+      }
+    }
   }
 }

@@ -1,0 +1,17 @@
+{
+  "name": "workgrove",
+  "version": "0.1.0",
+  "description": "Connect Codex lifecycle activity to local Workgrove worktrees.",
+  "author": {
+    "name": "Workgrove"
+  },
+  "interface": {
+    "displayName": "Workgrove",
+    "shortDescription": "Show live Codex activity in Workgrove.",
+    "longDescription": "Reports allowlisted Codex lifecycle metadata to the local Workgrove daemon for explicitly configured worktrees.",
+    "developerName": "Workgrove",
+    "category": "Productivity",
+    "capabilities": ["Lifecycle activity"],
+    "defaultPrompt": "Help me inspect this Workgrove worktree."
+  }
+}

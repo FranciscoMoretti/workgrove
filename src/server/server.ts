@@ -8,6 +8,7 @@ import {
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
+import { createCodexHookCapability } from "../codex/codex-hook-capability";
 import {
   CodexIntegrationSnapshotSchema,
   CodexIntegrationUnavailableError,
@@ -17,6 +18,8 @@ import {
   MissingWorktreeConfigError,
   WorkspaceController,
 } from "../controller/workspace-controller";
+import { processStartMarker } from "../host/process-inspection";
+import { createCodexHookRequestHandler } from "./codex-hook-route";
 import {
   LogsQuerySchema,
   LogsResponseSchema,
@@ -37,6 +40,30 @@ const CONTENT_TYPES: Record<string, string> = {
 };
 const token = randomBytes(32).toString("base64url");
 const controller = new WorkspaceController();
+let codexHookCapability: ReturnType<typeof createCodexHookCapability> | null =
+  null;
+let handleCodexHook: ReturnType<typeof createCodexHookRequestHandler> | null =
+  null;
+
+function enableCodexHooks(): void {
+  try {
+    codexHookCapability = createCodexHookCapability({
+      ...(process.env.WORKGROVE_CODEX_CONTROL_DIR
+        ? { directory: process.env.WORKGROVE_CODEX_CONTROL_DIR }
+        : {}),
+      endpoint: `http://${HOST}:${PORT}/api/codex/hooks`,
+      pid: process.pid,
+      processStartMarker: processStartMarker(process.pid),
+    });
+    handleCodexHook = createCodexHookRequestHandler({
+      observe: (observation) => controller.observeCodexHook(observation),
+      token: codexHookCapability.record.token,
+    });
+  } catch {
+    codexHookCapability = null;
+    handleCodexHook = null;
+  }
+}
 
 function sendJson(response: ServerResponse, status: number, value: unknown) {
   response.writeHead(status, {
@@ -204,6 +231,14 @@ const server = createServer(async (request, response) => {
     `http://${request.headers.host ?? `${HOST}:${PORT}`}`
   );
   try {
+    if (
+      handleCodexHook &&
+      request.method === "POST" &&
+      url.pathname === "/api/codex/hooks"
+    ) {
+      await handleCodexHook(request, response);
+      return;
+    }
     if (request.method === "GET" && (await handleGetApi(url, response))) {
       return;
     }
@@ -252,5 +287,28 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 
 server.listen(PORT, HOST, () => {
+  enableCodexHooks();
   console.log(`Workgrove: http://${HOST}:${PORT}/`);
+});
+
+let stopping = false;
+async function stopServer(): Promise<void> {
+  if (stopping) {
+    return;
+  }
+  stopping = true;
+  try {
+    await vite?.close();
+  } finally {
+    server.close();
+  }
+}
+
+server.once("close", () => codexHookCapability?.cleanup());
+process.once("exit", () => codexHookCapability?.cleanup());
+process.once("SIGINT", () => {
+  stopServer().catch(() => undefined);
+});
+process.once("SIGTERM", () => {
+  stopServer().catch(() => undefined);
 });

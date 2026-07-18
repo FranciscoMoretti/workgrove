@@ -1,0 +1,20 @@
+#!/bin/sh
+
+event=${1:-}
+plugin_root=${PLUGIN_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}
+runner="$plugin_root/hooks/workgrove-hook.ts"
+
+for runtime in "$HOME/.bun/bin/bun" /opt/homebrew/bin/bun /usr/local/bin/bun; do
+  if [ -x "$runtime" ]; then
+    "$runtime" "$runner" "$event" 2>/dev/null || printf '{}\n'
+    exit 0
+  fi
+done
+
+if command -v bun >/dev/null 2>&1; then
+  bun "$runner" "$event" 2>/dev/null || printf '{}\n'
+  exit 0
+fi
+
+printf '{}\n'
+exit 0
