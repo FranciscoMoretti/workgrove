@@ -33,8 +33,6 @@ export function useCommands(repoPath: string) {
   const restartApps = useCommand("restart-apps", repoPath);
   const restartRunningApps = useCommand("restart-running-apps", repoPath);
   const stopApps = useCommand("stop-apps", repoPath);
-  const switchSlot = useCommand("switch-slot", repoPath);
-  const setSlot = useCommand("set-slot", repoPath);
   const stopAllApps = useCommand("stop-all-apps", repoPath);
   const trustRepository = useCommand("trust-repository", repoPath);
   const updateRepositoryConfig = useCommand(
@@ -47,7 +45,6 @@ export function useCommands(repoPath: string) {
     clearLogs,
     createWorktree,
     deleteWorktree,
-    setSlot,
     restartApps,
     restartRunningApps,
     setupAllApps,
@@ -55,7 +52,6 @@ export function useCommands(repoPath: string) {
     startApps,
     stopAllApps,
     stopApps,
-    switchSlot,
     trustRepository,
     updateRepositoryConfig,
   };

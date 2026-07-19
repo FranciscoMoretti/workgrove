@@ -13,24 +13,20 @@ const actions: WorktreeCommandActions = {
   onStop: () => undefined,
 };
 
-function worktree(
-  health: WorktreeSnapshot["health"],
-  overrides: Partial<WorktreeSnapshot> = {}
-): WorktreeSnapshot {
+function worktree(health: WorktreeSnapshot["health"]): WorktreeSnapshot {
   return {
-    appLabel: "App",
-    apps: [],
     appGroups: [
       {
         apps: [],
         health,
+        id: "apps",
         name: "Apps",
         processRunning: false,
-        slot: 0,
-        slotState: "assigned",
         stop: "process",
       },
     ],
+    appLabel: "App",
+    apps: [],
     branch: "main",
     health,
     id: "worktree",
@@ -39,9 +35,6 @@ function worktree(
     path: "/repo",
     processRunning: false,
     setupState: "idle",
-    slot: 0,
-    slotState: "assigned",
-    ...overrides,
   };
 }
 
@@ -69,7 +62,7 @@ describe("worktree command menu", () => {
     expect(itemIds(worktree("not-running"))).toEqual(["setup", "start"]);
   });
 
-  it("offers setup, stop, and group restart when partially running", () => {
+  it("offers setup, stop, and restart when partially running", () => {
     expect(itemIds(worktree("partially-running"))).toEqual([
       "setup",
       "stop",
@@ -79,23 +72,5 @@ describe("worktree command menu", () => {
 
   it("offers setup, stop, and restart when fully running", () => {
     expect(itemIds(worktree("running"))).toEqual(["setup", "stop", "restart"]);
-  });
-
-  it("keeps start visible but disabled for an invalid slot", () => {
-    const items = worktreeCommandMenuItems({
-      actions,
-      pending: false,
-      worktree: worktree("not-running", {
-        slot: 0,
-        slotState: "invalid",
-      }),
-    });
-    expect(items.find((item) => item.id === "start")?.disabled).toBe(true);
-  });
-
-  it("does not offer restart for an invalid app group slot", () => {
-    expect(
-      itemIds(worktree("running", { slot: 0, slotState: "invalid" }))
-    ).toEqual(["setup", "stop"]);
   });
 });

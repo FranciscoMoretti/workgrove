@@ -4,26 +4,19 @@ export {
   WorkgroveCommandSchema,
 } from "./workgrove-command";
 export {
-  defaultWorkgroveSlots,
   findWorkgroveConfig,
   loadWorkgroveConfig,
   loadWorkgroveConfigDocument,
   type ResolvedWorkgroveApp,
   type ResolvedWorkgroveAppGroup,
-  resolveWorkgroveAppGroup,
-  resolveWorkgroveAppGroups,
+  type ResolvedWorkgroveAppGroups,
+  resolveSetupCommand,
+  resolveStartCommand,
+  resolveStopCommand,
   type WorkgroveConfigDocument,
 } from "./workgrove-config";
 export {
   cloneWorkgroveConfig,
-  maximumWorkgroveAppGroupSlot,
-  maximumWorkgroveSlot,
-  resolveWorkgroveAppPort,
-  WORKGROVE_DEFAULT_SLOT,
-  WORKGROVE_DEFAULT_STRIDE,
-  WORKGROVE_LEGACY_SLOT_ENV,
-  WORKGROVE_LEGACY_SLOT_FILE,
-  WORKGROVE_SLOTS_FILE,
   type WorkgroveApp,
   type WorkgroveAppGroup,
   WorkgroveAppGroupNameSchema,
@@ -33,6 +26,6 @@ export {
   type WorkgroveConfig,
   WorkgroveConfigSchema,
   WorkgroveEnvironmentNameSchema,
+  WorkgroveReadinessSchema,
   type WorktreeEnvConfig,
-  workgroveAppGroupSlotsHavePortCollision,
 } from "./workgrove-schema";

@@ -1,28 +1,14 @@
 import { spawnSync } from "node:child_process";
-import {
-  appendFileSync,
-  existsSync,
-  readFileSync,
-  realpathSync,
-  writeFileSync,
-} from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { trustRepository } from "../config/repository-trust";
 import {
   defaultWorkgroveSetupCommand,
   defaultWorkgroveStartCommand,
   type WorkgroveCommand,
 } from "../config/workgrove-command";
-import {
-  resolveWorkgroveAppGroup,
-  type WorktreeEnvConfig,
-} from "../config/workgrove-config";
-import {
-  WORKGROVE_LEGACY_SLOT_FILE,
-  WORKGROVE_SLOTS_FILE,
-} from "../config/workgrove-schema";
+import type { WorktreeEnvConfig } from "../config/workgrove-config";
 
-const LINE_BREAK = /\r?\n/;
 const FASTAPI_DEPENDENCY = /\bfastapi\b/i;
 const COMPOSE_FILES = [
   "compose.yaml",
@@ -54,30 +40,6 @@ function gitRoot(repoPath: string): string {
     throw new Error((result.stderr || "Not a Git repository").trim());
   }
   return realpathSync(result.stdout.trim());
-}
-
-function excludeLocalSlotFile(root: string, slotFile: string): void {
-  const result = spawnSync("git", ["rev-parse", "--git-common-dir"], {
-    cwd: root,
-    encoding: "utf8",
-  });
-  if (result.status !== 0) {
-    throw new Error((result.stderr || "Could not locate Git metadata").trim());
-  }
-  const rawDirectory = result.stdout.trim();
-  const commonDirectory = isAbsolute(rawDirectory)
-    ? rawDirectory
-    : resolve(root, rawDirectory);
-  const excludePath = join(commonDirectory, "info", "exclude");
-  const content = existsSync(excludePath)
-    ? readFileSync(excludePath, "utf8")
-    : "";
-  if (!content.split(LINE_BREAK).includes(slotFile)) {
-    appendFileSync(
-      excludePath,
-      `${content.endsWith("\n") || content === "" ? "" : "\n"}${slotFile}\n`
-    );
-  }
 }
 
 function projectDefaults(root: string): ProjectDefaults {
@@ -126,14 +88,6 @@ function projectDefaults(root: string): ProjectDefaults {
   return { label: "Unknown" };
 }
 
-function stableBasePort(path: string): number {
-  let bucket = 0;
-  for (const character of path) {
-    bucket = (bucket * 31 + character.charCodeAt(0)) % 250;
-  }
-  return 10_000 + bucket * 200;
-}
-
 export function planRepositoryInitialization(
   repoPath: string
 ): RepositoryInitializationPlan {
@@ -150,22 +104,22 @@ export function planRepositoryInitialization(
   const config: WorktreeEnvConfig = {
     $schema:
       "https://raw.githubusercontent.com/franciscomoretti/workgrove/main/schema/workgrove.schema.json",
-    version: 2,
+    version: 1,
     setup,
     appGroups: {
       Apps: {
-        slot: { default: 0, stride: 10 },
         start,
         stop: "process",
+        env: { PORT: "{apps.App.port}" },
         apps: {
           App: {
-            basePort: stableBasePort(root),
+            protocol: "http",
+            readiness: "tcp",
           },
         },
       },
     },
   };
-  resolveWorkgroveAppGroup(config, "Apps", 0);
   return {
     config,
     configPath,
@@ -183,8 +137,6 @@ export function initializeRepository(
   writeFileSync(plan.configPath, `${JSON.stringify(plan.config, null, 2)}\n`, {
     flag: "wx",
   });
-  excludeLocalSlotFile(plan.repoPath, WORKGROVE_SLOTS_FILE);
-  excludeLocalSlotFile(plan.repoPath, WORKGROVE_LEGACY_SLOT_FILE);
   trustRepository(plan.repoPath, plan.config);
   return plan;
 }

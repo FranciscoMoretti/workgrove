@@ -13,8 +13,8 @@ or have multiple Codex tasks working in the same repository.
 - One dashboard for every worktree in a repository.
 - Independently startable app groups, such as product apps and local
   infrastructure.
-- Stable per-worktree ports, listener detection, process ownership, and managed
-  logs.
+- Stable per-worktree Friendly URLs, collision-free backing ports, listener
+  detection, process ownership, and managed logs.
 - Command review and trust before repository setup or lifecycle commands run.
 - Every non-archived Codex task associated with each exact worktree path.
 - Direct **Open task** and **New task** links into the Codex desktop app.
@@ -136,28 +136,36 @@ worktree; each app group can then be started and stopped independently.
 ```json
 {
   "$schema": "https://raw.githubusercontent.com/franciscomoretti/workgrove/main/schema/workgrove.schema.json",
-  "version": 2,
+  "version": 1,
   "setup": { "argv": ["bun", "install"] },
   "appGroups": {
     "Product Apps": {
-      "slot": { "default": 0, "stride": 10 },
       "start": { "argv": ["bun", "run", "dev:workgrove"] },
       "stop": "process",
+      "env": {
+        "WEB_PORT": "{apps.Web.port}",
+        "API_PORT": "{apps.API.port}",
+        "API_URL": "{apps.API.url}"
+      },
       "apps": {
-        "Web": { "basePort": 3000 },
-        "API": { "basePort": 8000 }
+        "Web": { "protocol": "http", "readiness": "tcp" },
+        "API": {
+          "protocol": "http",
+          "readiness": { "type": "http", "path": "/health" }
+        }
       }
     },
     "Local Infrastructure": {
-      "slot": { "default": 0, "stride": 10 },
       "start": { "argv": ["docker", "compose", "up", "-d"] },
       "stop": { "argv": ["docker", "compose", "down"] },
-      "apps": { "Postgres": { "basePort": 5432 } }
+      "env": {
+        "PGHOST": "{apps.Postgres.host}",
+        "PGPORT": "{apps.Postgres.port}"
+      },
+      "apps": {
+        "Postgres": { "protocol": "tcp", "readiness": "tcp" }
+      }
     }
-  },
-  "env": {
-    "WEB_PORT": "{appGroups.Product Apps.apps.Web.port}",
-    "DATABASE_URL": "{appGroups.Local Infrastructure.apps.Postgres.url}"
   }
 }
 ```
@@ -169,11 +177,14 @@ Important configuration behavior:
   that process and terminates it on Stop.
 - A command-based Stop is useful for detached infrastructure such as Docker
   Compose.
-- `basePort + slot * stride` gives each worktree a separate app port.
-- Local slot assignments live in the ignored `.workgrove.local.json` file.
-- Environment values can be literals or exact-name templates such as
-  `{appGroups.Product Apps.apps.Web.port}` and
-  `{appGroups.Product Apps.apps.Web.url}`.
+- Workgrove leases collision-free loopback backing ports when an App group
+  starts and releases them only after Stop is safely observed.
+- HTTP Apps receive stable `*.localhost` Friendly URLs through Portless. TCP
+  Apps expose their allocated host and port to their own App group.
+- App-group environment values can be literals or templates such as
+  `{apps.Web.port}`, `{apps.Web.directUrl}`, and `{apps.Web.url}`. A group may
+  reference another HTTP App's stable URL with
+  `{appGroups.Product Apps.apps.Web.url}`, but not its transient backing port.
 
 If a repository has no configuration, Workgrove can suggest conservative setup
 and start commands for Node.js, Django, FastAPI, Rust, Go, and Docker Compose.
@@ -187,13 +198,15 @@ Bun scripts can reuse Workgrove's checked-in configuration contract:
 import {
   findWorkgroveConfig,
   loadWorkgroveConfig,
-  resolveWorkgroveAppGroup,
+  resolveStartCommand,
+  type ResolvedWorkgroveAppGroups,
   type WorkgroveConfig,
 } from "workgrove/config";
 ```
 
 The public API exposes configuration schemas and types, discovery/loading, and
-app-port resolution. Process ownership, command execution, trust, and controller
+command resolution against an active run's endpoint values. Endpoint allocation,
+Portless routing, process ownership, command execution, trust, and controller
 internals remain private.
 
 ## Development

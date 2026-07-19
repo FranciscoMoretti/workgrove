@@ -36,7 +36,7 @@ export function appGroupCommandMenuItems({
   const running = appGroupIsRunning(group);
   return [
     {
-      disabled: pending || (!running && group.slotState !== "assigned"),
+      disabled: pending,
       icon: running ? SquareIcon : PlayIcon,
       id: running ? "stop" : "start",
       label: running ? `Stop ${group.name}` : `Start ${group.name}`,

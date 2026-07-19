@@ -15,23 +15,15 @@ export async function restartRunningApps(
     controller.inspect(repoPath).worktrees,
     input.worktreeIds
   );
-  const seenCommandInstances = new Set<string>();
   const targets = worktrees.flatMap((worktree) =>
     worktree.appGroups.flatMap((group) => {
       if (
-        (requestedGroup && group.name !== requestedGroup) ||
+        (requestedGroup && group.id !== requestedGroup) ||
         !appGroupCanRestart(group)
       ) {
         return [];
       }
-      if (group.stop === "command") {
-        const instance = `${group.name}\0${group.slot}`;
-        if (seenCommandInstances.has(instance)) {
-          return [];
-        }
-        seenCommandInstances.add(instance);
-      }
-      return [{ appGroupName: group.name, worktreeId: worktree.id }];
+      return [{ appGroupName: group.id, worktreeId: worktree.id }];
     })
   );
   for (const target of targets) {

@@ -9,12 +9,9 @@ import type { FormEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
-  AppGroupSlotOption,
-  AppGroupSnapshot,
   WorkspaceSnapshot,
   WorktreeSnapshot,
 } from "../controller/workspace-snapshot";
-import { appGroupIsRunning } from "../controller/workspace-snapshot";
 import {
   repositoryPageFromSearch,
   repositoryPathFromSearch,
@@ -27,10 +24,6 @@ import { RecoveryBoundary } from "./components/recovery-boundary";
 import { RepositoryConfigPage } from "./components/repository-config-page";
 import { RepositoryDialog } from "./components/repository-dialog";
 import { RepositoryTrustDialog } from "./components/repository-trust-dialog";
-import {
-  type SlotSwitchTarget,
-  SwitchSlotDialog,
-} from "./components/switch-slot-dialog";
 import { ThemeToggle } from "./components/theme-toggle";
 import { Toolbar } from "./components/toolbar";
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
@@ -98,7 +91,7 @@ function worktreeForAppGroup(
   appGroupName: string | null
 ): WorktreeSnapshot | null {
   const group = worktree?.appGroups.find(
-    (candidate) => candidate.name === appGroupName
+    (candidate) => candidate.id === appGroupName
   );
   if (!(worktree && group)) {
     return worktree;
@@ -109,8 +102,6 @@ function worktreeForAppGroup(
     apps: group.apps,
     health: group.health,
     processRunning: group.processRunning,
-    slot: group.slot,
-    slotState: group.slotState,
   };
 }
 
@@ -309,8 +300,6 @@ export function App() {
   const [deleteTarget, setDeleteTarget] = useState<WorktreeSnapshot | null>(
     null
   );
-  const [slotSwitchTarget, setSlotSwitchTarget] =
-    useState<SlotSwitchTarget | null>(null);
   const workspace = useWorkspace(repoPath);
   const codex = useCodexIntegration(repoPath);
   const queryClient = useQueryClient();
@@ -451,22 +440,6 @@ export function App() {
     );
     setRepositoryPage("workspace");
   }
-  function selectSlot(
-    worktree: WorktreeSnapshot,
-    group: AppGroupSnapshot,
-    slot: AppGroupSlotOption
-  ): void {
-    if (group.stop === "process" && appGroupIsRunning(group)) {
-      setSlotSwitchTarget({ appGroupName: group.name, slot, worktree });
-      return;
-    }
-    commands.setSlot.mutate({
-      appGroupName: group.name,
-      repoPath,
-      slot: slot.slot,
-      worktreeId: worktree.id,
-    });
-  }
   if (repositoryPage === "settings") {
     return (
       <RepositoryConfigPage
@@ -494,14 +467,12 @@ export function App() {
       <WorktreeTable
         appGroupActionBlocked={appGroupActionBlocked}
         appGroupActionPending={appGroupActionPending}
-        appGroupSlots={data.appGroupSlotOptions}
         codexAvailability={currentCodexAvailability}
         codexWorktrees={codexWorktrees}
         commandActions={commandActions}
         onDelete={setDeleteTarget}
         onInspect={setSelectedId}
         onRestartAppGroup={restartAppGroup}
-        onSetSlot={selectSlot}
         onToggleAppGroup={toggleAppGroup}
         selectedId={selectedId}
         worktreeActionPending={worktreeActionPending}
@@ -616,7 +587,6 @@ export function App() {
         repoName={data.repoName}
         repoPath={repoPath}
         requestRepositoryTrust={repositoryTrust.requestTrust}
-        slots={data.slotOptions}
       />
       <RepositoryDialog
         currentPath={repoPath}
@@ -635,24 +605,6 @@ export function App() {
         open={deleteTarget !== null}
         repoPath={repoPath}
         worktree={deleteTarget}
-      />
-      <SwitchSlotDialog
-        key={
-          slotSwitchTarget
-            ? `${slotSwitchTarget.worktree.id}:${slotSwitchTarget.slot.slot}`
-            : "no-slot-switch"
-        }
-        onClose={() => setSlotSwitchTarget(null)}
-        onConfirm={(target) =>
-          commands.switchSlot.mutateAsync({
-            repoPath,
-            appGroupName: target.appGroupName,
-            slot: target.slot.slot,
-            worktreeId: target.worktree.id,
-          })
-        }
-        requestRepositoryTrust={repositoryTrust.requestTrust}
-        target={slotSwitchTarget}
       />
       <RepositoryTrustDialog
         actionLabel={repositoryTrust.actionLabel}

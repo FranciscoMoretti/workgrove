@@ -5,11 +5,6 @@ import { workgroveTemplateError } from "./workgrove-template";
 
 export const MIN_WORKGROVE_PORT = 1024;
 export const MAX_WORKGROVE_PORT = 65_535;
-export const WORKGROVE_DEFAULT_SLOT = 0;
-export const WORKGROVE_SLOTS_FILE = ".workgrove.local.json";
-export const WORKGROVE_LEGACY_SLOT_ENV = "WORKGROVE_SLOT";
-export const WORKGROVE_LEGACY_SLOT_FILE = ".env.worktree.local";
-export const WORKGROVE_DEFAULT_STRIDE = 10;
 
 export const WorkgroveAppGroupNameSchema = z.string().min(1);
 export const WorkgroveAppIdSchema = z.string().min(1);
@@ -17,8 +12,35 @@ export const WorkgroveEnvironmentNameSchema = z
   .string()
   .regex(/^[A-Za-z_][A-Za-z0-9_]*$/);
 
+const HttpReadinessSchema = z.strictObject({
+  path: z.string().startsWith("/").default("/"),
+  statuses: z
+    .string()
+    .regex(/^\d{3}-\d{3}$/)
+    .refine((range) => {
+      const [minimum, maximum] = range.split("-").map(Number);
+      return (
+        minimum !== undefined &&
+        maximum !== undefined &&
+        minimum >= 100 &&
+        maximum <= 599 &&
+        minimum <= maximum
+      );
+    }, "HTTP status range must be ordered between 100 and 599")
+    .default("200-399"),
+  timeoutSeconds: z.number().int().min(1).max(300).default(60),
+  type: z.literal("http"),
+});
+
+export const WorkgroveReadinessSchema = z.union([
+  z.literal("tcp"),
+  HttpReadinessSchema,
+]);
+
 export const WorkgroveAppSchema = z.strictObject({
-  basePort: z.number().int().min(MIN_WORKGROVE_PORT).max(MAX_WORKGROVE_PORT),
+  name: z.string().min(1).optional(),
+  protocol: z.enum(["http", "tcp"]),
+  readiness: WorkgroveReadinessSchema.default("tcp"),
 });
 
 export type WorkgroveApp = z.infer<typeof WorkgroveAppSchema>;
@@ -29,17 +51,10 @@ export const WorkgroveAppGroupStopSchema = z.union([
 ]);
 
 export const WorkgroveAppGroupSchema = z.strictObject({
-  slot: z.strictObject({
-    default: z.number().int().nonnegative().default(WORKGROVE_DEFAULT_SLOT),
-    stride: z
-      .number()
-      .int()
-      .min(1)
-      .max(MAX_WORKGROVE_PORT)
-      .default(WORKGROVE_DEFAULT_STRIDE),
-  }),
+  name: z.string().min(1).optional(),
   start: WorkgroveCommandSchema,
   stop: WorkgroveAppGroupStopSchema,
+  env: z.record(WorkgroveEnvironmentNameSchema, z.string()).optional(),
   apps: z.record(WorkgroveAppIdSchema, WorkgroveAppSchema),
 });
 
@@ -47,10 +62,9 @@ export type WorkgroveAppGroup = z.infer<typeof WorkgroveAppGroupSchema>;
 
 const WorkgroveConfigObjectSchema = z.strictObject({
   $schema: z.string().optional(),
-  version: z.literal(2),
+  version: z.literal(1),
   setup: WorkgroveCommandSchema,
   appGroups: z.record(WorkgroveAppGroupNameSchema, WorkgroveAppGroupSchema),
-  env: z.record(WorkgroveEnvironmentNameSchema, z.string()).optional(),
 });
 
 type WorkgroveConfigShape = z.infer<typeof WorkgroveConfigObjectSchema>;
@@ -59,6 +73,7 @@ export const WorkgroveConfigSchema = WorkgroveConfigObjectSchema.superRefine(
   validateWorkgroveConfig
 );
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: keep schema issues colocated with their exact JSON paths.
 function validateWorkgroveConfig(
   config: WorkgroveConfigShape,
   context: z.RefinementCtx
@@ -73,88 +88,66 @@ function validateWorkgroveConfig(
     return;
   }
 
-  for (const [groupName, group] of groups) {
+  for (const [groupId, group] of groups) {
     const apps = Object.entries(group.apps);
     if (apps.length === 0) {
       context.addIssue({
         code: "custom",
         message: "An App group requires at least one App",
-        path: ["appGroups", groupName, "apps"],
+        path: ["appGroups", groupId, "apps"],
       });
       continue;
     }
-    const basePorts = new Map<number, string>();
     for (const [appId, app] of apps) {
-      const existing = basePorts.get(app.basePort);
-      if (existing) {
+      if (app.protocol === "tcp" && app.readiness !== "tcp") {
         context.addIssue({
           code: "custom",
-          message: `Base port is already assigned to ${existing}`,
-          path: ["appGroups", groupName, "apps", appId, "basePort"],
+          message: "TCP Apps support TCP readiness only",
+          path: ["appGroups", groupId, "apps", appId, "readiness"],
         });
-      } else {
-        basePorts.set(app.basePort, appId);
       }
     }
-    const maximumSlot = maximumWorkgroveAppGroupSlot(group);
-    if (group.slot.default > maximumSlot) {
-      context.addIssue({
-        code: "custom",
-        message: `Default slot exceeds the maximum supported slot ${maximumSlot}`,
-        path: ["appGroups", groupName, "slot", "default"],
-      });
+    for (const [name, template] of Object.entries(group.env ?? {})) {
+      const error = workgroveTemplateError(template, config.appGroups, groupId);
+      if (error) {
+        context.addIssue({
+          code: "custom",
+          message: error,
+          path: ["appGroups", groupId, "env", name],
+        });
+      }
     }
-  }
-
-  for (const [name, template] of Object.entries(config.env ?? {})) {
-    const error = workgroveTemplateError(template, config.appGroups);
-    if (error) {
-      context.addIssue({ code: "custom", message: error, path: ["env", name] });
+    for (const [index, argument] of group.start.argv.entries()) {
+      const error = workgroveTemplateError(argument, config.appGroups, groupId);
+      if (error) {
+        context.addIssue({
+          code: "custom",
+          message: error,
+          path: ["appGroups", groupId, "start", "argv", index],
+        });
+      }
+    }
+    if (group.stop !== "process") {
+      for (const [index, argument] of group.stop.argv.entries()) {
+        const error = workgroveTemplateError(
+          argument,
+          config.appGroups,
+          groupId
+        );
+        if (error) {
+          context.addIssue({
+            code: "custom",
+            message: error,
+            path: ["appGroups", groupId, "stop", "argv", index],
+          });
+        }
+      }
     }
   }
 }
 
 export type WorkgroveConfig = z.infer<typeof WorkgroveConfigSchema>;
 export type WorktreeEnvConfig = WorkgroveConfig;
-
-export function resolveWorkgroveAppPort(
-  app: Pick<WorkgroveApp, "basePort">,
-  slot: number,
-  stride: number
-): number {
-  return app.basePort + slot * stride;
-}
-
-export function maximumWorkgroveAppGroupSlot(
-  group: Pick<WorkgroveAppGroup, "apps" | "slot">
-): number {
-  return Math.min(
-    ...Object.values(group.apps).map((app) =>
-      Math.floor((MAX_WORKGROVE_PORT - app.basePort) / group.slot.stride)
-    )
-  );
-}
-
-export function maximumWorkgroveSlot(config: WorkgroveConfig): number {
-  return Math.min(
-    ...Object.values(config.appGroups).map(maximumWorkgroveAppGroupSlot)
-  );
-}
-
-export function workgroveAppGroupSlotsHavePortCollision(
-  group: Pick<WorkgroveAppGroup, "apps" | "slot">,
-  leftSlot: number,
-  rightSlot: number
-): boolean {
-  const leftPorts = new Set(
-    Object.values(group.apps).map((app) =>
-      resolveWorkgroveAppPort(app, leftSlot, group.slot.stride)
-    )
-  );
-  return Object.values(group.apps).some((app) =>
-    leftPorts.has(resolveWorkgroveAppPort(app, rightSlot, group.slot.stride))
-  );
-}
 
 export function cloneWorkgroveConfig(config: WorkgroveConfig): WorkgroveConfig {
   return structuredClone(config);

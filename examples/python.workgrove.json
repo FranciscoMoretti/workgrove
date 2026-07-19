@@ -1,16 +1,18 @@
 {
   "$schema": "../schema/workgrove.schema.json",
-  "version": 2,
+  "version": 1,
   "setup": { "argv": ["uv", "sync"] },
   "appGroups": {
     "API": {
-      "slot": { "default": 0, "stride": 10 },
       "start": { "argv": ["uv", "run", "python", "-m", "app"] },
       "stop": "process",
-      "apps": { "API": { "basePort": 8000 } }
+      "env": { "PORT": "{apps.API.port}" },
+      "apps": {
+        "API": {
+          "protocol": "http",
+          "readiness": { "type": "http", "path": "/health" }
+        }
+      }
     }
-  },
-  "env": {
-    "PORT": "{appGroups.API.apps.API.port}"
   }
 }

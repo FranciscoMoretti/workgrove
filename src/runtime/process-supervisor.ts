@@ -14,7 +14,8 @@ import { join } from "node:path";
 
 import { pathInside, pidOwnedByWorktree } from "./ports";
 
-const CONTROL_DIR = join(homedir(), ".workgrove");
+const CONTROL_DIR =
+  process.env.WORKGROVE_CONTROL_DIR ?? join(homedir(), ".workgrove");
 const LINE_BREAK = /\r?\n/;
 const TRAILING_LINE_BREAK = /\r?\n$/;
 const GRACEFUL_STOP_ATTEMPTS = 20;

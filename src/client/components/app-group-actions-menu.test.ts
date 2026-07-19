@@ -3,17 +3,13 @@ import { describe, expect, it } from "bun:test";
 import type { AppGroupSnapshot } from "../../controller/workspace-snapshot";
 import { appGroupCommandMenuItems } from "./app-group-actions-menu";
 
-function group(
-  health: AppGroupSnapshot["health"],
-  slotState: AppGroupSnapshot["slotState"] = "assigned"
-): AppGroupSnapshot {
+function group(health: AppGroupSnapshot["health"]): AppGroupSnapshot {
   return {
     apps: [],
     health,
+    id: "product",
     name: "Product Apps",
     processRunning: false,
-    slot: 0,
-    slotState,
     stop: "process",
   };
 }
@@ -28,15 +24,15 @@ function itemIds(target: AppGroupSnapshot): string[] {
 }
 
 describe("app group actions menu", () => {
-  it("offers start for a stopped group with an assigned slot", () => {
+  it("offers start for a stopped group", () => {
     expect(itemIds(group("not-running"))).toEqual(["start"]);
   });
 
-  it("offers stop and restart for a running group with an assigned slot", () => {
+  it("offers stop and restart for a running group", () => {
     expect(itemIds(group("running"))).toEqual(["stop", "restart"]);
   });
 
-  it("does not offer restart for a running group with an invalid slot", () => {
-    expect(itemIds(group("running", "invalid"))).toEqual(["stop"]);
+  it("offers stop and restart while a group is partially running", () => {
+    expect(itemIds(group("partially-running"))).toEqual(["stop", "restart"]);
   });
 });

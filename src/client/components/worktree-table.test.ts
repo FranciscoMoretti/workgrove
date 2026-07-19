@@ -6,12 +6,11 @@ import type { CodexIntegrationSnapshot } from "../../codex/codex-integration";
 import type { WorktreeSnapshot } from "../../controller/workspace-snapshot";
 import { WorktreeTable } from "./worktree-table";
 
-const MONO_LINKED_PORT =
-  /<a[^>]*><code class="[^"]*font-mono[^"]*"[^>]*>3000<\/code><\/a>/;
+const LINKED_FRIENDLY_URL = /<a[^>]*>chat\.project\.repo\.localhost:1355<\/a>/;
 const MONO_STOPPED_PORT =
   /<code[^>]*class="[^"]*font-mono[^"]*"[^>]*>3002<\/code>/;
 const PRODUCT_GROUP_WITH_ENDPOINT =
-  /data-app-group="Product Apps"[^>]*>[\s\S]*?3000/;
+  /data-app-group="Product Apps"[^>]*>[\s\S]*?chat\.project\.repo\.localhost:1355/;
 const INFRASTRUCTURE_GROUP_WITH_ENDPOINT =
   /data-app-group="Infrastructure"[^>]*>[\s\S]*?5432/;
 
@@ -21,24 +20,28 @@ const worktree: WorktreeSnapshot = {
     {
       id: "chat",
       label: "Chat",
+      directUrl: "http://127.0.0.1:3000",
       listening: true,
       open: true,
       ownership: "owned",
       port: 3000,
-      probe: "tcp",
-      required: true,
-      url: "http://localhost:3000",
+      protocol: "http",
+      readiness: "ready",
+      routeState: "active",
+      url: "http://chat.project.repo.localhost:1355",
     },
     {
       id: "site",
       label: "Site",
+      directUrl: "http://127.0.0.1:3002",
       listening: false,
-      open: true,
+      open: false,
       ownership: "none",
       port: 3002,
-      probe: "tcp",
-      required: true,
-      url: "http://localhost:3002",
+      protocol: "http",
+      readiness: "unready",
+      routeState: "inactive",
+      url: null,
     },
   ],
   appGroups: [],
@@ -50,8 +53,6 @@ const worktree: WorktreeSnapshot = {
   path: "/tmp/project",
   processRunning: true,
   setupState: "idle",
-  slot: 0,
-  slotState: "assigned",
 };
 
 describe("worktree table", () => {
@@ -62,10 +63,9 @@ describe("worktree table", () => {
         {
           apps: worktree.apps,
           health: worktree.health,
+          id: "product",
           name: "Product Apps",
           processRunning: true,
-          slot: 0,
-          slotState: "assigned" as const,
           stop: "process" as const,
         },
         {
@@ -79,10 +79,9 @@ describe("worktree table", () => {
             },
           ],
           health: "running" as const,
+          id: "infrastructure",
           name: "Infrastructure",
           processRunning: false,
-          slot: 0,
-          slotState: "assigned" as const,
           stop: "command" as const,
         },
       ],
@@ -91,7 +90,6 @@ describe("worktree table", () => {
       createElement(WorktreeTable, {
         appGroupActionBlocked: () => false,
         appGroupActionPending: () => false,
-        appGroupSlots: { Infrastructure: [], "Product Apps": [] },
         commandActions: {
           onRestart: () => undefined,
           onSetup: () => undefined,
@@ -101,7 +99,6 @@ describe("worktree table", () => {
         onDelete: () => undefined,
         onInspect: () => undefined,
         onRestartAppGroup: () => undefined,
-        onSetSlot: () => undefined,
         onToggleAppGroup: () => undefined,
         selectedId: null,
         worktreeActionPending: () => false,
@@ -124,10 +121,9 @@ describe("worktree table", () => {
         {
           apps: worktree.apps,
           health: worktree.health,
+          id: "product",
           name: "Product Apps",
           processRunning: true,
-          slot: 0,
-          slotState: "assigned" as const,
           stop: "process" as const,
         },
       ],
@@ -142,11 +138,9 @@ describe("worktree table", () => {
           onStart: () => undefined,
           onStop: () => undefined,
         },
-        appGroupSlots: { "Product Apps": [] },
         onDelete: () => undefined,
         onInspect: () => undefined,
         onRestartAppGroup: () => undefined,
-        onSetSlot: () => undefined,
         onToggleAppGroup: () => undefined,
         selectedId: null,
         worktreeActionPending: () => false,
@@ -154,7 +148,7 @@ describe("worktree table", () => {
       })
     );
 
-    expect(markup).toMatch(MONO_LINKED_PORT);
+    expect(markup).toMatch(LINKED_FRIENDLY_URL);
     expect(markup).toMatch(MONO_STOPPED_PORT);
     expect(markup).not.toContain("lucide-chevron-right");
   });
@@ -166,10 +160,9 @@ describe("worktree table", () => {
         {
           apps: worktree.apps,
           health: "running" as const,
+          id: "product",
           name: "Product Apps",
           processRunning: true,
-          slot: 0,
-          slotState: "assigned" as const,
           stop: "process" as const,
         },
       ],
@@ -178,7 +171,6 @@ describe("worktree table", () => {
       createElement(WorktreeTable, {
         appGroupActionBlocked: () => false,
         appGroupActionPending: () => false,
-        appGroupSlots: { "Product Apps": [] },
         commandActions: {
           onRestart: () => undefined,
           onSetup: () => undefined,
@@ -188,7 +180,6 @@ describe("worktree table", () => {
         onDelete: () => undefined,
         onInspect: () => undefined,
         onRestartAppGroup: () => undefined,
-        onSetSlot: () => undefined,
         onToggleAppGroup: () => undefined,
         selectedId: null,
         worktreeActionPending: () => false,
@@ -206,19 +197,17 @@ describe("worktree table", () => {
         {
           apps: [worktree.apps[0]],
           health: "running" as const,
+          id: "product",
           name: "Product Apps",
           processRunning: true,
-          slot: 0,
-          slotState: "assigned" as const,
           stop: "process" as const,
         },
         {
           apps: [worktree.apps[1]],
           health: "not-running" as const,
+          id: "website",
           name: "Website",
           processRunning: false,
-          slot: 0,
-          slotState: "assigned" as const,
           stop: "process" as const,
         },
       ],
@@ -226,10 +215,9 @@ describe("worktree table", () => {
     const markup = renderToStaticMarkup(
       createElement(WorktreeTable, {
         appGroupActionBlocked: (_worktreeId: string, appGroupName: string) =>
-          appGroupName === "Product Apps",
+          appGroupName === "product",
         appGroupActionPending: (_worktreeId: string, appGroupName: string) =>
-          appGroupName === "Product Apps",
-        appGroupSlots: { "Product Apps": [], Website: [] },
+          appGroupName === "product",
         commandActions: {
           onRestart: () => undefined,
           onSetup: () => undefined,
@@ -239,7 +227,6 @@ describe("worktree table", () => {
         onDelete: () => undefined,
         onInspect: () => undefined,
         onRestartAppGroup: () => undefined,
-        onSetSlot: () => undefined,
         onToggleAppGroup: () => undefined,
         selectedId: null,
         worktreeActionPending: () => true,
@@ -260,7 +247,6 @@ describe("worktree table", () => {
       createElement(WorktreeTable, {
         appGroupActionBlocked: () => false,
         appGroupActionPending: () => false,
-        appGroupSlots: {},
         codexAvailability: "unavailable",
         commandActions: {
           onRestart: () => undefined,
@@ -271,7 +257,6 @@ describe("worktree table", () => {
         onDelete: () => undefined,
         onInspect: () => undefined,
         onRestartAppGroup: () => undefined,
-        onSetSlot: () => undefined,
         onToggleAppGroup: () => undefined,
         selectedId: null,
         worktreeActionPending: () => false,
@@ -318,7 +303,6 @@ describe("worktree table", () => {
       createElement(WorktreeTable, {
         appGroupActionBlocked: () => false,
         appGroupActionPending: () => false,
-        appGroupSlots: {},
         codexWorktrees,
         commandActions: {
           onRestart: () => undefined,
@@ -329,7 +313,6 @@ describe("worktree table", () => {
         onDelete: () => undefined,
         onInspect: () => undefined,
         onRestartAppGroup: () => undefined,
-        onSetSlot: () => undefined,
         onToggleAppGroup: () => undefined,
         selectedId: null,
         worktreeActionPending: () => false,

@@ -7,7 +7,6 @@ import {
   startManagedProcess,
 } from "../runtime/process-supervisor";
 import { requiredString, selectRequestedWorktrees } from "./command";
-import { worktreeSlotAssignments } from "./start-apps";
 
 export function setupAllApps(
   controller: WorkspaceController,
@@ -22,17 +21,14 @@ export function setupAllApps(
     input.worktreeIds
   );
   for (const worktree of targets) {
-    const setup = resolveSetupCommand(
-      config,
-      worktreeSlotAssignments(worktree)
-    );
+    const setup = resolveSetupCommand(config);
     appendManagedLog(
       worktree.id,
       `[workgrove] Running setup: ${setup.argv.join(" ")}`
     );
     startManagedProcess({
       argv: setup.argv,
-      cwd: worktree.path,
+      cwd: controller.commandWorkingDirectory(worktree.path, setup.cwd),
       env: setup.env,
       label: "Setup",
       logId: worktree.id,

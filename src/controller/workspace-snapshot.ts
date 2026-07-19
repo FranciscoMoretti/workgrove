@@ -1,26 +1,28 @@
 import type { WorkgroveConfig } from "../config/workgrove-schema";
-import type { AppHealth, ControlledApp } from "../runtime/app-health";
+import type { LocalRouteState } from "../runtime/local-routing";
 
-export type AppEndpointSnapshot = ControlledApp & {
+export type AppHealth = "not-running" | "partially-running" | "running";
+
+export interface AppEndpointSnapshot {
+  directUrl: string | null;
+  id: string;
+  label: string;
   listening: boolean;
-  ownership: "owned" | "foreign" | "none";
-};
-
-export interface AppGroupSlotOption {
-  apps: Array<{ label: string; port: number }>;
-  collisionOwners: Array<{ id: string; name: string }>;
-  slot: number;
+  open: boolean;
+  ownership: "foreign" | "none" | "owned";
+  port: number | null;
+  protocol: "http" | "tcp";
+  readiness: "ready" | "unready" | "waiting";
+  routeState: LocalRouteState;
+  url: string | null;
 }
-
-export type SlotOption = AppGroupSlotOption;
 
 export interface AppGroupSnapshot {
   apps: AppEndpointSnapshot[];
   health: AppHealth;
+  id: string;
   name: string;
   processRunning: boolean;
-  slot: number;
-  slotState: "assigned" | "conflicting" | "invalid";
   stop: "command" | "process";
 }
 
@@ -45,8 +47,6 @@ export interface WorktreeSnapshot {
   path: string;
   processRunning: boolean;
   setupState: "failed" | "idle" | "running";
-  slot: number;
-  slotState: "assigned" | "conflicting" | "invalid";
 }
 
 export function appGroupIsRunning(
@@ -62,9 +62,9 @@ export function appGroupIsStopped(
 }
 
 export function appGroupCanRestart(
-  group: Pick<AppGroupSnapshot, "health" | "processRunning" | "slotState">
+  group: Pick<AppGroupSnapshot, "health" | "processRunning">
 ): boolean {
-  return appGroupIsRunning(group) && group.slotState === "assigned";
+  return appGroupIsRunning(group);
 }
 
 export function worktreeHasRunningAppGroups(
@@ -86,25 +86,21 @@ export function appsAreStopped(
 }
 
 export function appsCanRestart(
-  worktree: Pick<WorktreeSnapshot, "health" | "processRunning" | "slotState">
+  worktree: Pick<WorktreeSnapshot, "health" | "processRunning">
 ): boolean {
-  return appsAreRunning(worktree) && worktree.slotState === "assigned";
+  return appsAreRunning(worktree);
 }
 
 export interface WorkspaceSnapshot {
-  appGroupSlotOptions: Record<string, AppGroupSlotOption[]>;
   config: WorkgroveConfig;
   configPath: string;
   configRevision: string;
-  defaultSlot: number;
   globalProcesses: GlobalProcessSnapshot[];
   globalRunningCount: number;
   mainWorktreePath: string;
   primaryAppGroup: string;
   repoName: string;
   repoPath: string;
-  slotFile: string;
-  slotOptions: AppGroupSlotOption[];
   trustCommands: string[];
   trusted: boolean;
   trustRequired: boolean;

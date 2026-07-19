@@ -7,10 +7,12 @@ export function AppPort({
   port,
 }: {
   className?: string;
-  port: number;
+  port: number | null;
 }) {
   return (
-    <code className={cn("font-mono tabular-nums", className)}>{port}</code>
+    <code className={cn("font-mono tabular-nums", className)}>
+      {port ?? "—"}
+    </code>
   );
 }
 

@@ -5,13 +5,6 @@ export function requiredString(value: unknown, label: string): string {
   return value.trim();
 }
 
-export function requiredSlot(value: unknown): number {
-  if (!Number.isSafeInteger(value) || Number(value) < 0) {
-    throw new Error("Slot must be a non-negative integer");
-  }
-  return Number(value);
-}
-
 export function optionalStringArray(value: unknown): string[] | null {
   if (value === undefined) {
     return null;

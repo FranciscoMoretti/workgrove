@@ -17,14 +17,13 @@ describe("WorkspaceController Codex projection", () => {
         JSON.stringify({
           appGroups: {
             App: {
-              apps: { Web: { basePort: 4000 } },
-              slot: { default: 0, stride: 10 },
+              apps: { Web: { protocol: "http", readiness: "tcp" } },
               start: { argv: ["true"] },
               stop: "process",
             },
           },
           setup: { argv: ["true"] },
-          version: 2,
+          version: 1,
         })
       );
       const task = {

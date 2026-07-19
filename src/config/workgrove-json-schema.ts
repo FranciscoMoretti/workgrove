@@ -7,10 +7,10 @@ const SCHEMA_ID =
 
 export function workgroveJsonSchema(): Record<string, unknown> {
   return {
-    ...z.toJSONSchema(WorkgroveConfigSchema),
+    ...z.toJSONSchema(WorkgroveConfigSchema, { io: "input" }),
     $id: SCHEMA_ID,
     title: "Workgrove configuration",
     description:
-      "Configure repository commands, worktree port allocation, observable apps, and their exposed environment.",
+      "Configure repository commands, dynamic App endpoints, readiness, and exposed App-group environments.",
   };
 }

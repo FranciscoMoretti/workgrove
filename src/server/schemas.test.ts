@@ -4,43 +4,75 @@ import { CodexIntegrationSnapshotSchema } from "../codex/codex-integration";
 import { WorkspaceSnapshotSchema } from "./schemas";
 
 describe("workspace snapshot transport schema", () => {
-  it("preserves exact App group names and independent slot options", () => {
-    const group = {
-      slot: { default: 0, stride: 10 },
-      start: { argv: ["npm", "run", "dev"] },
-      stop: "process" as const,
-      apps: { Web: { basePort: 3000 } },
-    };
-    const option = {
-      apps: [{ label: "Web", port: 3000 }],
-      collisionOwners: [],
-      slot: 0,
-    };
+  it("preserves slot-free App groups and endpoint lifecycle state", () => {
     const snapshot = WorkspaceSnapshotSchema.parse({
-      appGroupSlotOptions: { "Product Apps": [option] },
       config: {
-        version: 2,
-        setup: { argv: ["npm", "install"] },
-        appGroups: { "Product Apps": group },
+        version: 1,
+        setup: { argv: ["bun", "install"] },
+        appGroups: {
+          product: {
+            name: "Product Apps",
+            start: { argv: ["bun", "run", "dev"] },
+            stop: "process",
+            apps: { web: { protocol: "http", readiness: "tcp" } },
+          },
+        },
       },
       configPath: "/repo/.workgrove.json",
       configRevision: "revision",
-      defaultSlot: 0,
       globalProcesses: [],
-      globalRunningCount: 0,
+      globalRunningCount: 1,
       mainWorktreePath: "/repo",
-      primaryAppGroup: "Product Apps",
+      primaryAppGroup: "product",
       repoName: "repo",
       repoPath: "/repo",
-      slotFile: ".workgrove.local.json",
-      slotOptions: [option],
       trustCommands: [],
       trustRequired: true,
       trusted: true,
       updatedAt: "2026-07-14T00:00:00.000Z",
-      worktrees: [],
+      worktrees: [
+        {
+          appGroups: [
+            {
+              apps: [
+                {
+                  directUrl: "http://127.0.0.1:49152",
+                  id: "web",
+                  label: "web",
+                  listening: true,
+                  open: true,
+                  ownership: "owned",
+                  port: 49_152,
+                  protocol: "http",
+                  readiness: "ready",
+                  routeState: "active",
+                  url: "http://web.main.repo.localhost:1355",
+                },
+              ],
+              health: "running",
+              id: "product",
+              name: "Product Apps",
+              processRunning: true,
+              stop: "process",
+            },
+          ],
+          appLabel: "Product Apps",
+          apps: [],
+          branch: "main",
+          health: "running",
+          id: "worktree",
+          isMain: true,
+          name: "repo",
+          path: "/repo",
+          processRunning: true,
+          setupState: "idle",
+        },
+      ],
     });
-    expect(snapshot.appGroupSlotOptions["Product Apps"][0]?.slot).toBe(0);
+
+    expect(snapshot.worktrees[0]?.appGroups[0]?.apps[0]?.routeState).toBe(
+      "active"
+    );
   });
 });
 
