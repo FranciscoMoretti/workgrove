@@ -16,5 +16,6 @@ jobs:
       - run: bun lint
       - run: bun test:types
       - run: bun test
+      - run: bun test:integration
       - run: bun run build
       - run: bun test:pack

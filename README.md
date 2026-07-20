@@ -209,6 +209,13 @@ command resolution against an active run's endpoint values. Endpoint allocation,
 Portless routing, process ownership, command execution, trust, and controller
 internals remain private.
 
+## Architecture
+
+Maintained decisions and compatibility notes live in:
+
+- [ADR 0001: Portless runtime](docs/adr/0001-portless-runtime.md)
+- [ADR 0002: Repository schema and local state](docs/adr/0002-repository-schema-and-local-state.md)
+
 ## Development
 
 ```sh
@@ -217,6 +224,7 @@ bun run dev
 bun run lint
 bun run test:types
 bun run test
+bun run test:integration
 bun run build
 ```
 
