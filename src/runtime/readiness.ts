@@ -1,7 +1,7 @@
-import { spawnSync } from "node:child_process";
 import { createConnection, createServer } from "node:net";
 
 import type { WorkgroveApp } from "../config/workgrove-schema";
+import { inspectHttpStatus } from "../host/http-inspection";
 import type { RunEndpoint } from "./local-state";
 
 const POLL_INTERVAL_MS = 50;
@@ -123,22 +123,10 @@ export function appIsReadySync(
     return false;
   }
   const [minimum, maximum] = acceptedStatusRange(app);
-  const result = spawnSync(
-    "curl",
-    [
-      "--silent",
-      "--output",
-      "/dev/null",
-      "--write-out",
-      "%{http_code}",
-      "--max-time",
-      "0.5",
-      new URL(app.readiness.path, endpoint.directUrl).toString(),
-    ],
-    { encoding: "utf8", timeout: 1000 }
+  const status = inspectHttpStatus(
+    new URL(app.readiness.path, endpoint.directUrl).toString()
   );
-  const status = Number(result.stdout);
-  return result.status === 0 && status >= minimum && status <= maximum;
+  return status !== null && status >= minimum && status <= maximum;
 }
 
 export async function waitForAppReadiness(

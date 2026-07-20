@@ -37,10 +37,7 @@ export function createWorktree(
     throw new Error("Branch contains unsupported characters");
   }
   const workspace = controller.inspect(repoPath);
-  const folderName =
-    typeof input.folderName === "string" && input.folderName.trim()
-      ? input.folderName.trim()
-      : `${workspace.repoName}-${branch.replaceAll("/", "-")}`;
+  const folderName = requiredString(input.folderName, "Folder name");
   if (!FOLDER_PATTERN.test(folderName)) {
     throw new Error(
       "Folder name can only contain letters, numbers, dot, underscore, and dash"

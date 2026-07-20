@@ -26,7 +26,7 @@ export interface RunEndpoint {
   directUrl?: string;
   host: string;
   hostname?: string;
-  observedPids?: number[];
+  listenerClaimed?: boolean;
   port: number;
   protocol: "http" | "tcp";
   url?: string;

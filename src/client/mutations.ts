@@ -35,6 +35,7 @@ export function useCommands(repoPath: string) {
   const startApps = useCommand("start-apps", repoPath);
   const startAllApps = useCommand("start-all-apps", repoPath);
   const restartApps = useCommand("restart-apps", repoPath);
+  const retryApps = useCommand("retry-apps", repoPath);
   const restartRunningApps = useCommand("restart-running-apps", repoPath);
   const selectAppGroupInstance = useCommand(
     "select-app-group-instance",
@@ -55,6 +56,7 @@ export function useCommands(repoPath: string) {
     createWorktree,
     deleteWorktree,
     restartApps,
+    retryApps,
     restartRunningApps,
     selectAppGroupInstance,
     setupAllApps,

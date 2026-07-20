@@ -348,7 +348,6 @@ export function RepositoryWorkspace({
           <CreateWorktreeDialog
             mutation={commands.createWorktree}
             onClose={() => setCreateOpen(false)}
-            repoName={data.repoName}
             repoPath={repoPath}
             requestRepositoryTrust={repositoryTrust.requestTrust}
           />

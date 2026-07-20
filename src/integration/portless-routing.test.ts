@@ -297,7 +297,7 @@ setInterval(() => {}, 1000);
       unavailable?.apps.every((app) => app.routeState === "unavailable"),
       "A stopped Portless proxy was not observed as unavailable"
     );
-    await fixture.controller.startAppGroup(
+    await fixture.controller.retryAppGroup(
       fixture.root,
       main.id,
       "development"

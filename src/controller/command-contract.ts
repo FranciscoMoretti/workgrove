@@ -40,13 +40,14 @@ const INPUT_SCHEMAS = {
   "create-worktree": RepositoryPathSchema.extend({
     branch: z.string().min(1),
     createBranch: z.boolean(),
-    folderName: z.string().optional(),
+    folderName: z.string().min(1),
   }),
   "delete-worktree": StartStopSchema,
   "initialize-repository": RepositoryPathSchema,
   "pick-repository": z.object({}),
   "preview-repository-config": RepositoryPathSchema,
   "restart-apps": StartStopSchema,
+  "retry-apps": StartStopSchema,
   "restart-running-apps": VisibleBulkSchema,
   "select-app-group-instance": StartStopSchema.extend({
     instanceId: z.string().min(1),
@@ -72,6 +73,7 @@ const RESULT_SCHEMAS = {
   "pick-repository": PickRepositoryResultSchema,
   "preview-repository-config": RepositoryInitializationPlanSchema,
   "restart-apps": CommandReceiptSchema,
+  "retry-apps": CommandReceiptSchema,
   "restart-running-apps": CommandReceiptSchema,
   "select-app-group-instance": CommandReceiptSchema,
   "setup-all-apps": CommandReceiptSchema,

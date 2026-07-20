@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { processIsLive } from "../host/process-inspection";
 
 export interface LocalRoute {
   hostname: string;
@@ -43,15 +44,6 @@ function packageFile(packageName: string, ...parts: string[]): string {
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-function processIsLive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 export class PortlessRoutingEngine implements LocalRoutingEngine {

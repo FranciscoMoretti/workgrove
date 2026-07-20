@@ -52,6 +52,7 @@ export function repositoryCommandFingerprint(config: WorkgroveConfig): string {
         {
           apps: group.apps,
           env: group.env ?? {},
+          instances: group.instances,
           start: fingerprintCommand(group.start),
           stop:
             group.stop === "process"

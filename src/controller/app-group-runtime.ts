@@ -76,19 +76,12 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-function samePids(left: readonly number[], right: readonly number[]): boolean {
-  return (
-    left.length === right.length &&
-    left.every((pid, index) => pid === right[index])
-  );
-}
-
-function endpointMatchesObservedPids(
+function commandEndpointIsClaimed(
   endpoint: RunEndpoint,
   ports: ReturnType<typeof inspectListeningPorts>
 ): boolean {
   const current = listeningPortPids(ports, endpoint.port);
-  return current.length > 0 && samePids(endpoint.observedPids ?? [], current);
+  return current.length > 0 && endpoint.listenerClaimed === true;
 }
 
 export class AppGroupRuntime {
@@ -232,6 +225,44 @@ export class AppGroupRuntime {
     this.assertReadyEndpointsOwned(group, run, readyAppIds);
     await this.publishReadyRun(key, run, readyAppIds);
     return "started";
+  }
+
+  retry(target: AppGroupTarget): Promise<"already-running" | "retried"> {
+    return this.serializeLifecycle(target, () => this.retryUnlocked(target));
+  }
+
+  private async retryUnlocked(
+    target: AppGroupTarget
+  ): Promise<"already-running" | "retried"> {
+    const group = this.group(target);
+    await this.routing.prepare?.();
+    const instance = this.state.instance(this.instanceRequest(target));
+    const key = this.runKey(target.repoPath, instance.id);
+    const run = this.state.run(key);
+    if (!run) {
+      throw new Error(
+        `${displayName(target.groupId, group)} has not been started`
+      );
+    }
+    this.assertRunPortsAvailable(run, group, key, false);
+    const readiness = await Promise.all(
+      Object.entries(group.apps).map(([appId, app]) =>
+        appIsReady(app, run.apps[appId] as RunEndpoint)
+      )
+    );
+    if (readiness.every(Boolean) && this.allRoutesAreActive(run)) {
+      return "already-running";
+    }
+    const processId = appGroupInstanceProcessId(instance.id);
+    const readyAppIds = await this.waitForRunReadiness(
+      group,
+      run,
+      processId,
+      key
+    );
+    this.assertReadyEndpointsOwned(group, run, readyAppIds);
+    await this.publishReadyRun(key, run, readyAppIds);
+    return "retried";
   }
 
   stop(target: AppGroupTarget): Promise<"already-stopped" | "stopped"> {
@@ -457,7 +488,7 @@ export class AppGroupRuntime {
       const ownership = portOwnership(ports, endpoint.port, run.worktreePath);
       return stop === "process"
         ? ownership === "owned"
-        : endpointMatchesObservedPids(endpoint, ports);
+        : commandEndpointIsClaimed(endpoint, ports);
     });
   }
 
@@ -516,7 +547,7 @@ export class AppGroupRuntime {
           portOwnership(ports, endpoint.port, run.worktreePath) !== "owned"
         );
       }
-      return !samePids(endpoint.observedPids ?? [], pids);
+      return endpoint.listenerClaimed !== true;
     });
     if (!occupied) {
       return;
@@ -653,7 +684,7 @@ export class AppGroupRuntime {
     for (const endpoint of Object.values(run.apps)) {
       const observedPids = listeningPortPids(ports, endpoint.port);
       if (observedPids.length > 0) {
-        endpoint.observedPids = observedPids;
+        endpoint.listenerClaimed = true;
       }
     }
   }
@@ -703,7 +734,7 @@ export class AppGroupRuntime {
       input.run.port,
       input.worktreePath
     );
-    const commandEndpointVerified = endpointMatchesObservedPids(
+    const commandEndpointVerified = commandEndpointIsClaimed(
       input.run,
       input.ports
     );
