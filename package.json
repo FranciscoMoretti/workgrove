@@ -61,7 +61,7 @@
     "clsx": "^2.1.1",
     "lucide-react": "0.553.0",
     "node": "24.18.0",
-    "portless": "0.15.4",
+    "portless": "git+https://github.com/FranciscoMoretti/portless.git#d6a6e8873aef71883f57271533df487785fe3443",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-hook-form": "^7.81.0",

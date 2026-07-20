@@ -9,6 +9,7 @@ import type {
 import { appGroupIsRunning } from "../../controller/workspace-snapshot";
 import type { WorktreeCommandActions } from "../worktree-command-menu";
 import { AppGroupActionsMenu } from "./app-group-actions-menu";
+import { AppGroupInstanceControl } from "./app-group-instance-control";
 import { AppPort } from "./app-port";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -102,7 +103,10 @@ export function WorktreeTable({
   commandActions,
   onDelete,
   onInspect,
+  onCreateAppGroupInstance,
   onRestartAppGroup,
+  onRetryAppGroup,
+  onSelectAppGroupInstance,
   onToggleAppGroup,
   selectedId,
   worktreeActionPending,
@@ -115,9 +119,23 @@ export function WorktreeTable({
   commandActions: WorktreeCommandActions;
   onDelete: (worktree: WorktreeSnapshot) => void;
   onInspect: (worktreeId: string) => void;
+  onCreateAppGroupInstance?: (
+    worktree: WorktreeSnapshot,
+    group: AppGroupSnapshot,
+    name: string
+  ) => Promise<void>;
   onRestartAppGroup: (
     worktree: WorktreeSnapshot,
     group: AppGroupSnapshot
+  ) => void;
+  onRetryAppGroup?: (
+    worktree: WorktreeSnapshot,
+    group: AppGroupSnapshot
+  ) => void;
+  onSelectAppGroupInstance?: (
+    worktree: WorktreeSnapshot,
+    group: AppGroupSnapshot,
+    instanceId: string
   ) => void;
   onToggleAppGroup: (
     worktree: WorktreeSnapshot,
@@ -210,12 +228,32 @@ export function WorktreeTable({
                           data-app-group={group.name}
                           key={group.id}
                         >
-                          <span
-                            className="min-w-0 truncate font-medium"
-                            title={group.name}
-                          >
-                            {group.name}
-                          </span>
+                          <div className="grid min-w-0 gap-1">
+                            <span
+                              className="min-w-0 truncate font-medium"
+                              title={group.name}
+                            >
+                              {group.name}
+                            </span>
+                            <AppGroupInstanceControl
+                              disabled={blocked}
+                              group={group}
+                              onCreate={(name) =>
+                                onCreateAppGroupInstance?.(
+                                  worktree,
+                                  group,
+                                  name
+                                ) ?? Promise.resolve()
+                              }
+                              onSelect={(instanceId) =>
+                                onSelectAppGroupInstance?.(
+                                  worktree,
+                                  group,
+                                  instanceId
+                                )
+                              }
+                            />
+                          </div>
                           <Button
                             aria-label={`${running ? "Stop" : "Start"} ${group.name} for ${worktree.name}`}
                             className="min-w-24 justify-start"
@@ -266,6 +304,7 @@ export function WorktreeTable({
                               onRestart={() =>
                                 onRestartAppGroup(worktree, group)
                               }
+                              onRetry={() => onRetryAppGroup?.(worktree, group)}
                               onToggle={() => onToggleAppGroup(worktree, group)}
                               pending={blocked}
                               worktree={worktree}

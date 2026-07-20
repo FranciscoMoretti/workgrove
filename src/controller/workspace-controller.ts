@@ -14,6 +14,7 @@ import {
 import { CodexTaskDiscoveryAdapter } from "../codex/codex-task-discovery";
 import { CodexContextStore } from "../codex/workgrove-context";
 import { clearLogs } from "../commands/clear-logs";
+import { createAppGroupInstance } from "../commands/create-app-group-instance";
 import { createWorktree } from "../commands/create-worktree";
 import { deleteWorktree } from "../commands/delete-worktree";
 import { initializeRepository as initializeRepositoryCommand } from "../commands/initialize-repository";
@@ -21,6 +22,7 @@ import { pickRepository } from "../commands/pick-repository";
 import { previewRepositoryConfig } from "../commands/preview-repository-config";
 import { restartApps } from "../commands/restart-apps";
 import { restartRunningApps } from "../commands/restart-running-apps";
+import { selectAppGroupInstance } from "../commands/select-app-group-instance";
 import { setupAllApps } from "../commands/setup-all-apps";
 import { startAllApps } from "../commands/start-all-apps";
 import { startApps } from "../commands/start-apps";
@@ -51,7 +53,6 @@ import {
 import { FileWorkgroveStateStore } from "../runtime/local-state";
 import { inspectListeningPorts } from "../runtime/ports";
 import {
-  appGroupProcessId,
   ProcessSupervisor,
   setupProcessId,
 } from "../runtime/process-supervisor";
@@ -74,6 +75,7 @@ type CommandHandler = (
 
 const COMMAND_HANDLERS: Record<WorkgroveCommandName, CommandHandler> = {
   "clear-logs": clearLogs,
+  "create-app-group-instance": createAppGroupInstance,
   "create-worktree": createWorktree,
   "delete-worktree": deleteWorktree,
   "initialize-repository": initializeRepositoryCommand,
@@ -81,6 +83,7 @@ const COMMAND_HANDLERS: Record<WorkgroveCommandName, CommandHandler> = {
   "preview-repository-config": previewRepositoryConfig,
   "restart-apps": restartApps,
   "restart-running-apps": restartRunningApps,
+  "select-app-group-instance": selectAppGroupInstance,
   "setup-all-apps": setupAllApps,
   "start-all-apps": startAllApps,
   "start-apps": startApps,
@@ -363,14 +366,15 @@ export class WorkspaceController {
       configPath,
       configRevision: configDocument.revision,
       globalProcesses,
-      globalRunningCount: worktrees.reduce(
-        (count, worktree) =>
-          count +
-          worktree.appGroups.filter(
-            (group) => group.processRunning || group.health !== "not-running"
-          ).length,
-        0
-      ),
+      globalRunningCount: new Set(
+        worktrees.flatMap((worktree) =>
+          worktree.appGroups.flatMap((group) =>
+            group.instances
+              .filter((instance) => instance.running)
+              .map((instance) => instance.id)
+          )
+        )
+      ).size,
       mainWorktreePath: worktrees[0].path,
       primaryAppGroup: primaryGroupId,
       repoName: basename(worktrees[0].path),
@@ -478,9 +482,36 @@ export class WorkspaceController {
   }
 
   logs(repoPath: string, id: string, appGroupId?: string): string[] {
+    const target = appGroupId
+      ? this.appGroupTarget(repoPath, id, appGroupId)
+      : null;
     this.worktree(repoPath, id);
     return this.processes.readManagedLog(
-      appGroupId ? appGroupProcessId(id, appGroupId) : id
+      target ? this.appGroups.logId(target) : id
+    );
+  }
+
+  createAppGroupInstance(
+    repoPath: string,
+    worktreeIdValue: string,
+    groupId: string,
+    name: string
+  ) {
+    return this.appGroups.createInstance(
+      this.appGroupTarget(repoPath, worktreeIdValue, groupId),
+      name
+    );
+  }
+
+  selectAppGroupInstance(
+    repoPath: string,
+    worktreeIdValue: string,
+    groupId: string,
+    instanceId: string
+  ) {
+    return this.appGroups.selectInstance(
+      this.appGroupTarget(repoPath, worktreeIdValue, groupId),
+      instanceId
     );
   }
 
@@ -505,8 +536,8 @@ export class WorkspaceController {
   }
 
   clearLogs(repoPath: string, worktreeIdValue: string, groupId: string): void {
-    this.worktree(repoPath, worktreeIdValue);
-    this.processes.clearManagedLog(appGroupProcessId(worktreeIdValue, groupId));
+    const target = this.appGroupTarget(repoPath, worktreeIdValue, groupId);
+    this.processes.clearManagedLog(this.appGroups.logId(target));
   }
 
   private appGroupTarget(

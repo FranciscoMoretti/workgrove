@@ -50,7 +50,15 @@ export const WorkgroveAppGroupStopSchema = z.union([
   WorkgroveCommandSchema,
 ]);
 
+export const WorkgroveAppGroupInstancesSchema = z.discriminatedUnion("mode", [
+  z.strictObject({ mode: z.literal("per-worktree") }),
+  z.strictObject({ mode: z.literal("selectable") }),
+]);
+
 export const WorkgroveAppGroupSchema = z.strictObject({
+  instances: WorkgroveAppGroupInstancesSchema.default({
+    mode: "per-worktree",
+  }),
   name: z.string().min(1).optional(),
   start: WorkgroveCommandSchema,
   stop: WorkgroveAppGroupStopSchema,

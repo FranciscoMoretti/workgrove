@@ -13,6 +13,8 @@ function group(id: string): AppGroupSnapshot {
     apps: [],
     health: "running",
     id,
+    instance: { id: `${id}-main`, mode: "per-worktree", name: "main" },
+    instances: [{ id: `${id}-main`, name: "main", running: true }],
     name: "Shared display name",
     processRunning: true,
     stop: "process",

@@ -12,6 +12,7 @@ describe("public config contract", () => {
       setup: { argv: ["bun", "install"] },
       appGroups: {
         Apps: {
+          instances: { mode: "per-worktree" },
           start: {
             argv: ["bun", "run", "dev", "--url", "{apps.web.url}"],
           },

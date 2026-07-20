@@ -37,6 +37,35 @@
       "additionalProperties": {
         "type": "object",
         "properties": {
+          "instances": {
+            "default": {
+              "mode": "per-worktree"
+            },
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "const": "per-worktree"
+                  }
+                },
+                "required": ["mode"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "const": "selectable"
+                  }
+                },
+                "required": ["mode"],
+                "additionalProperties": false
+              }
+            ]
+          },
           "name": {
             "type": "string",
             "minLength": 1

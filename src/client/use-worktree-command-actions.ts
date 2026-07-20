@@ -13,7 +13,13 @@ import { useCommands } from "./mutations";
 import type { RequestRepositoryTrust } from "./use-repository-trust";
 import type { WorktreeCommandActions } from "./worktree-command-menu";
 
-const APP_GROUP_COMMANDS = new Set(["restart-apps", "start-apps", "stop-apps"]);
+const APP_GROUP_COMMANDS = new Set([
+  "create-app-group-instance",
+  "restart-apps",
+  "select-app-group-instance",
+  "start-apps",
+  "stop-apps",
+]);
 const ALL_APP_GROUP_COMMANDS = new Set([
   "restart-running-apps",
   "start-all-apps",
@@ -282,6 +288,51 @@ export function useWorktreeCommandActions({
     [commands.restartApps, repoPath, requestRepositoryTrust]
   );
 
+  const retryAppGroup = useCallback(
+    (worktree: WorktreeSnapshot, group: AppGroupSnapshot) => {
+      requestRepositoryTrust(`Retry ${group.name}`, () => {
+        commands.startApps.mutate({
+          appGroupName: group.id,
+          repoPath,
+          worktreeId: worktree.id,
+        });
+      });
+    },
+    [commands.startApps, repoPath, requestRepositoryTrust]
+  );
+
+  const createAppGroupInstance = useCallback(
+    async (
+      worktree: WorktreeSnapshot,
+      group: AppGroupSnapshot,
+      name: string
+    ) => {
+      await commands.createAppGroupInstance.mutateAsync({
+        appGroupName: group.id,
+        name,
+        repoPath,
+        worktreeId: worktree.id,
+      });
+    },
+    [commands.createAppGroupInstance, repoPath]
+  );
+
+  const selectAppGroupInstance = useCallback(
+    (
+      worktree: WorktreeSnapshot,
+      group: AppGroupSnapshot,
+      instanceId: string
+    ) => {
+      commands.selectAppGroupInstance.mutate({
+        appGroupName: group.id,
+        instanceId,
+        repoPath,
+        worktreeId: worktree.id,
+      });
+    },
+    [commands.selectAppGroupInstance, repoPath]
+  );
+
   const visibleActions = useMemo(() => {
     const worktreeIds = worktrees.map((worktree) => worktree.id);
     const pending =
@@ -320,8 +371,11 @@ export function useWorktreeCommandActions({
     appGroupActionPending,
     commandActions,
     commands,
+    createAppGroupInstance,
     restartAppGroup,
     restartApps,
+    retryAppGroup,
+    selectAppGroupInstance,
     toggleAppGroup,
     toggleApps,
     visibleActions,

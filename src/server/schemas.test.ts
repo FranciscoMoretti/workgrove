@@ -51,6 +51,12 @@ describe("workspace snapshot transport schema", () => {
               ],
               health: "running",
               id: "product",
+              instance: {
+                id: "product-main",
+                mode: "per-worktree",
+                name: "main",
+              },
+              instances: [{ id: "product-main", name: "main", running: true }],
               name: "Product Apps",
               processRunning: true,
               stop: "process",
@@ -72,6 +78,9 @@ describe("workspace snapshot transport schema", () => {
 
     expect(snapshot.worktrees[0]?.appGroups[0]?.apps[0]?.routeState).toBe(
       "active"
+    );
+    expect(snapshot.worktrees[0]?.appGroups[0]?.instance.id).toBe(
+      "product-main"
     );
   });
 });

@@ -21,6 +21,7 @@ export const integrationConfig: WorkgroveConfig = {
   setup: { argv: ["true"] },
   appGroups: {
     development: {
+      instances: { mode: "per-worktree" },
       apps: {
         api: { protocol: "http", readiness: "tcp" },
         site: { protocol: "http", readiness: "tcp" },
@@ -37,6 +38,7 @@ export const integrationConfig: WorkgroveConfig = {
       stop: "process",
     },
     external: {
+      instances: { mode: "per-worktree" },
       apps: {
         worker: { protocol: "http", readiness: "tcp" },
       },

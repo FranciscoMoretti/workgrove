@@ -38,11 +38,16 @@ function templateValues(
   }
   for (const [groupId, group] of Object.entries(appGroups)) {
     for (const [appId, app] of Object.entries(group.apps)) {
-      const resolved =
-        "port" in app || "host" in app || "url" in app || "directUrl" in app;
+      const resolved = app.port !== undefined;
       const isHttp = resolved ? app.url !== undefined : app.protocol === "http";
       const fullPrefix = `appGroups.${groupId}.apps.${appId}`;
+      add(`{${fullPrefix}.host}`, resolved ? (app.host ?? null) : null);
+      add(`{${fullPrefix}.port}`, resolved ? String(app.port) : null);
       if (isHttp) {
+        add(
+          `{${fullPrefix}.directUrl}`,
+          resolved ? (app.directUrl ?? null) : null
+        );
         add(`{${fullPrefix}.url}`, resolved ? (app.url ?? null) : null);
       }
       if (groupId !== currentGroup) {

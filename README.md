@@ -13,8 +13,9 @@ or have multiple Codex tasks working in the same repository.
 - One dashboard for every worktree in a repository.
 - Independently startable app groups, such as product apps and local
   infrastructure.
-- Stable per-worktree Friendly URLs, collision-free backing ports, listener
-  detection, process ownership, and managed logs.
+- Stable Friendly URLs, collision-free backing ports, listener detection,
+  process ownership, and managed logs. App groups can be isolated per worktree
+  or use explicitly selected named instances.
 - Command review and trust before repository setup or lifecycle commands run.
 - Every non-archived Codex task associated with each exact worktree path.
 - Direct **Open task** and **New task** links into the Codex desktop app.
@@ -140,6 +141,7 @@ worktree; each app group can then be started and stopped independently.
   "setup": { "argv": ["bun", "install"] },
   "appGroups": {
     "Product Apps": {
+      "instances": { "mode": "per-worktree" },
       "start": { "argv": ["bun", "run", "dev:workgrove"] },
       "stop": "process",
       "env": {
@@ -156,6 +158,7 @@ worktree; each app group can then be started and stopped independently.
       }
     },
     "Local Infrastructure": {
+      "instances": { "mode": "selectable" },
       "start": { "argv": ["docker", "compose", "up", "-d"] },
       "stop": { "argv": ["docker", "compose", "down"] },
       "env": {
@@ -177,14 +180,19 @@ Important configuration behavior:
   that process and terminates it on Stop.
 - A command-based Stop is useful for detached infrastructure such as Docker
   Compose.
-- Workgrove leases collision-free loopback backing ports when an App group
-  starts and releases them only after Stop is safely observed.
+- App groups default to `"instances": { "mode": "per-worktree" }`, which gives
+  every worktree its own stable endpoints without any slot or port setup.
+- `"mode": "selectable"` creates a shared Default instance and lets each
+  worktree select or create named alternatives—for example, an isolated Docker
+  Compose database for a migration experiment.
+- Workgrove assigns each instance collision-free loopback backing ports and
+  keeps them stable across Stop and Restart.
 - HTTP Apps receive stable `*.localhost` Friendly URLs through Portless. TCP
-  Apps expose their allocated host and port to their own App group.
+  Apps expose their assigned host and port to command templates.
 - App-group environment values can be literals or templates such as
   `{apps.Web.port}`, `{apps.Web.directUrl}`, and `{apps.Web.url}`. A group may
-  reference another HTTP App's stable URL with
-  `{appGroups.Product Apps.apps.Web.url}`, but not its transient backing port.
+  reference another selected instance's host, port, direct URL, or Friendly URL
+  with tokens such as `{appGroups.Local Infrastructure.apps.Postgres.port}`.
 
 If a repository has no configuration, Workgrove can suggest conservative setup
 and start commands for Node.js, Django, FastAPI, Rust, Go, and Docker Compose.

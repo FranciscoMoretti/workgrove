@@ -14,8 +14,14 @@ backing endpoint allocation, readiness, lifecycle, and reconciliation. Portless
 only proxies an exact hostname to a backing endpoint.
 
 The implementation uses a Workgrove-exclusive Portless state directory. This
-keeps route ownership unambiguous without requiring an upstream Portless fork.
-Routes are explicit aliases rather than names inferred from commands or paths.
+keeps route ownership unambiguous. Routes are explicit aliases rather than
+names inferred from commands or paths.
+
+Workgrove pins a minimal Portless fork commit that watches the state directory
+instead of the `routes.json` inode. Portless atomically replaces that file, and
+macOS otherwise stops delivering route updates after the first replacement.
+The fork changes no naming or lifecycle behavior and can be dropped when the
+equivalent fix is available upstream.
 
 ## Runtime constraints
 
@@ -45,23 +51,23 @@ Workgrove must not infer product identity from Portless process names, paths, po
 
 ## Stable identity and names
 
-Workgrove persists opaque local identities for each repository, worktree, app group, and app. Display names, branches, and generated slugs are not identity. Stable logical app-group and app IDs in `.workgrove.json` associate checked-in definitions with their local identities.
+Workgrove persists opaque local identities for each repository, worktree, App-group instance, and app endpoint. Display names, branches, and generated slugs are not identity. Stable logical app-group and app IDs in `.workgrove.json` associate checked-in definitions with their local identities.
 
 Changing a display name does not change identity or an assigned Friendly URL. Changing a logical group or app ID is delete-and-create unless an explicit migration reconnects it. The first implementation uses canonical paths to associate repositories and worktrees, so moving one may require adding it again; stronger move detection is deferred.
 
 Every Friendly URL includes a repository route label:
 
 ```text
-http://<app>.<worktree>.<repository>.localhost
+http://<app>.<instance>.<repository>.localhost
 ```
 
-The three labels are assigned once and persisted. Repository labels are unique within Workgrove's local routing namespace, worktree labels are unique within their repository, and app labels are unique within their worktree even when the apps belong to different groups. A readable slug is used when available; if it is already reserved by a different identity in that scope, Workgrove appends a stable identity-derived suffix. Allocation must reject rather than overwrite any remaining duplicate hostname.
+The three labels are assigned once and persisted. Repository labels are unique within Workgrove's local routing namespace, selectable instance labels are unique within their repository, and app labels are unique across every instance sharing the same route label. A per-worktree instance uses the worktree label; a selectable instance uses its user-visible name. A readable slug is used when available; if it is already reserved by a different identity in that scope, Workgrove appends a stable identity-derived suffix. Allocation must reject rather than overwrite any remaining duplicate hostname.
 
 This makes URL allocation deterministic for an identity and removes the order-dependent rule where the first repository received an unqualified hostname.
 
 ## Backing endpoint allocation
 
-On every Start, Workgrove allocates all Backing endpoints needed by the app group as a single plan before executing repository code. Allocation is dynamic, and ports may change on every Start. Workgrove verifies availability and retains ownership of the allocation through route deactivation.
+Before Start, Workgrove materializes all Backing endpoints needed by every App-group instance selected for the worktree. Allocation is dynamic but stable for the lifetime of the local instance record, so ports do not change across Stop and Restart. Workgrove verifies availability before executing repository code and retains the assignment after route deactivation.
 
 The normal model has no slots, stride, or required base ports. Optional reserved ports remain deferred.
 
@@ -101,11 +107,11 @@ Stop follows this order:
 3. Run the trusted repository Stop command when one is configured.
 4. Terminate any surviving Workgrove-managed starter process.
 5. Verify that app listeners have disappeared.
-6. Release the app group's Backing endpoints.
+6. Retain the instance's stable Backing endpoint assignments for a future Start.
 
 If route deactivation or a repository Stop command fails, Workgrove still terminates its managed process so Stop remains under user control. It keeps routes disabled where possible, quarantines any affected or still-listening Backing port, and does not make that port available to another process until both the route and listener are observed inactive. The app group reports a Stop failure that the dashboard can surface and retry.
 
-Restart completes Stop before performing Start. It receives fresh Backing endpoints and a freshly constructed environment while retaining endpoint identity and Friendly URLs.
+Restart completes Stop before performing Start. It reconstructs the environment from the same stable Backing endpoints, endpoint identity, Friendly URLs, and captured cross-group instance selections.
 
 ## Crash and recovery
 

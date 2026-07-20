@@ -5,25 +5,33 @@ import {
   resolveStartCommand,
   resolveStopCommand,
 } from "../config/workgrove-config";
-import type { WorkgroveApp, WorkgroveConfig } from "../config/workgrove-schema";
+import type {
+  WorkgroveApp,
+  WorkgroveAppGroup,
+  WorkgroveConfig,
+} from "../config/workgrove-schema";
 import type {
   LocalRoute,
   LocalRouteState,
   LocalRoutingEngine,
 } from "../runtime/local-routing";
 import type {
+  AppGroupInstance,
+  AppGroupRun,
   EndpointAssignment,
   FileWorkgroveStateStore,
+  InstanceRequest,
   RunEndpoint,
   RunKey,
 } from "../runtime/local-state";
 import {
   inspectListeningPorts,
+  listeningPortPids,
   ownedPortPids,
   portOwnership,
 } from "../runtime/ports";
 import {
-  appGroupProcessId,
+  appGroupInstanceProcessId,
   type ProcessSupervisor,
 } from "../runtime/process-supervisor";
 import {
@@ -56,7 +64,7 @@ function displayName(id: string, value: { name?: string }): string {
 }
 
 function groupHealth(apps: AppEndpointSnapshot[]): AppHealth {
-  if (apps.length === 0 || apps.every((app) => app.readiness !== "ready")) {
+  if (apps.length === 0 || apps.every((app) => !app.listening)) {
     return "not-running";
   }
   return apps.every((app) => app.readiness === "ready")
@@ -66,6 +74,21 @@ function groupHealth(apps: AppEndpointSnapshot[]): AppHealth {
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function samePids(left: readonly number[], right: readonly number[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((pid, index) => pid === right[index])
+  );
+}
+
+function endpointMatchesObservedPids(
+  endpoint: RunEndpoint,
+  ports: ReturnType<typeof inspectListeningPorts>
+): boolean {
+  const current = listeningPortPids(ports, endpoint.port);
+  return current.length > 0 && samePids(endpoint.observedPids ?? [], current);
 }
 
 export class AppGroupRuntime {
@@ -89,26 +112,57 @@ export class AppGroupRuntime {
     ports: ReturnType<typeof inspectListeningPorts>
   ): AppGroupSnapshot {
     const group = this.group(target);
-    const run = this.state.run(this.runKey(target));
+    const instance = this.state.instance(this.instanceRequest(target));
+    const run = this.state.run(this.runKey(target.repoPath, instance.id));
+    const processPath = run?.worktreePath ?? target.worktree.path;
     const processRunning =
       this.processes.managedPid(
-        appGroupProcessId(target.worktree.id, target.groupId),
-        target.worktree.path
+        appGroupInstanceProcessId(instance.id),
+        processPath
       ) !== null;
-    const apps = Object.entries(group.apps).map(([appId, app]) =>
-      this.inspectEndpoint({
+    const apps = Object.entries(group.apps).map(([appId, app]) => {
+      const assignment = this.endpointAssignment({
         app,
         appId,
+        groupId: target.groupId,
+        instance,
+        repoPath: target.repoPath,
+      });
+      return this.inspectEndpoint({
+        app,
+        appId,
+        assignment,
         ports,
         run: run?.apps[appId] ?? null,
         stop: group.stop,
-        target,
-      })
-    );
+        worktreePath: processPath,
+      });
+    });
     return {
       apps,
       health: groupHealth(apps),
       id: target.groupId,
+      instance: {
+        id: instance.id,
+        mode: instance.mode,
+        name: instance.name,
+      },
+      instances:
+        instance.mode === "selectable"
+          ? this.state
+              .instances(target.repoPath, target.groupId)
+              .map((option) => ({
+                id: option.id,
+                name: option.name,
+                running: this.instanceIsRunning(option, group.stop, ports),
+              }))
+          : [
+              {
+                id: instance.id,
+                name: instance.name,
+                running: this.instanceIsRunning(instance, group.stop, ports),
+              },
+            ],
       name: displayName(target.groupId, group),
       processRunning,
       stop: group.stop === "process" ? "process" : "command",
@@ -123,131 +177,53 @@ export class AppGroupRuntime {
     target: AppGroupTarget
   ): Promise<"already-running" | "started"> {
     const group = this.group(target);
-    const key = this.runKey(target);
+    await this.routing.prepare?.();
+    const effectiveInstances = await this.materializeWorktreeInstances(target);
+    const instance = effectiveInstances[target.groupId];
+    if (!instance) {
+      throw new Error(`Unknown App group "${target.groupId}"`);
+    }
+    const key = this.runKey(target.repoPath, instance.id);
     let run = this.state.run(key);
     const allocatedNow = run === null;
     if (!run) {
-      const apps: Record<string, RunEndpoint> = {};
-      const leased = this.state.leasedPorts();
-      const reservations: BackingPortLease[] = [];
-      try {
-        for (const [appId, app] of Object.entries(group.apps)) {
-          const assignment = this.endpointAssignment(target, appId, app);
-          const reservation = await reserveBackingPort(leased);
-          reservations.push(reservation);
-          leased.add(reservation.port);
-          apps[appId] = {
-            appId,
-            ...(app.protocol === "http"
-              ? {
-                  directUrl: `http://127.0.0.1:${reservation.port}`,
-                  hostname: assignment.hostname,
-                  url: this.routing.url(assignment.hostname),
-                }
-              : {}),
-            host: "127.0.0.1",
-            port: reservation.port,
-            protocol: app.protocol,
-          };
-        }
-        run = {
-          apps,
-          createdAt: new Date().toISOString(),
-          groupId: target.groupId,
-        };
-        this.state.saveRun(key, run);
-      } finally {
-        await Promise.all(
-          reservations.map((reservation) => reservation.release())
-        );
-      }
+      run = this.createRun({
+        effectiveInstances,
+        group,
+        groupId: target.groupId,
+        instance,
+        repoPath: target.repoPath,
+        worktreePath: target.worktree.path,
+      });
+      this.state.saveRun(key, run);
     }
 
-    const allReady = await Promise.all(
+    this.assertRunPortsAvailable(run, group, key, allocatedNow);
+    const readiness = await Promise.all(
       Object.entries(group.apps).map(([appId, app]) =>
         appIsReady(app, run.apps[appId] as RunEndpoint)
       )
     );
-    if (allocatedNow && allReady.some(Boolean)) {
-      this.state.removeRun(key);
-      throw new Error(
-        "A newly allocated Backing endpoint became occupied before Start; retry Start"
-      );
-    }
-    if (group.stop === "process") {
-      const ports = inspectListeningPorts();
-      const foreign = Object.values(run.apps).find(
-        (endpoint) =>
-          portOwnership(ports, endpoint.port, target.worktree.path) ===
-          "foreign"
-      );
-      if (foreign) {
-        throw new Error(
-          `Backing endpoint ${foreign.port} is occupied by a process outside this worktree`
-        );
-      }
-    }
-    const allRoutesActive = Object.values(run.apps).every(
-      (endpoint) =>
-        endpoint.protocol !== "http" ||
-        (endpoint.hostname &&
-          this.routing.observe({
-            hostname: endpoint.hostname,
-            port: endpoint.port,
-          }) === "active")
-    );
-    if (allReady.every(Boolean) && allRoutesActive) {
+    if (readiness.every(Boolean) && this.allRoutesAreActive(run)) {
       return "already-running";
     }
 
-    const processId = appGroupProcessId(target.worktree.id, target.groupId);
-    let managedStart =
-      this.processes.managedPid(processId, target.worktree.path) !== null;
-    if (!(managedStart || allReady.some(Boolean))) {
-      const command = resolveStartCommand(
-        target.config,
-        target.groupId,
-        this.templateGroups(target, run)
-      );
-      this.processes.startManagedProcess({
-        argv: command.argv,
-        cwd: commandWorkingDirectory(target.worktree.path, command.cwd),
-        env: command.env,
-        logId: processId,
-        label: displayName(target.groupId, group),
-        ownerId: processId,
-        ownerRoot: target.worktree.path,
-        trackExitFailure: true,
-        processId,
-      });
-      managedStart = true;
-    }
-
-    await Promise.all(
-      Object.entries(group.apps).map(([appId, app]) =>
-        waitForAppReadiness(app, run.apps[appId] as RunEndpoint)
-      )
-    );
-    if (group.stop === "process") {
-      const ports = inspectListeningPorts();
-      const unowned = Object.values(run.apps).find(
-        (endpoint) =>
-          portOwnership(ports, endpoint.port, target.worktree.path) !== "owned"
-      );
-      if (unowned) {
-        throw new Error(
-          `Backing endpoint ${unowned.port} became ready outside this worktree; no Friendly URLs were published`
-        );
-      }
-    }
-    const managedStartHealth = {
-      active: managedStart,
-      label: displayName(target.groupId, group),
+    const processId = appGroupInstanceProcessId(instance.id);
+    this.launchRunProcess({
+      readiness,
+      group,
       processId,
-      worktreePath: target.worktree.path,
-    };
-    this.assertManagedStartHealthy(managedStartHealth);
-    await this.activateRoutesForManagedStart(run, managedStartHealth);
+      run,
+      target,
+    });
+    const readyAppIds = await this.waitForRunReadiness(
+      group,
+      run,
+      processId,
+      key
+    );
+    this.assertReadyEndpointsOwned(group, run, readyAppIds);
+    await this.publishReadyRun(key, run, readyAppIds);
     return "started";
   }
 
@@ -260,29 +236,34 @@ export class AppGroupRuntime {
     target: AppGroupTarget
   ): Promise<"already-stopped" | "stopped"> {
     const group = this.group(target);
-    const key = this.runKey(target);
+    const instance = this.state.instance(this.instanceRequest(target));
+    const key = this.runKey(target.repoPath, instance.id);
     const run = this.state.run(key);
-    const processId = appGroupProcessId(target.worktree.id, target.groupId);
-    if (
-      !run &&
-      this.processes.managedPid(processId, target.worktree.path) === null
-    ) {
+    const processPath = run?.worktreePath ?? target.worktree.path;
+    const processId = appGroupInstanceProcessId(instance.id);
+    if (!run && this.processes.managedPid(processId, processPath) === null) {
       return "already-stopped";
     }
 
     const failures: string[] = [];
     for (const endpoint of Object.values(run?.apps ?? {})) {
-      if (endpoint.protocol === "http" && endpoint.hostname) {
-        try {
-          const route = this.endpointRoute(endpoint);
-          const routeState = this.routing.observe(route);
-          if (routeState === "conflict" || routeState === "inactive") {
-            continue;
-          }
-          await this.routing.deactivate(route);
-        } catch (error) {
-          failures.push(error instanceof Error ? error.message : String(error));
+      if (endpoint.protocol !== "http" || !endpoint.hostname) {
+        continue;
+      }
+      try {
+        const route = this.endpointRoute(endpoint);
+        const routeState = this.routing.observe(route);
+        if (routeState === "conflict") {
+          failures.push(
+            `${route.hostname} points to a different Backing endpoint`
+          );
+          continue;
         }
+        if (routeState !== "inactive") {
+          await this.routing.deactivate(route);
+        }
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : String(error));
       }
     }
 
@@ -291,7 +272,12 @@ export class AppGroupRuntime {
         const command = resolveStopCommand(
           target.config,
           target.groupId,
-          this.templateGroups(target, run)
+          this.templateGroups(
+            target.config,
+            target.repoPath,
+            processPath,
+            run?.instanceIdsByGroup
+          )
         );
         if (!command) {
           throw new Error(
@@ -300,7 +286,7 @@ export class AppGroupRuntime {
         }
         await this.processes.runFiniteCommand({
           argv: command.argv,
-          cwd: commandWorkingDirectory(target.worktree.path, command.cwd),
+          cwd: commandWorkingDirectory(processPath, command.cwd),
           env: command.env,
           label: `Stop ${displayName(target.groupId, group)}`,
           logId: processId,
@@ -310,13 +296,13 @@ export class AppGroupRuntime {
       }
     }
 
-    await this.processes.stopManagedProcess(processId, target.worktree.path);
+    await this.processes.stopManagedProcess(processId, processPath);
     if (group.stop === "process" && run) {
       const killed = new Set<number>();
       for (const pid of ownedPortPids(
         inspectListeningPorts(),
         Object.values(run.apps).map((app) => app.port),
-        target.worktree.path
+        processPath
       )) {
         if (await this.processes.stopOwnedProcess(pid, processId)) {
           killed.add(pid);
@@ -344,7 +330,23 @@ export class AppGroupRuntime {
     return "stopped";
   }
 
-  private group(target: AppGroupTarget) {
+  createInstance(target: AppGroupTarget, name: string): AppGroupInstance {
+    return this.state.createSelectableInstance(
+      this.instanceRequest(target),
+      name
+    );
+  }
+
+  selectInstance(target: AppGroupTarget, instanceId: string): AppGroupInstance {
+    return this.state.selectInstance(this.instanceRequest(target), instanceId);
+  }
+
+  logId(target: AppGroupTarget): string {
+    const instance = this.state.instance(this.instanceRequest(target));
+    return appGroupInstanceProcessId(instance.id);
+  }
+
+  private group(target: AppGroupTarget): WorkgroveAppGroup {
     const group = target.config.appGroups[target.groupId];
     if (!group) {
       throw new Error(`Unknown App group "${target.groupId}"`);
@@ -352,10 +354,14 @@ export class AppGroupRuntime {
     return group;
   }
 
-  private runKey(target: AppGroupTarget): RunKey {
+  private instanceRequest(target: AppGroupTarget): InstanceRequest {
+    const group = this.group(target);
     return {
       groupId: target.groupId,
+      mode: group.instances.mode,
+      repoLabel: basename(target.repoPath),
       repoPath: target.repoPath,
+      worktreeLabel: target.worktree.routeLabel,
       worktreePath: target.worktree.path,
     };
   }
@@ -385,32 +391,257 @@ export class AppGroupRuntime {
     }
   }
 
-  private endpointAssignment(
-    target: AppGroupTarget,
-    appId: string,
-    app: WorkgroveApp,
-    groupId = target.groupId
-  ): EndpointAssignment {
+  private runKey(repoPath: string, instanceId: string): RunKey {
+    return { instanceId, repoPath };
+  }
+
+  private instanceIsRunning(
+    instance: AppGroupInstance,
+    stop: WorkgroveAppGroup["stop"],
+    ports: ReturnType<typeof inspectListeningPorts>
+  ): boolean {
+    const run = instance.run;
+    if (!run) {
+      return false;
+    }
+    if (
+      this.processes.managedPid(
+        appGroupInstanceProcessId(instance.id),
+        run.worktreePath
+      ) !== null
+    ) {
+      return true;
+    }
+    return Object.values(run.apps).some((endpoint) => {
+      const ownership = portOwnership(ports, endpoint.port, run.worktreePath);
+      return stop === "process"
+        ? ownership === "owned"
+        : endpointMatchesObservedPids(endpoint, ports);
+    });
+  }
+
+  private createRun(input: {
+    effectiveInstances: Record<string, AppGroupInstance>;
+    group: WorkgroveAppGroup;
+    groupId: string;
+    instance: AppGroupInstance;
+    repoPath: string;
+    worktreePath: string;
+  }): AppGroupRun {
+    const apps = Object.fromEntries(
+      Object.entries(input.group.apps).map(([appId, app]) => {
+        const assignment = this.endpointAssignment({
+          app,
+          appId,
+          groupId: input.groupId,
+          instance: input.instance,
+          repoPath: input.repoPath,
+        });
+        return [appId, this.runEndpoint(app, assignment)];
+      })
+    );
+    return {
+      apps,
+      createdAt: new Date().toISOString(),
+      groupId: input.groupId,
+      instanceId: input.instance.id,
+      instanceIdsByGroup: Object.fromEntries(
+        Object.entries(input.effectiveInstances).map(([groupId, instance]) => [
+          groupId,
+          instance.id,
+        ])
+      ),
+      worktreePath: input.worktreePath,
+    };
+  }
+
+  private assertRunPortsAvailable(
+    run: AppGroupRun,
+    group: WorkgroveAppGroup,
+    key: RunKey,
+    allocatedNow: boolean
+  ): void {
+    const ports = inspectListeningPorts();
+    const occupied = Object.values(run.apps).find((endpoint) => {
+      const pids = listeningPortPids(ports, endpoint.port);
+      if (pids.length === 0) {
+        return false;
+      }
+      if (allocatedNow) {
+        return true;
+      }
+      if (group.stop === "process") {
+        return (
+          portOwnership(ports, endpoint.port, run.worktreePath) !== "owned"
+        );
+      }
+      return !samePids(endpoint.observedPids ?? [], pids);
+    });
+    if (!occupied) {
+      return;
+    }
+    if (allocatedNow) {
+      this.state.removeRun(key);
+    }
+    throw new Error(
+      `Backing endpoint ${occupied.port} is occupied by an unrelated process`
+    );
+  }
+
+  private allRoutesAreActive(run: AppGroupRun): boolean {
+    return Object.values(run.apps).every(
+      (endpoint) =>
+        endpoint.protocol !== "http" ||
+        (endpoint.hostname &&
+          this.routing.observe(this.endpointRoute(endpoint)) === "active")
+    );
+  }
+
+  private launchRunProcess(input: {
+    readiness: readonly boolean[];
+    group: WorkgroveAppGroup;
+    processId: string;
+    run: AppGroupRun;
+    target: AppGroupTarget;
+  }): void {
+    if (
+      this.processes.managedPid(input.processId, input.run.worktreePath) !==
+        null ||
+      input.readiness.some(Boolean)
+    ) {
+      return;
+    }
+    const command = resolveStartCommand(
+      input.target.config,
+      input.target.groupId,
+      this.templateGroups(
+        input.target.config,
+        input.target.repoPath,
+        input.run.worktreePath,
+        input.run.instanceIdsByGroup
+      )
+    );
+    this.processes.startManagedProcess({
+      argv: command.argv,
+      cwd: commandWorkingDirectory(input.run.worktreePath, command.cwd),
+      env: command.env,
+      label: displayName(input.target.groupId, input.group),
+      logId: input.processId,
+      ownerId: input.processId,
+      ownerRoot: input.run.worktreePath,
+      trackExitFailure: true,
+      processId: input.processId,
+    });
+  }
+
+  private async waitForRunReadiness(
+    group: WorkgroveAppGroup,
+    run: AppGroupRun,
+    processId: string,
+    key: RunKey
+  ): Promise<Set<string>> {
+    const settled = await Promise.allSettled(
+      Object.entries(group.apps).map(async ([appId, app]) => {
+        await waitForAppReadiness(app, run.apps[appId] as RunEndpoint);
+        return appId;
+      })
+    );
+    const readyAppIds = new Set(
+      settled.flatMap((result) =>
+        result.status === "fulfilled" ? [result.value] : []
+      )
+    );
+    const failures = settled.flatMap((result) =>
+      result.status === "rejected"
+        ? [
+            result.reason instanceof Error
+              ? result.reason.message
+              : String(result.reason),
+          ]
+        : []
+    );
+    if (readyAppIds.size === 0) {
+      this.observeRunListeners(run);
+      this.state.saveRun(key, run);
+      throw new Error(failures.join("; "));
+    }
+    for (const failure of failures) {
+      this.processes.appendManagedLog(processId, `[workgrove] ${failure}`);
+    }
+    return readyAppIds;
+  }
+
+  private assertReadyEndpointsOwned(
+    group: WorkgroveAppGroup,
+    run: AppGroupRun,
+    readyAppIds: ReadonlySet<string>
+  ): void {
+    if (group.stop !== "process") {
+      return;
+    }
+    const ports = inspectListeningPorts();
+    const unowned = Object.values(run.apps).find(
+      (endpoint) =>
+        readyAppIds.has(endpoint.appId) &&
+        portOwnership(ports, endpoint.port, run.worktreePath) !== "owned"
+    );
+    if (unowned) {
+      throw new Error(
+        `Backing endpoint ${unowned.port} became ready outside this worktree; no Friendly URLs were published`
+      );
+    }
+  }
+
+  private async publishReadyRun(
+    key: RunKey,
+    run: AppGroupRun,
+    readyAppIds: ReadonlySet<string>
+  ): Promise<void> {
+    this.observeRunListeners(run);
+    try {
+      await this.activateRoutes(run, readyAppIds);
+    } catch (error) {
+      this.state.saveRun(key, run);
+      throw error;
+    }
+    this.state.saveRun(key, run);
+  }
+
+  private observeRunListeners(run: AppGroupRun): void {
+    const ports = inspectListeningPorts();
+    for (const endpoint of Object.values(run.apps)) {
+      const observedPids = listeningPortPids(ports, endpoint.port);
+      if (observedPids.length > 0) {
+        endpoint.observedPids = observedPids;
+      }
+    }
+  }
+
+  private endpointAssignment(input: {
+    app: WorkgroveApp;
+    appId: string;
+    groupId: string;
+    instance: AppGroupInstance;
+    repoPath: string;
+  }): EndpointAssignment {
     return this.state.endpoint({
-      appId,
-      appLabel: displayName(appId, app),
-      groupId,
-      repoLabel: basename(target.repoPath),
-      repoPath: target.repoPath,
-      worktreeLabel: target.worktree.routeLabel,
-      worktreePath: target.worktree.path,
+      appId: input.appId,
+      appLabel: displayName(input.appId, input.app),
+      groupId: input.groupId,
+      instanceId: input.instance.id,
+      repoPath: input.repoPath,
     });
   }
 
   private inspectEndpoint(input: {
     app: WorkgroveApp;
     appId: string;
+    assignment: EndpointAssignment;
     ports: ReturnType<typeof inspectListeningPorts>;
     run: RunEndpoint | null;
-    stop: WorkgroveConfig["appGroups"][string]["stop"];
-    target: AppGroupTarget;
+    stop: WorkgroveAppGroup["stop"];
+    worktreePath: string;
   }): AppEndpointSnapshot {
-    this.endpointAssignment(input.target, input.appId, input.app);
     if (!input.run) {
       return {
         directUrl: null,
@@ -419,28 +650,48 @@ export class AppGroupRuntime {
         listening: false,
         open: false,
         ownership: "none",
-        port: null,
+        port: input.assignment.port,
         protocol: input.app.protocol,
         readiness: "waiting",
         routeState: "inactive",
         url: null,
       };
     }
-    const ownership = portOwnership(
+    const inspectedOwnership = portOwnership(
       input.ports,
       input.run.port,
-      input.target.worktree.path
+      input.worktreePath
+    );
+    const commandEndpointVerified = endpointMatchesObservedPids(
+      input.run,
+      input.ports
     );
     const listening =
-      input.stop === "process" ? ownership === "owned" : ownership !== "none";
+      input.stop === "process"
+        ? inspectedOwnership === "owned"
+        : commandEndpointVerified;
+    let ownership = inspectedOwnership;
+    if (input.stop !== "process") {
+      if (commandEndpointVerified) {
+        ownership = "owned";
+      } else if (inspectedOwnership !== "none") {
+        ownership = "foreign";
+      }
+    }
     const ready = appIsReadySync(input.app, input.run, listening);
-    const routeState =
+    const observedRouteState =
       input.run.protocol === "http" && input.run.hostname
         ? this.routing.observe({
             hostname: input.run.hostname,
             port: input.run.port,
           })
         : "inactive";
+    const routeState =
+      observedRouteState === "inactive" &&
+      ready &&
+      input.run.protocol === "http"
+        ? "unavailable"
+        : observedRouteState;
     return {
       directUrl: input.run.directUrl ?? null,
       id: input.appId,
@@ -457,31 +708,46 @@ export class AppGroupRuntime {
   }
 
   private templateGroups(
-    target: AppGroupTarget,
-    currentRun: { apps: Record<string, RunEndpoint>; groupId: string } | null
+    config: WorkgroveConfig,
+    repoPath: string,
+    worktreePath: string,
+    instanceIdsByGroup?: Record<string, string>
   ): ResolvedWorkgroveAppGroups {
     return Object.fromEntries(
-      Object.entries(target.config.appGroups).map(([groupId, group]) => [
+      Object.entries(config.appGroups).map(([groupId, group]) => [
         groupId,
         {
           apps: Object.fromEntries(
             Object.entries(group.apps).map(([appId, app]) => {
-              const assignment = this.endpointAssignment(
-                target,
-                appId,
+              const selectedInstanceId = instanceIdsByGroup?.[groupId];
+              const instance = selectedInstanceId
+                ? this.state.instanceById(repoPath, selectedInstanceId)
+                : this.state.instance({
+                    groupId,
+                    mode: group.instances.mode,
+                    repoLabel: basename(repoPath),
+                    repoPath,
+                    worktreeLabel: basename(worktreePath),
+                    worktreePath,
+                  });
+              if (!(instance && instance.groupId === groupId)) {
+                throw new Error(`Unknown App-group instance for "${groupId}"`);
+              }
+              const assignment = this.endpointAssignment({
                 app,
-                groupId
-              );
-              const running =
-                currentRun?.groupId === groupId
-                  ? currentRun.apps[appId]
-                  : undefined;
+                appId,
+                groupId,
+                instance,
+                repoPath,
+              });
+              if (assignment.port !== null) {
+                return [appId, this.runEndpoint(app, assignment)];
+              }
               return [
                 appId,
-                running ??
-                  (app.protocol === "http"
-                    ? { url: this.routing.url(assignment.hostname) }
-                    : {}),
+                app.protocol === "http"
+                  ? { url: this.routing.url(assignment.hostname) }
+                  : {},
               ];
             })
           ),
@@ -491,29 +757,72 @@ export class AppGroupRuntime {
     );
   }
 
-  private assertManagedStartHealthy(input: {
-    active: boolean;
-    label: string;
-    processId: string;
-    worktreePath: string;
-  }): void {
-    if (
-      !input.active ||
-      this.processes.managedPid(input.processId, input.worktreePath) !== null
-    ) {
-      return;
-    }
-    const failure = this.processes.managedFailure(input.processId);
-    if (failure) {
-      throw new Error(
-        `${input.label} exited before Friendly URLs were activated: ${failure.message}`
+  private async materializeWorktreeInstances(
+    target: AppGroupTarget
+  ): Promise<Record<string, AppGroupInstance>> {
+    const leased = this.state.leasedPorts();
+    const reservations: BackingPortLease[] = [];
+    const instances: Record<string, AppGroupInstance> = {};
+    try {
+      for (const [groupId, group] of Object.entries(target.config.appGroups)) {
+        const instance = this.state.instance({
+          groupId,
+          mode: group.instances.mode,
+          repoLabel: basename(target.repoPath),
+          repoPath: target.repoPath,
+          worktreeLabel: target.worktree.routeLabel,
+          worktreePath: target.worktree.path,
+        });
+        instances[groupId] = instance;
+        const key = this.runKey(target.repoPath, instance.id);
+        for (const [appId, app] of Object.entries(group.apps)) {
+          const assignment = this.endpointAssignment({
+            app,
+            appId,
+            groupId,
+            instance,
+            repoPath: target.repoPath,
+          });
+          if (assignment.port !== null) {
+            continue;
+          }
+          const reservation = await reserveBackingPort(leased);
+          reservations.push(reservation);
+          leased.add(reservation.port);
+          this.state.assignEndpointPort(key, appId, reservation.port);
+        }
+      }
+    } finally {
+      await Promise.all(
+        reservations.map((reservation) => reservation.release())
       );
     }
+    return instances;
   }
 
-  private async waitForPortsStopped(run: {
-    apps: Record<string, RunEndpoint>;
-  }): Promise<boolean> {
+  private runEndpoint(
+    app: WorkgroveApp,
+    assignment: EndpointAssignment
+  ): RunEndpoint {
+    if (assignment.port === null) {
+      throw new Error(`${assignment.appId} has no assigned port`);
+    }
+    return {
+      appId: assignment.appId,
+      ...(app.protocol === "http"
+        ? {
+            directUrl: `http://127.0.0.1:${assignment.port}`,
+            hostname: assignment.hostname,
+            url: this.routing.url(assignment.hostname),
+          }
+        : {}),
+      host: "127.0.0.1",
+      port: assignment.port,
+      protocol: app.protocol,
+    };
+  }
+
+  private async waitForPortsStopped(run: AppGroupRun): Promise<boolean> {
     const deadline = Date.now() + 5000;
     const ports = new Set(Object.values(run.apps).map((app) => app.port));
     while (Date.now() < deadline) {
@@ -530,11 +839,14 @@ export class AppGroupRuntime {
     return false;
   }
 
-  private async activateRoutes(run: {
-    apps: Record<string, RunEndpoint>;
-  }): Promise<void> {
+  private async activateRoutes(
+    run: AppGroupRun,
+    readyAppIds: ReadonlySet<string>
+  ): Promise<void> {
     const routes = Object.values(run.apps).flatMap((endpoint) =>
-      endpoint.protocol === "http" && endpoint.hostname
+      readyAppIds.has(endpoint.appId) &&
+      endpoint.protocol === "http" &&
+      endpoint.hostname
         ? [this.endpointRoute(endpoint)]
         : []
     );
@@ -582,24 +894,6 @@ export class AppGroupRuntime {
     }
     return failures;
   }
-
-  private async activateRoutesForManagedStart(
-    run: { apps: Record<string, RunEndpoint> },
-    managedStart: {
-      active: boolean;
-      label: string;
-      processId: string;
-      worktreePath: string;
-    }
-  ): Promise<void> {
-    try {
-      await this.activateRoutes(run);
-    } catch (error) {
-      this.assertManagedStartHealthy(managedStart);
-      throw error;
-    }
-  }
-
   private endpointRoute(endpoint: RunEndpoint): LocalRoute {
     if (!endpoint.hostname) {
       throw new Error(`${endpoint.appId} does not have a Friendly hostname`);

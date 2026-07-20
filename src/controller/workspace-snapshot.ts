@@ -21,6 +21,16 @@ export interface AppGroupSnapshot {
   apps: AppEndpointSnapshot[];
   health: AppHealth;
   id: string;
+  instance: {
+    id: string;
+    mode: "per-worktree" | "selectable";
+    name: string;
+  };
+  instances: Array<{
+    id: string;
+    name: string;
+    running: boolean;
+  }>;
   name: string;
   processRunning: boolean;
   stop: "command" | "process";

@@ -25,6 +25,18 @@ const AppGroupSchema = z.object({
   apps: z.array(AppEndpointSchema),
   health: z.enum(["not-running", "partially-running", "running"]),
   id: z.string().min(1),
+  instance: z.object({
+    id: z.string().min(1),
+    mode: z.enum(["per-worktree", "selectable"]),
+    name: z.string().min(1),
+  }),
+  instances: z.array(
+    z.object({
+      id: z.string().min(1),
+      name: z.string().min(1),
+      running: z.boolean(),
+    })
+  ),
   name: z.string().min(1),
   processRunning: z.boolean(),
   stop: z.enum(["command", "process"]),
