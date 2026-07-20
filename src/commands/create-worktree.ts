@@ -2,14 +2,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
-import { resolveSetupCommand } from "../config/workgrove-config";
 import type { WorkspaceController } from "../controller/workspace-controller";
 import type { CommandReceipt } from "../controller/workspace-snapshot";
-import {
-  appendManagedLog,
-  setupProcessId,
-  startManagedProcess,
-} from "../runtime/process-supervisor";
 import { requiredString } from "./command";
 
 const BRANCH_PATTERN = /^[A-Za-z0-9._/@-]+$/;
@@ -70,23 +64,7 @@ export function createWorktree(
   if (!created) {
     throw new Error("Worktree was created but could not be rediscovered");
   }
-  const config = controller.config(target);
-  const setup = resolveSetupCommand(config);
-  appendManagedLog(
-    created.id,
-    `[workgrove] Running setup: ${setup.argv.join(" ")}`
-  );
-  startManagedProcess({
-    argv: setup.argv,
-    cwd: controller.commandWorkingDirectory(target, setup.cwd),
-    env: setup.env,
-    label: "Setup",
-    logId: created.id,
-    ownerId: created.id,
-    ownerRoot: target,
-    trackExitFailure: true,
-    worktreeId: setupProcessId(created.id),
-  });
+  controller.startSetup(target, created.id);
   return {
     command: "create-worktree",
     message: `Created ${folderName}; setup is running`,

@@ -1,17 +1,10 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { spawn } from "node:child_process";
-import { rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import {
-  appendManagedLog,
-  clearManagedLog,
-  logPath,
-  managedPid,
-  readManagedLog,
-  startManagedProcess,
-  stopManagedProcess,
-  stopOwnedProcess,
-} from "./process-supervisor";
+import { ProcessSupervisor } from "./process-supervisor";
 
 const worktreeId = `clear-log-test-${process.pid}`;
 const stopTestId = `app-group-stop-test-${process.pid}`;
@@ -21,6 +14,13 @@ const DESCENDANT_PID_PATTERN = /descendant:(\d+)/;
 let stubbornDescendantPid: number | null = null;
 let stubbornOwnedPid: number | null = null;
 let orphanDescendantPid: number | null = null;
+let controlDirectory = "";
+let supervisor: ProcessSupervisor;
+
+beforeEach(() => {
+  controlDirectory = mkdtempSync(join(tmpdir(), "workgrove-process-test-"));
+  supervisor = new ProcessSupervisor(controlDirectory);
+});
 
 async function waitForProcessExit(pid: number): Promise<void> {
   for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -35,10 +35,7 @@ async function waitForProcessExit(pid: number): Promise<void> {
 }
 
 afterEach(() => {
-  rmSync(logPath(worktreeId), { force: true });
-  rmSync(logPath(stopTestId), { force: true });
-  rmSync(logPath(stubbornStopTestId), { force: true });
-  rmSync(logPath(orphanCleanupTestId), { force: true });
+  rmSync(controlDirectory, { force: true, recursive: true });
   if (stubbornDescendantPid) {
     try {
       process.kill(stubbornDescendantPid, "SIGKILL");
@@ -67,40 +64,42 @@ afterEach(() => {
 
 describe("managed logs", () => {
   it("returns no phantom line after the terminal is cleared", () => {
-    appendManagedLog(worktreeId, "before clear");
-    expect(readManagedLog(worktreeId)).toEqual(["before clear"]);
-    clearManagedLog(worktreeId);
-    expect(readManagedLog(worktreeId)).toEqual([]);
+    supervisor.appendManagedLog(worktreeId, "before clear");
+    expect(supervisor.readManagedLog(worktreeId)).toEqual(["before clear"]);
+    supervisor.clearManagedLog(worktreeId);
+    expect(supervisor.readManagedLog(worktreeId)).toEqual([]);
   });
 
   it("contains and logs an executable spawn failure", async () => {
     expect(() =>
-      startManagedProcess({
+      supervisor.startManagedProcess({
         argv: [`missing-workgrove-command-${process.pid}`],
         cwd: process.cwd(),
         env: {},
         ownerRoot: process.cwd(),
-        worktreeId,
+        processId: worktreeId,
       })
     ).toThrow("Failed to start");
     await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(readManagedLog(worktreeId).join("\n")).toContain("Failed to start");
+    expect(supervisor.readManagedLog(worktreeId).join("\n")).toContain(
+      "Failed to start"
+    );
   });
 
   it("rejects a configured working directory outside the worktree", () => {
     expect(() =>
-      startManagedProcess({
+      supervisor.startManagedProcess({
         argv: ["true"],
         cwd: "/tmp",
         env: {},
         ownerRoot: "/code/worktree",
-        worktreeId,
+        processId: worktreeId,
       })
     ).toThrow("must stay inside its worktree");
   });
 
   it("keeps a terminating app group managed until its process exits", async () => {
-    const pid = startManagedProcess({
+    const pid = supervisor.startManagedProcess({
       argv: [
         process.execPath,
         "-e",
@@ -109,22 +108,22 @@ describe("managed logs", () => {
       cwd: process.cwd(),
       env: {},
       ownerRoot: process.cwd(),
-      worktreeId: stopTestId,
+      processId: stopTestId,
     });
     for (let attempt = 0; attempt < 20; attempt += 1) {
-      if (readManagedLog(stopTestId).includes("ready")) {
+      if (supervisor.readManagedLog(stopTestId).includes("ready")) {
         break;
       }
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    const stopping = stopManagedProcess(stopTestId, process.cwd());
-    expect(managedPid(stopTestId, process.cwd())).toBe(pid);
+    const stopping = supervisor.stopManagedProcess(stopTestId, process.cwd());
+    expect(supervisor.managedPid(stopTestId, process.cwd())).toBe(pid);
     expect(await stopping).toBe(pid);
-    expect(managedPid(stopTestId, process.cwd())).toBeNull();
+    expect(supervisor.managedPid(stopTestId, process.cwd())).toBeNull();
   });
 
   it("force-stops descendants that ignore graceful termination", async () => {
-    const pid = startManagedProcess({
+    const pid = supervisor.startManagedProcess({
       argv: [
         process.execPath,
         "-e",
@@ -133,10 +132,11 @@ describe("managed logs", () => {
       cwd: process.cwd(),
       env: {},
       ownerRoot: process.cwd(),
-      worktreeId: stubbornStopTestId,
+      processId: stubbornStopTestId,
     });
     for (let attempt = 0; attempt < 20; attempt += 1) {
-      const match = readManagedLog(stubbornStopTestId)
+      const match = supervisor
+        .readManagedLog(stubbornStopTestId)
         .join("\n")
         .match(DESCENDANT_PID_PATTERN);
       if (match) {
@@ -149,14 +149,14 @@ describe("managed logs", () => {
     if (!descendantPid) {
       throw new Error("Stubborn descendant did not start");
     }
-    expect(await stopManagedProcess(stubbornStopTestId, process.cwd())).toBe(
-      pid
-    );
+    expect(
+      await supervisor.stopManagedProcess(stubbornStopTestId, process.cwd())
+    ).toBe(pid);
     await waitForProcessExit(descendantPid);
   });
 
   it("stops descendants when their managed launcher exits unexpectedly", async () => {
-    startManagedProcess({
+    supervisor.startManagedProcess({
       argv: [
         process.execPath,
         "-e",
@@ -165,10 +165,11 @@ describe("managed logs", () => {
       cwd: process.cwd(),
       env: {},
       ownerRoot: process.cwd(),
-      worktreeId: orphanCleanupTestId,
+      processId: orphanCleanupTestId,
     });
     for (let attempt = 0; attempt < 50; attempt += 1) {
-      const match = readManagedLog(orphanCleanupTestId)
+      const match = supervisor
+        .readManagedLog(orphanCleanupTestId)
         .join("\n")
         .match(DESCENDANT_PID_PATTERN);
       if (match) {
@@ -201,7 +202,9 @@ describe("managed logs", () => {
     }
     stubbornOwnedPid = childPid;
     await new Promise<void>((resolve) => child.stdout.once("data", resolve));
-    expect(await stopOwnedProcess(childPid, stubbornStopTestId)).toBe(true);
+    expect(
+      await supervisor.stopOwnedProcess(childPid, stubbornStopTestId)
+    ).toBe(true);
     expect(() => process.kill(childPid, 0)).toThrow();
   });
 });
