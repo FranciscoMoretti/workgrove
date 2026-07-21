@@ -181,15 +181,8 @@ describe("managed logs", () => {
     if (!descendantPid) {
       throw new Error("Orphaned descendant did not start");
     }
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-      try {
-        process.kill(descendantPid, 0);
-      } catch {
-        orphanDescendantPid = null;
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
+    await waitForProcessExit(descendantPid);
+    orphanDescendantPid = null;
     expect(() => process.kill(descendantPid, 0)).toThrow();
   });
 
