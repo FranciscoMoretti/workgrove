@@ -469,10 +469,14 @@ test("preserves an existing Friendly URL when another route conflicts", async ()
       main.id,
       "development"
     );
+    const development = fixture.controller
+      .inspect(fixture.root)
+      .worktrees.find((worktree) => worktree.id === main.id)
+      ?.appGroups.find((group) => group.id === "development");
+    assert(development, "Development app group disappeared");
     const run = new FileWorkgroveStateStore(fixture.statePath).run({
-      groupId: "development",
+      instanceId: development.instance.id,
       repoPath: fixture.root,
-      worktreePath: main.path,
     });
     const api = run?.apps.api;
     const site = run?.apps.site;
@@ -499,6 +503,8 @@ test("preserves an existing Friendly URL when another route conflicts", async ()
       fixture.routing.observe(siteRoute) === "active",
       "Route rollback removed a Friendly URL that Start did not create"
     );
+    await fixture.routing.deactivate(conflictRoute);
+    conflictRoute = null;
     await fixture.controller.stopAppGroup(fixture.root, main.id, "development");
   } finally {
     if (conflictRoute) {

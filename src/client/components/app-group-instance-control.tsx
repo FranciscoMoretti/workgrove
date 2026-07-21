@@ -47,9 +47,14 @@ export function AppGroupInstanceControl({
     if (!trimmedName) {
       return;
     }
-    await onCreate(trimmedName);
-    setName("");
-    setDialogOpen(false);
+    try {
+      await onCreate(trimmedName);
+      setName("");
+      setDialogOpen(false);
+    } catch {
+      // The workspace command alert presents the mutation error. Keep this
+      // dialog and its input intact so the user can correct the name.
+    }
   }
 
   return (

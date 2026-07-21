@@ -237,7 +237,7 @@ export class FileWorkgroveStateStore {
     if (existing) {
       return cloneInstance(existing);
     }
-    const instance = this.createInstanceRecord(repository, request, {
+    const instance = this.createInstanceRecord(repository, worktree, request, {
       isDefault: request.mode === "selectable",
       name: request.mode === "per-worktree" ? request.worktreeLabel : "Default",
       worktreePath:
@@ -299,7 +299,7 @@ export class FileWorkgroveStateStore {
     if (duplicate) {
       throw new Error(`An instance named "${normalizedName}" already exists`);
     }
-    const instance = this.createInstanceRecord(repository, request, {
+    const instance = this.createInstanceRecord(repository, worktree, request, {
       isDefault: false,
       name: normalizedName,
       worktreePath: null,
@@ -552,6 +552,7 @@ export class FileWorkgroveStateStore {
 
   private createInstanceRecord(
     repository: RepositoryRecord,
+    worktree: WorktreeRecord,
     request: InstanceRequest,
     input: {
       isDefault: boolean;
@@ -569,8 +570,7 @@ export class FileWorkgroveStateStore {
       name: input.name,
       routeLabel:
         request.mode === "per-worktree"
-          ? (repository.worktrees[request.worktreePath]?.routeLabel ??
-            uniqueLabel(input.name, new Set(), id))
+          ? worktree.routeLabel
           : uniqueLabel(
               input.name,
               new Set([

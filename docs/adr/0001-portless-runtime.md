@@ -61,7 +61,7 @@ Every Friendly URL includes a repository route label:
 http://<app>.<instance>.<repository>.localhost
 ```
 
-The three labels are assigned once and persisted. Repository labels are unique within Workgrove's local routing namespace, selectable instance labels are unique within their repository, and app labels are unique across every instance sharing the same route label. A per-worktree instance uses the worktree label; a selectable instance uses its user-visible name. A readable slug is used when available; if it is already reserved by a different identity in that scope, Workgrove appends a stable identity-derived suffix. Allocation must reject rather than overwrite any remaining duplicate hostname.
+The three labels are assigned once and persisted. A route label is the slug stored for one identity and used as its hostname segment. Repository route labels are unique within Workgrove's local routing namespace, instance route labels are unique within their repository, and app route labels are unique within their instance. A per-worktree instance reuses its worktree's route label; a selectable instance derives one from its user-visible name. A readable slug is used when available; if it is already reserved by a different identity in that scope, Workgrove appends a stable identity-derived suffix. Allocation must reject rather than overwrite any remaining duplicate hostname.
 
 This makes URL allocation deterministic for an identity and removes the order-dependent rule where the first repository received an unqualified hostname.
 
