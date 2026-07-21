@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { z } from "zod";
 
 import type { WorkspaceSnapshot } from "../controller/workspace-snapshot";
 import {
@@ -21,15 +22,17 @@ import { RepositoryWorkspace } from "./repository-workspace";
 
 const REPO_STORAGE_KEY = "workgrove:repo-path";
 const RECENTS_STORAGE_KEY = "workgrove:recent-repos";
+const RecentRepositoriesSchema = z
+  .array(z.unknown())
+  .transform((items) =>
+    items.filter((item): item is string => typeof item === "string")
+  );
 
 function recentRepositories(): string[] {
   try {
-    const value = JSON.parse(localStorage.getItem(RECENTS_STORAGE_KEY) ?? "[]");
-    return Array.isArray(value)
-      ? value
-          .filter((item): item is string => typeof item === "string")
-          .slice(0, 5)
-      : [];
+    return RecentRepositoriesSchema.parse(
+      JSON.parse(localStorage.getItem(RECENTS_STORAGE_KEY) ?? "[]")
+    ).slice(0, 5);
   } catch {
     return [];
   }

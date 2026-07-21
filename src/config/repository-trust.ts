@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { z } from "zod";
 import type { WorkgroveCommand } from "./workgrove-command";
 import type { WorkgroveConfig } from "./workgrove-config";
 
@@ -19,6 +20,11 @@ function trustFile(controlDirectory = defaultControlDirectory()): string {
   return join(controlDirectory, "trusted-repositories.json");
 }
 
+const TrustStoreSchema = z.record(
+  z.string(),
+  z.union([z.boolean(), z.string()])
+);
+
 function trustStore(
   controlDirectory?: string
 ): Record<string, boolean | string> {
@@ -27,10 +33,7 @@ function trustStore(
     return {};
   }
   try {
-    return JSON.parse(readFileSync(file, "utf8")) as Record<
-      string,
-      boolean | string
-    >;
+    return TrustStoreSchema.parse(JSON.parse(readFileSync(file, "utf8")));
   } catch {
     return {};
   }

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -63,6 +63,15 @@ afterEach(() => {
 });
 
 describe("managed logs", () => {
+  it("ignores structurally invalid persisted process failures", () => {
+    writeFileSync(
+      join(controlDirectory, `${worktreeId}.failure.json`),
+      JSON.stringify({ failedAt: 42, message: ["not", "a", "message"] })
+    );
+
+    expect(supervisor.managedFailure(worktreeId)).toBeNull();
+  });
+
   it("returns no phantom line after the terminal is cleared", () => {
     supervisor.appendManagedLog(worktreeId, "before clear");
     expect(supervisor.readManagedLog(worktreeId)).toEqual(["before clear"]);

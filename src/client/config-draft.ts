@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 const CONFIG_DRAFT_STORAGE_PREFIX = "workgrove:configuration-draft:";
 
 export interface ConfigDraftStorage {
@@ -6,10 +8,11 @@ export interface ConfigDraftStorage {
   setItem(key: string, value: string): void;
 }
 
-interface StoredConfigDraft {
-  draft: string;
-  source: string;
-}
+const StoredConfigDraftSchema = z.strictObject({
+  draft: z.string(),
+  source: z.string(),
+});
+type StoredConfigDraft = z.infer<typeof StoredConfigDraftSchema>;
 
 function configDraftStorageKey(configPath: string): string {
   return `${CONFIG_DRAFT_STORAGE_PREFIX}${configPath}`;
@@ -29,12 +32,8 @@ export function loadConfigDraft(
     if (!raw) {
       return null;
     }
-    const stored = JSON.parse(raw) as StoredConfigDraft;
-    if (
-      typeof stored.source !== "string" ||
-      typeof stored.draft !== "string" ||
-      stored.source !== source
-    ) {
+    const stored = StoredConfigDraftSchema.parse(JSON.parse(raw));
+    if (stored.source !== source) {
       storage.removeItem(key);
       return null;
     }

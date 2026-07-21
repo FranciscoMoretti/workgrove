@@ -1,63 +1,94 @@
-import type { WorkgroveConfig } from "../config/workgrove-schema";
-import type { LocalRouteState } from "../runtime/local-routing";
+import { z } from "zod";
 
-export type AppHealth = "not-running" | "partially-running" | "running";
+import { WorkgroveConfigSchema } from "../config/workgrove-schema";
+import type { CommandReceiptSchema } from "./command-contract";
 
-export interface AppEndpointSnapshot {
-  directUrl: string | null;
-  id: string;
-  label: string;
-  listening: boolean;
-  open: boolean;
-  ownership: "foreign" | "none" | "owned";
-  port: number | null;
-  protocol: "http" | "tcp";
-  readiness: "ready" | "unready" | "waiting";
-  routeState: LocalRouteState;
-  url: string | null;
-}
+const AppHealthSchema = z.enum(["not-running", "partially-running", "running"]);
 
-export interface AppGroupSnapshot {
-  apps: AppEndpointSnapshot[];
-  health: AppHealth;
-  id: string;
-  instance: {
-    id: string;
-    mode: "per-worktree" | "selectable";
-    name: string;
-  };
-  instances: Array<{
-    id: string;
-    name: string;
-    running: boolean;
-  }>;
-  name: string;
-  processRunning: boolean;
-  stop: "command" | "process";
-}
+export const AppEndpointSnapshotSchema = z.strictObject({
+  directUrl: z.string().nullable(),
+  id: z.string(),
+  label: z.string(),
+  listening: z.boolean(),
+  open: z.boolean(),
+  ownership: z.enum(["owned", "foreign", "none"]),
+  port: z.number().int().nullable(),
+  protocol: z.enum(["http", "tcp"]),
+  readiness: z.enum(["ready", "unready", "waiting"]),
+  routeState: z.enum(["inactive", "active", "conflict", "unavailable"]),
+  url: z.string().nullable(),
+});
 
-export interface GlobalProcessSnapshot {
-  argv: string[];
-  cwd: string;
-  label: string;
-  ownerId: string;
-  pid: number;
-  startedAt: string;
-}
+export const AppGroupSnapshotSchema = z.strictObject({
+  apps: z.array(AppEndpointSnapshotSchema),
+  health: AppHealthSchema,
+  id: z.string().min(1),
+  instance: z.strictObject({
+    id: z.string().min(1),
+    mode: z.enum(["per-worktree", "selectable"]),
+    name: z.string().min(1),
+  }),
+  instances: z.array(
+    z.strictObject({
+      id: z.string().min(1),
+      name: z.string().min(1),
+      running: z.boolean(),
+    })
+  ),
+  name: z.string().min(1),
+  processRunning: z.boolean(),
+  stop: z.enum(["command", "process"]),
+});
 
-export interface WorktreeSnapshot {
-  appGroups: AppGroupSnapshot[];
-  appLabel: string;
-  apps: AppEndpointSnapshot[];
-  branch: string;
-  health: AppHealth;
-  id: string;
-  isMain: boolean;
-  name: string;
-  path: string;
-  processRunning: boolean;
-  setupState: "failed" | "idle" | "running";
-}
+export const WorktreeSnapshotSchema = z.strictObject({
+  appGroups: z.array(AppGroupSnapshotSchema),
+  appLabel: z.string(),
+  apps: z.array(AppEndpointSnapshotSchema),
+  branch: z.string(),
+  health: AppHealthSchema,
+  id: z.string(),
+  isMain: z.boolean(),
+  name: z.string(),
+  path: z.string(),
+  processRunning: z.boolean(),
+  setupState: z.enum(["failed", "idle", "running"]),
+});
+
+export const WorkspaceSnapshotSchema = z.strictObject({
+  config: WorkgroveConfigSchema,
+  configPath: z.string(),
+  configRevision: z.string().min(1),
+  globalProcesses: z.array(
+    z.strictObject({
+      argv: z.array(z.string()),
+      cwd: z.string(),
+      label: z.string(),
+      ownerId: z.string(),
+      pid: z.number().int().positive(),
+      startedAt: z.string(),
+    })
+  ),
+  globalRunningCount: z.number().int().nonnegative(),
+  mainWorktreePath: z.string(),
+  primaryAppGroup: z.string().min(1),
+  repoName: z.string(),
+  repoPath: z.string(),
+  trustCommands: z.array(z.string()),
+  trustRequired: z.boolean(),
+  trusted: z.boolean(),
+  updatedAt: z.string(),
+  worktrees: z.array(WorktreeSnapshotSchema),
+});
+
+export type AppHealth = z.infer<typeof AppHealthSchema>;
+export type AppEndpointSnapshot = z.infer<typeof AppEndpointSnapshotSchema>;
+export type AppGroupSnapshot = z.infer<typeof AppGroupSnapshotSchema>;
+export type GlobalProcessSnapshot = z.infer<
+  typeof WorkspaceSnapshotSchema.shape.globalProcesses.element
+>;
+export type WorktreeSnapshot = z.infer<typeof WorktreeSnapshotSchema>;
+export type WorkspaceSnapshot = z.infer<typeof WorkspaceSnapshotSchema>;
+export type CommandReceipt = z.infer<typeof CommandReceiptSchema>;
 
 export function appGroupIsRunning(
   group: Pick<AppGroupSnapshot, "health" | "processRunning">
@@ -103,29 +134,4 @@ export function appsCanRestart(
   worktree: Pick<WorktreeSnapshot, "health" | "processRunning">
 ): boolean {
   return appsAreRunning(worktree);
-}
-
-export interface WorkspaceSnapshot {
-  config: WorkgroveConfig;
-  configPath: string;
-  configRevision: string;
-  globalProcesses: GlobalProcessSnapshot[];
-  globalRunningCount: number;
-  mainWorktreePath: string;
-  primaryAppGroup: string;
-  repoName: string;
-  repoPath: string;
-  trustCommands: string[];
-  trusted: boolean;
-  trustRequired: boolean;
-  updatedAt: string;
-  worktrees: WorktreeSnapshot[];
-}
-
-export interface CommandReceipt {
-  appGroupName?: string;
-  command: string;
-  message: string;
-  ok: true;
-  worktreeId?: string;
 }

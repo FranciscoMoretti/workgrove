@@ -9,69 +9,81 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { z } from "zod";
 
-export type AppGroupInstanceMode = "per-worktree" | "selectable";
+const NonEmptyStringSchema = z.string().min(1);
+const PortSchema = z.number().int().min(1).max(65_535);
+const AppGroupInstanceModeSchema = z.enum(["per-worktree", "selectable"]);
 
-export interface EndpointAssignment {
-  appId: string;
-  groupId: string;
-  hostname: string;
-  id: string;
-  port: number | null;
-  routeLabel: string;
-}
+const EndpointAssignmentSchema = z.strictObject({
+  appId: NonEmptyStringSchema,
+  groupId: NonEmptyStringSchema,
+  hostname: NonEmptyStringSchema,
+  id: NonEmptyStringSchema,
+  port: PortSchema.nullable(),
+  routeLabel: NonEmptyStringSchema,
+});
 
-export interface RunEndpoint {
-  appId: string;
-  directUrl?: string;
-  host: string;
-  hostname?: string;
-  listenerClaimed?: boolean;
-  port: number;
-  protocol: "http" | "tcp";
-  url?: string;
-}
+const RunEndpointSchema = z.strictObject({
+  appId: NonEmptyStringSchema,
+  directUrl: NonEmptyStringSchema.optional(),
+  host: NonEmptyStringSchema,
+  hostname: NonEmptyStringSchema.optional(),
+  listenerClaimed: z.boolean().optional(),
+  port: PortSchema,
+  protocol: z.enum(["http", "tcp"]),
+  url: NonEmptyStringSchema.optional(),
+});
 
-export interface AppGroupRun {
-  apps: Record<string, RunEndpoint>;
-  createdAt: string;
-  groupId: string;
-  instanceId: string;
-  instanceIdsByGroup: Record<string, string>;
-  worktreePath: string;
-}
+const AppGroupRunSchema = z.strictObject({
+  apps: z.record(z.string(), RunEndpointSchema),
+  createdAt: NonEmptyStringSchema,
+  groupId: NonEmptyStringSchema,
+  instanceId: NonEmptyStringSchema,
+  instanceIdsByGroup: z.record(z.string(), NonEmptyStringSchema),
+  worktreePath: NonEmptyStringSchema,
+});
 
-export interface AppGroupInstance {
-  endpoints: Record<string, EndpointAssignment>;
-  groupId: string;
-  id: string;
-  isDefault: boolean;
-  mode: AppGroupInstanceMode;
-  name: string;
-  routeLabel: string;
-  run: AppGroupRun | null;
-  worktreePath: string | null;
-}
+const AppGroupInstanceSchema = z.strictObject({
+  endpoints: z.record(z.string(), EndpointAssignmentSchema),
+  groupId: NonEmptyStringSchema,
+  id: NonEmptyStringSchema,
+  isDefault: z.boolean(),
+  mode: AppGroupInstanceModeSchema,
+  name: NonEmptyStringSchema,
+  routeLabel: NonEmptyStringSchema,
+  run: AppGroupRunSchema.nullable(),
+  worktreePath: NonEmptyStringSchema.nullable(),
+});
 
-interface WorktreeRecord {
-  id: string;
-  instanceSelections: Record<string, string>;
-  path: string;
-  routeLabel: string;
-}
+const WorktreeRecordSchema = z.strictObject({
+  id: NonEmptyStringSchema,
+  instanceSelections: z.record(z.string(), NonEmptyStringSchema),
+  path: NonEmptyStringSchema,
+  routeLabel: NonEmptyStringSchema,
+});
 
-interface RepositoryRecord {
-  id: string;
-  instances: Record<string, AppGroupInstance>;
-  path: string;
-  routeLabel: string;
-  worktrees: Record<string, WorktreeRecord>;
-}
+const RepositoryRecordSchema = z.strictObject({
+  id: NonEmptyStringSchema,
+  instances: z.record(z.string(), AppGroupInstanceSchema),
+  path: NonEmptyStringSchema,
+  routeLabel: NonEmptyStringSchema,
+  worktrees: z.record(z.string(), WorktreeRecordSchema),
+});
 
-interface WorkgroveLocalState {
-  repositories: Record<string, RepositoryRecord>;
-  version: 2;
-}
+const WorkgroveLocalStateSchema = z.strictObject({
+  repositories: z.record(z.string(), RepositoryRecordSchema),
+  version: z.literal(2),
+});
+
+export type AppGroupInstanceMode = z.infer<typeof AppGroupInstanceModeSchema>;
+export type EndpointAssignment = z.infer<typeof EndpointAssignmentSchema>;
+export type RunEndpoint = z.infer<typeof RunEndpointSchema>;
+export type AppGroupRun = z.infer<typeof AppGroupRunSchema>;
+export type AppGroupInstance = z.infer<typeof AppGroupInstanceSchema>;
+type WorktreeRecord = z.infer<typeof WorktreeRecordSchema>;
+type RepositoryRecord = z.infer<typeof RepositoryRecordSchema>;
+type WorkgroveLocalState = z.infer<typeof WorkgroveLocalStateSchema>;
 
 export interface InstanceRequest {
   groupId: string;
@@ -95,36 +107,38 @@ export interface RunKey {
   repoPath: string;
 }
 
-interface LegacyEndpointAssignment {
-  appId: string;
-  groupId: string;
-  hostname: string;
-  id: string;
-  routeLabel: string;
-}
-
-interface LegacyWorktreeRecord {
-  endpoints: Record<string, LegacyEndpointAssignment>;
-  id: string;
-  path: string;
-  routeLabel: string;
-  runs: Record<
-    string,
-    Omit<AppGroupRun, "instanceId" | "instanceIdsByGroup" | "worktreePath">
-  >;
-}
-
-interface LegacyRepositoryRecord {
-  id: string;
-  path: string;
-  routeLabel: string;
-  worktrees: Record<string, LegacyWorktreeRecord>;
-}
-
-interface LegacyWorkgroveLocalState {
-  repositories: Record<string, LegacyRepositoryRecord>;
-  version: 1;
-}
+const LegacyEndpointAssignmentSchema = EndpointAssignmentSchema.omit({
+  port: true,
+});
+const LegacyRunSchema = AppGroupRunSchema.omit({
+  instanceId: true,
+  instanceIdsByGroup: true,
+  worktreePath: true,
+});
+const LegacyWorktreeRecordSchema = z.strictObject({
+  endpoints: z.record(z.string(), LegacyEndpointAssignmentSchema),
+  id: NonEmptyStringSchema,
+  path: NonEmptyStringSchema,
+  routeLabel: NonEmptyStringSchema,
+  runs: z.record(z.string(), LegacyRunSchema),
+});
+const LegacyRepositoryRecordSchema = z.strictObject({
+  id: NonEmptyStringSchema,
+  path: NonEmptyStringSchema,
+  routeLabel: NonEmptyStringSchema,
+  worktrees: z.record(z.string(), LegacyWorktreeRecordSchema),
+});
+const LegacyWorkgroveLocalStateSchema = z.strictObject({
+  repositories: z.record(z.string(), LegacyRepositoryRecordSchema),
+  version: z.literal(1),
+});
+type LegacyWorkgroveLocalState = z.infer<
+  typeof LegacyWorkgroveLocalStateSchema
+>;
+const PersistedWorkgroveLocalStateSchema = z.discriminatedUnion("version", [
+  LegacyWorkgroveLocalStateSchema,
+  WorkgroveLocalStateSchema,
+]);
 
 const DEFAULT_INSTANCE_NAME = "Default";
 
@@ -452,22 +466,15 @@ export class FileWorkgroveStateStore {
       return emptyState();
     }
     try {
-      const value = JSON.parse(readFileSync(this.path, "utf8")) as
-        | Partial<WorkgroveLocalState>
-        | LegacyWorkgroveLocalState;
-      if (value.version === 1 && value.repositories) {
-        const migrated = migrateLegacyState(value as LegacyWorkgroveLocalState);
+      const value = PersistedWorkgroveLocalStateSchema.parse(
+        JSON.parse(readFileSync(this.path, "utf8"))
+      );
+      if (value.version === 1) {
+        const migrated = migrateLegacyState(value);
         this.write(migrated);
         return migrated;
       }
-      if (
-        value.version !== 2 ||
-        !value.repositories ||
-        typeof value.repositories !== "object"
-      ) {
-        throw new Error("Unsupported Workgrove local state");
-      }
-      return value as WorkgroveLocalState;
+      return value;
     } catch (error) {
       throw new Error(
         `Invalid Workgrove local state: ${error instanceof Error ? error.message : String(error)}`

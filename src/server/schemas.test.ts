@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { CodexIntegrationSnapshotSchema } from "../codex/codex-integration";
-import { WorkspaceSnapshotSchema } from "./schemas";
+import { WorkspaceSnapshotSchema } from "../controller/workspace-snapshot";
 
 describe("workspace snapshot transport schema", () => {
   it("preserves slot-free App groups and endpoint lifecycle state", () => {

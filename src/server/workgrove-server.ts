@@ -13,18 +13,19 @@ import {
   CodexIntegrationSnapshotSchema,
   CodexIntegrationUnavailableError,
 } from "../codex/codex-integration";
+import { AppGroupLifecycleError } from "../controller/app-group-lifecycle-error";
 import { isWorkgroveCommandName } from "../controller/command-contract";
 import {
   MissingWorktreeConfigError,
   WorkspaceController,
 } from "../controller/workspace-controller";
+import { WorkspaceSnapshotSchema } from "../controller/workspace-snapshot";
 import { processStartMarker } from "../host/process-inspection";
 import { createCodexHookRequestHandler } from "./codex-hook-route";
 import {
   LogsQuerySchema,
   LogsResponseSchema,
   WorkspaceQuerySchema,
-  WorkspaceSnapshotSchema,
 } from "./schemas";
 
 const MAX_BODY = 64 * 1024;
@@ -74,6 +75,9 @@ function errorBody(error: unknown) {
       configPath: error.configPath,
       error: error.message,
     };
+  }
+  if (error instanceof AppGroupLifecycleError) {
+    return { code: error.code, error: error.message };
   }
   return { error: error instanceof Error ? error.message : String(error) };
 }

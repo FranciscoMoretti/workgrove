@@ -442,8 +442,46 @@ describe("App-group instance assignment", () => {
 
       await expect(
         controller.startAppGroup(repository, id, "Apps")
-      ).rejects.toThrow("Portless unavailable");
+      ).rejects.toMatchObject({
+        code: "routing-unavailable",
+        message: "Portless unavailable",
+      });
       expect(existsSync(join(repository, "started.txt"))).toBe(false);
+    } finally {
+      rmSync(temporary, { force: true, recursive: true });
+    }
+  });
+
+  it("reports a stable code when the Start command cannot launch", async () => {
+    const temporary = mkdtempSync(join(tmpdir(), "workgrove-start-failure-"));
+    const repository = join(temporary, "project");
+    mkdirSync(repository);
+    try {
+      git(repository, "init", "-q");
+      writeFileSync(
+        join(repository, ".workgrove.json"),
+        JSON.stringify({
+          version: 1,
+          setup: { argv: ["true"] },
+          appGroups: {
+            Apps: {
+              start: { argv: [`missing-workgrove-command-${process.pid}`] },
+              stop: "process",
+              apps: { Api: { protocol: "tcp" } },
+            },
+          },
+        })
+      );
+      const controller = new TrustedWorkspaceController(undefined, {
+        routing: new InMemoryRoutingEngine(),
+        processes: new ProcessSupervisor(join(temporary, "control")),
+        state: new FileWorkgroveStateStore(join(temporary, "state.json")),
+      });
+      const id = controller.inspect(repository).worktrees[0]?.id ?? "";
+
+      await expect(
+        controller.startAppGroup(repository, id, "Apps")
+      ).rejects.toMatchObject({ code: "start-failed" });
     } finally {
       rmSync(temporary, { force: true, recursive: true });
     }
