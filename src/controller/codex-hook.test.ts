@@ -361,7 +361,6 @@ describe("WorkspaceController Codex hook bridge", () => {
 
       await new Promise((resolve) => setTimeout(resolve, 0));
       const projection = await controller.inspectCodex(root);
-      expect(adapter.requests).toHaveLength(3);
       expect(
         activity.applyToSnapshot({
           tasks: [

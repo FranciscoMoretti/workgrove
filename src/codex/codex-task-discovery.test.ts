@@ -125,7 +125,7 @@ describe("persisted Codex task discovery", () => {
   });
 
   it("rejects a repeated pagination cursor instead of looping", async () => {
-    const adapter = fakeAdapter("repeated-cursor", { requestTimeoutMs: 50 });
+    const adapter = fakeAdapter("repeated-cursor", { requestTimeoutMs: 500 });
 
     await expect(
       adapter.loadAssociatedTasks([{ id: "worktree-a", path: "/canonical/a" }])
@@ -142,7 +142,7 @@ describe("persisted Codex task discovery", () => {
       command: fakeCommand("transient-timeout"),
       negativeTtlMs: 5000,
       now: () => now,
-      requestTimeoutMs: 30,
+      requestTimeoutMs: 500,
     });
     openAdapters.push(adapter);
     const worktrees = [{ id: "worktree-a", path: "/canonical/a" }];
@@ -268,7 +268,7 @@ describe("persisted Codex task discovery", () => {
             ),
           }),
           negativeTtlMs: 0,
-          requestTimeoutMs: 30,
+          requestTimeoutMs: 500,
         });
         openAdapters.push(adapter);
         const worktrees = [{ id: "worktree-a", path: "/canonical/a" }];

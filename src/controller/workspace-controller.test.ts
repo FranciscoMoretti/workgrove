@@ -91,7 +91,7 @@ describe("slot-free workspace inspection", () => {
       });
       expect(snapshot.trustCommands).toHaveLength(3);
       expect(readFileSync(statePath, "utf8")).toContain(
-        "website.main.workgrove-controller-"
+        `website.${snapshot.worktrees[0]?.branch}.workgrove-controller-`
       );
     } finally {
       rmSync(root, { force: true, recursive: true });
