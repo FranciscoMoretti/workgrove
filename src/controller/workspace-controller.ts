@@ -415,6 +415,7 @@ export class WorkspaceController {
     worktreeIdValue: string,
     groupId: string
   ): Promise<"already-running" | "retried"> {
+    this.assertTrusted(repoPath);
     return this.appGroups.retry(
       this.appGroupTarget(repoPath, worktreeIdValue, groupId)
     );

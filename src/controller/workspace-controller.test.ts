@@ -196,6 +196,22 @@ describe("controller command contract", () => {
     ).rejects.toThrow();
   });
 
+  it("checks repository trust before retrying an App group", () => {
+    class UntrustedController extends WorkspaceController {
+      override assertTrusted(): never {
+        throw new Error("trust checked");
+      }
+    }
+
+    expect(() =>
+      new UntrustedController().retryAppGroup(
+        "/not-inspected",
+        "worktree",
+        "apps"
+      )
+    ).toThrow("trust checked");
+  });
+
   it("rejects command working directories that escape through a symlink", () => {
     const sandbox = mkdtempSync(join(tmpdir(), "workgrove-command-cwd-"));
     const root = join(sandbox, "worktree");
