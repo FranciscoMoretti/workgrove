@@ -22,6 +22,18 @@ let stubbornDescendantPid: number | null = null;
 let stubbornOwnedPid: number | null = null;
 let orphanDescendantPid: number | null = null;
 
+async function waitForProcessExit(pid: number): Promise<void> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`Process ${pid} did not exit`);
+}
+
 afterEach(() => {
   rmSync(logPath(worktreeId), { force: true });
   rmSync(logPath(stopTestId), { force: true });
@@ -140,7 +152,7 @@ describe("managed logs", () => {
     expect(await stopManagedProcess(stubbornStopTestId, process.cwd())).toBe(
       pid
     );
-    expect(() => process.kill(descendantPid, 0)).toThrow();
+    await waitForProcessExit(descendantPid);
   });
 
   it("stops descendants when their managed launcher exits unexpectedly", async () => {
