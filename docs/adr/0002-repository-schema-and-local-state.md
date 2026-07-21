@@ -1,8 +1,10 @@
-# Slot-free repository schema and local state contract
+# ADR 0002: Use a slot-free repository schema and local state
 
 Status: Accepted on 2026-07-18.
 
-This contract defines the checked-in repository declaration and the user-local records needed by the [endpoint, route, and environment contract](./endpoint-route-environment-contract.md). It replaces the unreleased slot-based model without a compatibility requirement.
+This decision defines the checked-in repository declaration and the user-local
+records needed by [ADR 0001](./0001-portless-runtime.md). It replaces the
+unreleased slot-based model without a compatibility requirement.
 
 ## Sources of truth
 

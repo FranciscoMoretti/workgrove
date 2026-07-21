@@ -1,8 +1,41 @@
-# Endpoint, route, and environment contract
+# ADR 0001: Use Portless as the local routing runtime
 
 Status: Accepted on 2026-07-18.
 
-This contract turns the [Portless runtime proof](./portless-runtime-proof.md) into Workgrove product semantics. It describes ownership and observable behavior; the slot-free `.workgrove.json` and user-local state shapes are a separate design decision.
+This decision defines Workgrove's Portless ownership, endpoint, route, lifecycle,
+and environment semantics. The slot-free `.workgrove.json` and user-local state
+shapes are defined separately in [ADR 0002](./0002-repository-schema-and-local-state.md).
+
+## Decision
+
+Portless is an always-available implementation dependency, but it remains behind
+Workgrove's local-routing seam. Workgrove owns application identity, route names,
+backing endpoint allocation, readiness, lifecycle, and reconciliation. Portless
+only proxies an exact hostname to a backing endpoint.
+
+The implementation uses a Workgrove-exclusive Portless state directory. This
+keeps route ownership unambiguous without requiring an upstream Portless fork.
+Routes are explicit aliases rather than names inferred from commands or paths.
+
+## Runtime constraints
+
+- HTTP and WebSocket traffic, including Vite HMR, work through exact aliases.
+- Route activation and deactivation are asynchronous and must be observed.
+- A configured alias must be removed before its backing port can be released;
+  otherwise a later foreign listener could receive traffic for the stale name.
+- Workgrove uses the packaged Node.js runtime for the Portless CLI. Running the
+  built CLI directly under Bun is not part of the supported contract.
+- Workgrove does not depend on Portless's human-readable CLI output as a stable
+  status protocol. It owns the state directory and verifies observable routes.
+- HTTPS, an owned development domain, reserved literal localhost origins, and
+  richer structured diagnostics remain follow-up capabilities.
+
+Authentication providers do not consistently accept arbitrary `*.localhost`
+callback URLs. Workgrove therefore treats provider-constrained callback origins
+as a separate compatibility capability rather than weakening the normal
+per-worktree Friendly URL model. A canonical authentication origin or reserved
+literal `localhost:<port>` may be added after the lifecycle and isolation rules
+are proven in [issue #43](https://github.com/FranciscoMoretti/workgrove/issues/43).
 
 ## Ownership boundary
 

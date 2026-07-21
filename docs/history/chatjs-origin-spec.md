@@ -1,6 +1,7 @@
 # Workgrove origin specification (historical)
 
-Status: Historical source material; see `../specs/standalone-v1.md`
+Status: Historical source material; see the current `README.md`, `CONTEXT.md`,
+and architectural decisions under `docs/adr/` for the active product model.
 
 Product name: **Workgrove**
 
