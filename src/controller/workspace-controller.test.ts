@@ -22,6 +22,7 @@ import type {
 import { FileWorkgroveStateStore } from "../runtime/local-state";
 import { WorkspaceController } from "./workspace-controller";
 import { appGroupCanRestart, appsCanRestart } from "./workspace-snapshot";
+import { commandWorkingDirectory } from "./worktree-command";
 
 class FakeRoutingEngine implements LocalRoutingEngine {
   async activate(_route: LocalRoute): Promise<void> {
@@ -174,17 +175,16 @@ describe("controller command contract", () => {
     mkdirSync(join(root, "apps"));
     symlinkSync(outside, join(root, "linked"));
     try {
-      const controller = new WorkspaceController();
-      expect(controller.commandWorkingDirectory(root, "apps")).toBe(
+      expect(commandWorkingDirectory(root, "apps")).toBe(
         realpathSync(join(root, "apps"))
       );
-      expect(() =>
-        controller.commandWorkingDirectory(root, "../outside")
-      ).toThrow("inside the worktree");
-      expect(() => controller.commandWorkingDirectory(root, "linked")).toThrow(
+      expect(() => commandWorkingDirectory(root, "../outside")).toThrow(
         "inside the worktree"
       );
-      expect(() => controller.commandWorkingDirectory(root, "missing")).toThrow(
+      expect(() => commandWorkingDirectory(root, "linked")).toThrow(
+        "inside the worktree"
+      );
+      expect(() => commandWorkingDirectory(root, "missing")).toThrow(
         "must exist inside the worktree"
       );
     } finally {

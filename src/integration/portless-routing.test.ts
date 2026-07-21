@@ -1,232 +1,55 @@
 import { test } from "bun:test";
-import { spawn, spawnSync } from "node:child_process";
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { createRequire } from "node:module";
+import { spawn } from "node:child_process";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import type { WorkgroveConfig } from "../config/workgrove-schema";
-import type { WorkspaceController } from "../controller/workspace-controller";
-import type { AppEndpointSnapshot } from "../controller/workspace-snapshot";
-import { reserveBackingPort } from "../runtime/readiness";
+import { FileWorkgroveStateStore } from "../runtime/local-state";
+import {
+  assert,
+  endpoint,
+  PortlessIntegrationFixture,
+  processIsLive,
+  waitUntil,
+} from "./portless-fixture";
 
-const require = createRequire(import.meta.url);
-
-function packageFile(packageName: string, ...parts: string[]): string {
-  return join(
-    dirname(require.resolve(`${packageName}/package.json`)),
-    ...parts
-  );
-}
-
-function run(cwd: string, command: string, args: string[]): void {
-  const result = spawnSync(command, args, { cwd, encoding: "utf8" });
-  if (result.status !== 0) {
-    throw new Error(
-      `${command} ${args.join(" ")} failed: ${result.stderr || result.stdout}`
-    );
-  }
-}
-
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) {
-    throw new Error(message);
-  }
-}
-
-function processIsLive(pid: number): boolean {
+test("serializes concurrent lifecycle requests and scopes trust to the fixture", async () => {
+  const fixture = await PortlessIntegrationFixture.create();
   try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
+    assert(
+      existsSync(join(fixture.controlDirectory, "trusted-repositories.json")),
+      "Fixture trust was not written to its isolated control directory"
+    );
+    const main = fixture.controller
+      .inspect(fixture.root)
+      .worktrees.find((worktree) => worktree.isMain);
+    assert(main, "Main worktree disappeared");
+    const results = await Promise.all([
+      fixture.controller.startAppGroup(fixture.root, main.id, "development"),
+      fixture.controller.startAppGroup(fixture.root, main.id, "development"),
+    ]);
+    assert(
+      results.filter((result) => result === "started").length === 1 &&
+        results.filter((result) => result === "already-running").length === 1,
+      "Concurrent Start requests did not share one lifecycle result"
+    );
+    const [restartResult, stopResult] = await Promise.all([
+      fixture.controller.startAppGroup(fixture.root, main.id, "development"),
+      fixture.controller.stopAppGroup(fixture.root, main.id, "development"),
+    ]);
+    assert(
+      restartResult === "already-running" && stopResult === "stopped",
+      "Concurrent Start and Stop requests did not run in call order"
+    );
+  } finally {
+    await fixture.cleanup();
   }
-}
+}, 120_000);
 
-async function waitUntil(
-  condition: () => boolean,
-  message: string,
-  timeout = 10_000
-): Promise<void> {
-  const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) {
-    if (condition()) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  throw new Error(message);
-}
-
-function endpoint(
-  worktree: ReturnType<WorkspaceController["inspect"]>["worktrees"][number],
-  appId: string
-): AppEndpointSnapshot {
-  const value = worktree.appGroups[0]?.apps.find((app) => app.id === appId);
-  assert(value, `${appId} was not present for ${worktree.path}`);
-  return value;
-}
-
-test("routes multiple apps and worktrees through an isolated Portless runtime", async () => {
-  const sandbox = realpathSync(
-    mkdtempSync(join(tmpdir(), "workgrove-portless-integration-"))
-  );
-  const root = join(sandbox, "repo");
-  const linkedPath = join(sandbox, "linked-worktree");
-  const detachedPath = join(sandbox, "detached-worktree");
-  const previousControlDirectory = process.env.WORKGROVE_CONTROL_DIR;
-  process.env.WORKGROVE_CONTROL_DIR = join(sandbox, "control");
-
-  const { CodexHookActivityStore } = await import(
-    "../codex/codex-hook-activity"
-  );
-  const { UnavailableCodexIntegrationAdapter } = await import(
-    "../codex/codex-integration"
-  );
-  const { trustRepository } = await import("../config/repository-trust");
-  const { WorkspaceController: Controller } = await import(
-    "../controller/workspace-controller"
-  );
-  const { PortlessRoutingEngine } = await import("../runtime/local-routing");
-  const { FileWorkgroveStateStore } = await import("../runtime/local-state");
-
-  const portlessState = join(sandbox, "portless");
-  const proxyReservation = await reserveBackingPort();
-  const proxyPort = proxyReservation.port;
-  await proxyReservation.release();
-  const config: WorkgroveConfig = {
-    version: 1,
-    setup: { argv: ["true"] },
-    appGroups: {
-      development: {
-        apps: {
-          api: { protocol: "http", readiness: "tcp" },
-          site: { protocol: "http", readiness: "tcp" },
-        },
-        env: {
-          API_DIRECT_URL: "{apps.api.directUrl}",
-          API_PORT: "{apps.api.port}",
-          API_URL: "{apps.api.url}",
-          SITE_DIRECT_URL: "{apps.site.directUrl}",
-          SITE_PORT: "{apps.site.port}",
-          SITE_URL: "{apps.site.url}",
-        },
-        start: { argv: [process.execPath, "integration-server.ts"] },
-        stop: "process",
-      },
-      external: {
-        apps: {
-          worker: { protocol: "http", readiness: "tcp" },
-        },
-        env: {
-          WORKER_PORT: "{apps.worker.port}",
-          WORKER_URL: "{apps.worker.url}",
-        },
-        start: { argv: [process.execPath, "integration-command-server.ts"] },
-        stop: { argv: [process.execPath, "integration-command-stop.ts"] },
-      },
-    },
-  };
-
-  let controller: WorkspaceController | null = null;
-  let routing: InstanceType<typeof PortlessRoutingEngine> | null = null;
-  let conflictServer: ReturnType<typeof createServer> | null = null;
-  let conflictRoute: { hostname: string; port: number } | null = null;
-  let recoveryHarness: ReturnType<typeof spawn> | null = null;
-
+test("isolates routes, environments, logs, and stable URLs across worktrees", async () => {
+  const fixture = await PortlessIntegrationFixture.create();
   try {
-    run(sandbox, "git", ["init", "-q", root]);
-    run(root, "git", ["config", "user.email", "test@workgrove.local"]);
-    run(root, "git", ["config", "user.name", "Workgrove Integration Test"]);
-    writeFileSync(
-      join(root, ".workgrove.json"),
-      `${JSON.stringify(config, null, 2)}\n`
-    );
-    writeFileSync(
-      join(root, "integration-server.ts"),
-      `const environment = {
-  API_DIRECT_URL: process.env.API_DIRECT_URL,
-  API_PORT: process.env.API_PORT,
-  API_URL: process.env.API_URL,
-  SITE_DIRECT_URL: process.env.SITE_DIRECT_URL,
-  SITE_PORT: process.env.SITE_PORT,
-  SITE_URL: process.env.SITE_URL,
-  cwd: process.cwd(),
-};
-for (const app of ["api", "site"] as const) {
-  Bun.serve({
-    hostname: "127.0.0.1",
-    port: Number(environment[app === "api" ? "API_PORT" : "SITE_PORT"]),
-    fetch() { return Response.json({ app, environment }); },
-  });
-}
-console.log(JSON.stringify(environment));
-`
-    );
-    writeFileSync(
-      join(root, "integration-command-server.ts"),
-      `import { writeFileSync } from "node:fs";
-writeFileSync("integration-command.pid", String(process.pid));
-Bun.serve({
-  hostname: "127.0.0.1",
-  port: Number(process.env.WORKER_PORT),
-  fetch() { return Response.json({ url: process.env.WORKER_URL }); },
-});
-`
-    );
-    writeFileSync(
-      join(root, "integration-command-stop.ts"),
-      `import { readFileSync, writeFileSync } from "node:fs";
-const pid = Number(readFileSync("integration-command.pid", "utf8"));
-process.kill(pid, "SIGTERM");
-writeFileSync("integration-command-stopped", String(pid));
-`
-    );
-    run(root, "git", [
-      "add",
-      ".workgrove.json",
-      "integration-command-server.ts",
-      "integration-command-stop.ts",
-      "integration-server.ts",
-    ]);
-    run(root, "git", ["commit", "-qm", "integration fixture"]);
-    run(root, "git", [
-      "worktree",
-      "add",
-      "-qb",
-      "integration-linked",
-      linkedPath,
-    ]);
-    run(root, "git", [
-      "worktree",
-      "add",
-      "-q",
-      "--detach",
-      detachedPath,
-      "HEAD",
-    ]);
-
-    trustRepository(root, config);
-    routing = new PortlessRoutingEngine({
-      port: proxyPort,
-      stateDirectory: portlessState,
-    });
-    const state = new FileWorkgroveStateStore(join(sandbox, "state.json"));
-    controller = new Controller(new UnavailableCodexIntegrationAdapter(), {
-      codexHooks: new CodexHookActivityStore({ persist: false }),
-      routing,
-      state,
-    });
-
-    const before = controller.inspect(root);
+    const before = fixture.controller.inspect(fixture.root);
     assert(
       before.worktrees.length === 3,
       "Git worktrees were not all discovered"
@@ -242,11 +65,15 @@ writeFileSync("integration-command-stopped", String(pid));
 
     await Promise.all(
       before.worktrees.map((worktree) =>
-        controller?.startAppGroup(root, worktree.id, "development")
+        fixture.controller.startAppGroup(
+          fixture.root,
+          worktree.id,
+          "development"
+        )
       )
     );
 
-    const running = controller.inspect(root);
+    const running = fixture.controller.inspect(fixture.root);
     const ports = new Set<number>();
     const urls = new Set<string>();
     const worktreePaths = running.worktrees.map((worktree) => worktree.path);
@@ -285,7 +112,9 @@ writeFileSync("integration-command-stopped", String(pid));
           `${worktree.path} received an incomplete Repository environment`
         );
       }
-      const logs = controller.logs(root, worktree.id, "development").join("\n");
+      const logs = fixture.controller
+        .logs(fixture.root, worktree.id, "development")
+        .join("\n");
       assert(
         logs.includes(worktree.path) &&
           worktreePaths
@@ -300,16 +129,20 @@ writeFileSync("integration-command-stopped", String(pid));
     );
 
     const linked = running.worktrees.find(
-      (worktree) => worktree.path === linkedPath
+      (worktree) => worktree.path === fixture.linkedPath
     );
     assert(linked, "Linked worktree disappeared");
     const linkedUrls = Object.fromEntries(
       linked.appGroups[0]?.apps.map((app) => [app.id, app.url as string]) ?? []
     );
-    await controller.stopAppGroup(root, linked.id, "development");
-    const afterIndependentStop = controller.inspect(root);
-    const stoppedLinked = afterIndependentStop.worktrees.find(
-      (worktree) => worktree.path === linkedPath
+    await fixture.controller.stopAppGroup(
+      fixture.root,
+      linked.id,
+      "development"
+    );
+    const afterStop = fixture.controller.inspect(fixture.root);
+    const stoppedLinked = afterStop.worktrees.find(
+      (worktree) => worktree.path === fixture.linkedPath
     );
     assert(
       stoppedLinked?.appGroups[0]?.apps.every(
@@ -323,24 +156,29 @@ writeFileSync("integration-command-stopped", String(pid));
         "A stopped worktree route remained active"
       );
     }
-    controller = new Controller(new UnavailableCodexIntegrationAdapter(), {
-      codexHooks: new CodexHookActivityStore({ persist: false }),
-      routing,
-      state: new FileWorkgroveStateStore(join(sandbox, "state.json")),
-    });
-    await controller.startAppGroup(root, linked.id, "development");
-    const restartedLinked = controller
-      .inspect(root)
-      .worktrees.find((worktree) => worktree.path === linkedPath);
+
+    fixture.rebuildController();
+    await fixture.controller.startAppGroup(
+      fixture.root,
+      linked.id,
+      "development"
+    );
+    const restartedLinked = fixture.controller
+      .inspect(fixture.root)
+      .worktrees.find((worktree) => worktree.path === fixture.linkedPath);
     assert(
       restartedLinked?.appGroups[0]?.apps.every(
         (app) => app.url === linkedUrls[app.id]
       ),
       "Friendly URLs changed after controller reconstruction and restart"
     );
-    await controller.stopAppGroup(root, linked.id, "development");
-    for (const worktree of afterIndependentStop.worktrees.filter(
-      (item) => item.path !== linkedPath
+    await fixture.controller.stopAppGroup(
+      fixture.root,
+      linked.id,
+      "development"
+    );
+    for (const worktree of afterStop.worktrees.filter(
+      (item) => item.path !== fixture.linkedPath
     )) {
       for (const app of worktree.appGroups[0]?.apps ?? []) {
         assert(
@@ -349,39 +187,41 @@ writeFileSync("integration-command-stopped", String(pid));
         );
       }
     }
+  } finally {
+    await fixture.cleanup();
+  }
+}, 120_000);
 
-    for (const worktree of afterIndependentStop.worktrees.filter(
-      (item) => item.path !== linkedPath
-    )) {
-      await controller.stopAppGroup(root, worktree.id, "development");
-    }
-
-    const commandWorktree = controller
-      .inspect(root)
+test("re-adopts a surviving process and recovers routes after a proxy crash", async () => {
+  const fixture = await PortlessIntegrationFixture.create();
+  let recoveryHarness: ReturnType<typeof spawn> | null = null;
+  try {
+    const main = fixture.controller
+      .inspect(fixture.root)
       .worktrees.find((worktree) => worktree.isMain);
-    assert(commandWorktree, "Main worktree disappeared");
-
+    assert(main, "Main worktree disappeared");
     const workgroveRoot = dirname(dirname(import.meta.dir));
-    const harnessPath = join(sandbox, "recovery-harness.ts");
-    const readyMarker = join(sandbox, "recovery-ready.json");
+    const harnessPath = join(fixture.sandbox, "recovery-harness.ts");
+    const readyMarker = join(fixture.sandbox, "recovery-ready.json");
     writeFileSync(
       harnessPath,
-      `process.env.WORKGROVE_CONTROL_DIR = ${JSON.stringify(process.env.WORKGROVE_CONTROL_DIR)};
-const { CodexHookActivityStore } = await import(${JSON.stringify(join(workgroveRoot, "src/codex/codex-hook-activity.ts"))});
+      `const { CodexHookActivityStore } = await import(${JSON.stringify(join(workgroveRoot, "src/codex/codex-hook-activity.ts"))});
 const { UnavailableCodexIntegrationAdapter } = await import(${JSON.stringify(join(workgroveRoot, "src/codex/codex-integration.ts"))});
 const { WorkspaceController } = await import(${JSON.stringify(join(workgroveRoot, "src/controller/workspace-controller.ts"))});
 const { PortlessRoutingEngine } = await import(${JSON.stringify(join(workgroveRoot, "src/runtime/local-routing.ts"))});
 const { FileWorkgroveStateStore } = await import(${JSON.stringify(join(workgroveRoot, "src/runtime/local-state.ts"))});
+const { ProcessSupervisor } = await import(${JSON.stringify(join(workgroveRoot, "src/runtime/process-supervisor.ts"))});
 const { writeFileSync } = await import("node:fs");
 const controller = new WorkspaceController(new UnavailableCodexIntegrationAdapter(), {
   codexHooks: new CodexHookActivityStore({ persist: false }),
-  routing: new PortlessRoutingEngine({ port: ${proxyPort}, stateDirectory: ${JSON.stringify(portlessState)} }),
-  state: new FileWorkgroveStateStore(${JSON.stringify(join(sandbox, "state.json"))}),
+  processes: new ProcessSupervisor(${JSON.stringify(fixture.controlDirectory)}),
+  routing: new PortlessRoutingEngine({ port: ${fixture.proxyPort}, stateDirectory: ${JSON.stringify(fixture.portlessState)} }),
+  state: new FileWorkgroveStateStore(${JSON.stringify(fixture.statePath)}),
 });
-const worktree = controller.inspect(${JSON.stringify(root)}).worktrees.find((item) => item.isMain);
+const worktree = controller.inspect(${JSON.stringify(fixture.root)}).worktrees.find((item) => item.isMain);
 if (!worktree) throw new Error("Main worktree disappeared");
-await controller.startAppGroup(${JSON.stringify(root)}, worktree.id, "development");
-writeFileSync(${JSON.stringify(readyMarker)}, JSON.stringify(controller.inspect(${JSON.stringify(root)}).globalProcesses));
+await controller.startAppGroup(${JSON.stringify(fixture.root)}, worktree.id, "development");
+writeFileSync(${JSON.stringify(readyMarker)}, JSON.stringify(controller.inspect(${JSON.stringify(fixture.root)}).globalProcesses));
 setInterval(() => {}, 1000);
 `
     );
@@ -390,6 +230,7 @@ setInterval(() => {}, 1000);
       stdio: "ignore",
     });
     assert(recoveryHarness.pid, "Recovery harness did not start");
+    const harnessPid = recoveryHarness.pid;
     await waitUntil(
       () => existsSync(readyMarker),
       "Recovery harness did not start the App group",
@@ -399,12 +240,12 @@ setInterval(() => {}, 1000);
       readFileSync(readyMarker, "utf8")
     ) as Array<{ cwd: string; pid: number }>;
     const survivingPid = harnessProcesses.find(
-      (item) => item.cwd === root
+      (item) => item.cwd === fixture.root
     )?.pid;
     assert(survivingPid, "Recovery harness did not record the managed process");
-    process.kill(recoveryHarness.pid, "SIGKILL");
+    process.kill(harnessPid, "SIGKILL");
     await waitUntil(
-      () => !processIsLive(recoveryHarness?.pid as number),
+      () => !processIsLive(harnessPid),
       "Recovery harness did not stop"
     );
     recoveryHarness = null;
@@ -413,12 +254,8 @@ setInterval(() => {}, 1000);
       "Managed App did not survive daemon exit"
     );
 
-    controller = new Controller(new UnavailableCodexIntegrationAdapter(), {
-      codexHooks: new CodexHookActivityStore({ persist: false }),
-      routing,
-      state: new FileWorkgroveStateStore(join(sandbox, "state.json")),
-    });
-    const adopted = controller.inspect(root);
+    fixture.rebuildController();
+    const adopted = fixture.controller.inspect(fixture.root);
     const adoptedGroup = adopted.worktrees
       .find((worktree) => worktree.isMain)
       ?.appGroups.find((group) => group.id === "development");
@@ -427,100 +264,129 @@ setInterval(() => {}, 1000);
         adopted.globalProcesses.some((item) => item.pid === survivingPid),
       "A surviving managed process was not re-adopted"
     );
-    await controller.stopAppGroup(root, commandWorktree.id, "development");
+    await fixture.controller.stopAppGroup(fixture.root, main.id, "development");
 
-    await controller.startAppGroup(root, commandWorktree.id, "development");
-    const beforeProxyCrash = controller.inspect(root);
-    const beforeCrashGroup = beforeProxyCrash.worktrees
+    await fixture.controller.startAppGroup(
+      fixture.root,
+      main.id,
+      "development"
+    );
+    const beforeCrash = fixture.controller.inspect(fixture.root);
+    const beforeCrashGroup = beforeCrash.worktrees
       .find((worktree) => worktree.isMain)
       ?.appGroups.find((group) => group.id === "development");
-    const processBeforeRecovery = beforeProxyCrash.globalProcesses.find(
-      (item) => item.cwd === root
+    const processBeforeRecovery = beforeCrash.globalProcesses.find(
+      (item) => item.cwd === fixture.root
     )?.pid;
     const urlsBeforeRecovery = Object.fromEntries(
       beforeCrashGroup?.apps.map((app) => [app.id, app.url]) ?? []
     );
     const proxyPid = Number(
-      readFileSync(join(portlessState, "proxy.pid"), "utf8").trim()
+      readFileSync(join(fixture.portlessState, "proxy.pid"), "utf8").trim()
     );
     process.kill(proxyPid, "SIGTERM");
     await waitUntil(
       () => !processIsLive(proxyPid),
       "Portless proxy did not stop"
     );
-    const duringProxyCrash = controller
-      .inspect(root)
+    const unavailable = fixture.controller
+      .inspect(fixture.root)
       .worktrees.find((worktree) => worktree.isMain)
       ?.appGroups.find((group) => group.id === "development");
     assert(
-      duringProxyCrash?.apps.every((app) => app.routeState === "unavailable"),
+      unavailable?.apps.every((app) => app.routeState === "unavailable"),
       "A stopped Portless proxy was not observed as unavailable"
     );
-    await controller.startAppGroup(root, commandWorktree.id, "development");
-    const afterProxyRecovery = controller.inspect(root);
-    const recoveredGroup = afterProxyRecovery.worktrees
+    await fixture.controller.startAppGroup(
+      fixture.root,
+      main.id,
+      "development"
+    );
+    const recovered = fixture.controller.inspect(fixture.root);
+    const recoveredGroup = recovered.worktrees
       .find((worktree) => worktree.isMain)
       ?.appGroups.find((group) => group.id === "development");
     assert(
       recoveredGroup?.apps.every(
         (app) => app.open && app.url === urlsBeforeRecovery[app.id]
       ) &&
-        afterProxyRecovery.globalProcesses.find((item) => item.cwd === root)
+        recovered.globalProcesses.find((item) => item.cwd === fixture.root)
           ?.pid === processBeforeRecovery,
       "Route retry did not preserve the process and Friendly URLs"
     );
-    await controller.stopAppGroup(root, commandWorktree.id, "development");
+  } finally {
+    if (recoveryHarness?.pid && processIsLive(recoveryHarness.pid)) {
+      process.kill(recoveryHarness.pid, "SIGKILL");
+    }
+    await fixture.cleanup();
+  }
+}, 120_000);
 
-    await controller.startAppGroup(root, commandWorktree.id, "external");
-    const external = controller
-      .inspect(root)
+test("runs a configured Stop command for an external runtime", async () => {
+  const fixture = await PortlessIntegrationFixture.create();
+  try {
+    const main = fixture.controller
+      .inspect(fixture.root)
+      .worktrees.find((worktree) => worktree.isMain);
+    assert(main, "Main worktree disappeared");
+    await fixture.controller.startAppGroup(fixture.root, main.id, "external");
+    const external = fixture.controller
+      .inspect(fixture.root)
       .worktrees.find((worktree) => worktree.isMain)
       ?.appGroups.find((group) => group.id === "external")?.apps[0];
     assert(
       external?.open && external.url && (await fetch(external.url)).ok,
       "Configured-command App group did not start"
     );
-    await controller.stopAppGroup(root, commandWorktree.id, "external");
+    await fixture.controller.stopAppGroup(fixture.root, main.id, "external");
     assert(
-      existsSync(join(root, "integration-command-stopped")),
+      existsSync(join(fixture.root, "integration-command-stopped")),
       "Configured Stop command did not run"
     );
+  } finally {
+    await fixture.cleanup();
+  }
+}, 120_000);
 
-    conflictServer = createServer((socket) => {
-      socket.end(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 13\r\nConnection: close\r\n\r\nforeign route"
-      );
-    });
+test("rejects and preserves a foreign Friendly URL route", async () => {
+  const fixture = await PortlessIntegrationFixture.create();
+  const conflictServer = createServer((socket) => {
+    socket.end(
+      "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 13\r\nConnection: close\r\n\r\nforeign route"
+    );
+  });
+  let conflictRoute: { hostname: string; port: number } | null = null;
+  try {
     await new Promise<void>((resolve, reject) => {
-      conflictServer?.once("error", reject);
-      conflictServer?.listen(0, "127.0.0.1", resolve);
+      conflictServer.once("error", reject);
+      conflictServer.listen(0, "127.0.0.1", resolve);
     });
-    const conflictAddress = conflictServer.address();
+    const address = conflictServer.address();
     assert(
-      conflictAddress && typeof conflictAddress !== "string",
+      address && typeof address !== "string",
       "Could not allocate conflict port"
     );
-    const conflictPort = conflictAddress.port;
-    const mainBeforeConflict = controller
-      .inspect(root)
+    const main = fixture.controller
+      .inspect(fixture.root)
       .worktrees.find((worktree) => worktree.isMain);
-    assert(mainBeforeConflict, "Main worktree disappeared");
-    const siteAssignment = state.endpoint({
+    assert(main, "Main worktree disappeared");
+    const state = new FileWorkgroveStateStore(fixture.statePath);
+    const assignment = state.endpoint({
       appId: "site",
       appLabel: "site",
       groupId: "development",
       repoLabel: "repo",
-      repoPath: root,
-      worktreeLabel: mainBeforeConflict.branch,
-      worktreePath: mainBeforeConflict.path,
+      repoPath: fixture.root,
+      worktreeLabel: main.branch,
+      worktreePath: main.path,
     });
-    conflictRoute = { hostname: siteAssignment.hostname, port: conflictPort };
-    await routing.activate(conflictRoute);
+    conflictRoute = { hostname: assignment.hostname, port: address.port };
+    await fixture.routing.activate(conflictRoute);
     let conflictRejected = false;
     try {
-      await controller.startAppGroup(
-        root,
-        mainBeforeConflict.id,
+      await fixture.controller.startAppGroup(
+        fixture.root,
+        main.id,
         "development"
       );
     } catch (error) {
@@ -531,63 +397,90 @@ setInterval(() => {}, 1000);
       conflictRejected,
       "A foreign Friendly URL conflict was not rejected"
     );
-    const conflicted = controller
-      .inspect(root)
+    const conflicted = fixture.controller
+      .inspect(fixture.root)
       .worktrees.find((worktree) => worktree.isMain);
     assert(
       conflicted?.appGroups[0]?.apps.every((app) => !(app.open || app.url)),
       "A partial set of Friendly URLs was published after a route conflict"
     );
-    await controller.stopAppGroup(root, mainBeforeConflict.id, "development");
+    await fixture.controller.stopAppGroup(fixture.root, main.id, "development");
     assert(
-      routing.observe(conflictRoute) === "active",
+      fixture.routing.observe(conflictRoute) === "active",
       "Stop removed a foreign Portless route"
     );
   } finally {
-    if (recoveryHarness?.pid && processIsLive(recoveryHarness.pid)) {
-      process.kill(recoveryHarness.pid, "SIGKILL");
+    if (conflictRoute) {
+      await fixture.routing.deactivate(conflictRoute);
     }
-    if (routing && conflictRoute) {
-      try {
-        await routing.deactivate(conflictRoute);
-      } catch {
-        // Preserve the original test failure.
-      }
-    }
-    if (controller) {
-      try {
-        for (const worktree of controller.inspect(root).worktrees) {
-          for (const groupId of Object.keys(config.appGroups)) {
-            await controller.stopAppGroup(root, worktree.id, groupId);
-          }
-        }
-      } catch {
-        // Preserve the original test failure.
-      }
-    }
-    if (conflictServer) {
-      await new Promise<void>((resolve) =>
-        conflictServer?.close(() => resolve())
-      );
-    }
-    spawnSync(
-      packageFile("node", "bin", "node"),
-      [packageFile("portless", "dist", "cli.js"), "proxy", "stop"],
-      {
-        env: {
-          ...process.env,
-          PORTLESS_HTTPS: "0",
-          PORTLESS_PORT: String(proxyPort),
-          PORTLESS_STATE_DIR: portlessState,
-          PORTLESS_SYNC_HOSTS: "0",
-        },
-      }
+    await new Promise<void>((resolve) => conflictServer.close(() => resolve()));
+    await fixture.cleanup();
+  }
+}, 120_000);
+
+test("preserves an existing Friendly URL when another route conflicts", async () => {
+  const fixture = await PortlessIntegrationFixture.create();
+  const conflictServer = createServer((socket) => {
+    socket.end(
+      "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 13\r\nConnection: close\r\n\r\nforeign route"
     );
-    rmSync(sandbox, { force: true, recursive: true });
-    if (previousControlDirectory === undefined) {
-      process.env.WORKGROVE_CONTROL_DIR = undefined;
-    } else {
-      process.env.WORKGROVE_CONTROL_DIR = previousControlDirectory;
+  });
+  let conflictRoute: { hostname: string; port: number } | null = null;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      conflictServer.once("error", reject);
+      conflictServer.listen(0, "127.0.0.1", resolve);
+    });
+    const address = conflictServer.address();
+    assert(
+      address && typeof address !== "string",
+      "Could not allocate conflict port"
+    );
+    const main = fixture.controller
+      .inspect(fixture.root)
+      .worktrees.find((worktree) => worktree.isMain);
+    assert(main, "Main worktree disappeared");
+    await fixture.controller.startAppGroup(
+      fixture.root,
+      main.id,
+      "development"
+    );
+    const run = new FileWorkgroveStateStore(fixture.statePath).run({
+      groupId: "development",
+      repoPath: fixture.root,
+      worktreePath: main.path,
+    });
+    const api = run?.apps.api;
+    const site = run?.apps.site;
+    assert(api?.hostname && site?.hostname, "HTTP routes were not allocated");
+    const apiRoute = { hostname: api.hostname, port: api.port };
+    const siteRoute = { hostname: site.hostname, port: site.port };
+    await fixture.routing.deactivate(apiRoute);
+    conflictRoute = { hostname: api.hostname, port: address.port };
+    await fixture.routing.activate(conflictRoute);
+
+    let conflictRejected = false;
+    try {
+      await fixture.controller.startAppGroup(
+        fixture.root,
+        main.id,
+        "development"
+      );
+    } catch (error) {
+      conflictRejected =
+        error instanceof Error && error.message.includes("already routed");
     }
+    assert(conflictRejected, "A foreign route conflict was not rejected");
+    assert(
+      fixture.routing.observe(siteRoute) === "active",
+      "Route rollback removed a Friendly URL that Start did not create"
+    );
+    await fixture.controller.stopAppGroup(fixture.root, main.id, "development");
+  } finally {
+    if (conflictRoute) {
+      await fixture.routing.deactivate(conflictRoute);
+    }
+    await new Promise<void>((resolve) => conflictServer.close(() => resolve()));
+    await fixture.cleanup();
   }
 }, 120_000);

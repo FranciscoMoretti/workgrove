@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { FakeCodexIntegrationAdapter } from "../codex/codex-integration";
+import { FileWorkgroveStateStore } from "../runtime/local-state";
 import { WorkspaceController } from "./workspace-controller";
 
 describe("WorkspaceController Codex projection", () => {
@@ -43,7 +44,9 @@ describe("WorkspaceController Codex projection", () => {
         tasks: [{ task, worktreePath: canonicalRoot }],
         updatedAt: "2026-07-18T13:00:00.000Z",
       });
-      const controller = new WorkspaceController(fake);
+      const controller = new WorkspaceController(fake, {
+        state: new FileWorkgroveStateStore(join(root, "state.json")),
+      });
 
       const workspace = controller.inspect(root);
       const projection = await controller.inspectCodex(root);

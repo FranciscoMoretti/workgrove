@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import {
   closeSync,
   existsSync,
@@ -12,15 +12,15 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { processStartMarker } from "../host/process-inspection";
 import { pathInside, pidOwnedByWorktree } from "./ports";
 
-const CONTROL_DIR =
-  process.env.WORKGROVE_CONTROL_DIR ?? join(homedir(), ".workgrove");
 const LINE_BREAK = /\r?\n/;
 const TRAILING_LINE_BREAK = /\r?\n$/;
 const GRACEFUL_STOP_ATTEMPTS = 20;
 const FORCE_STOP_ATTEMPTS = 10;
 const STOP_POLL_MS = 100;
+
 interface ProcessRecord {
   argv: string[];
   cwd: string;
@@ -41,308 +41,6 @@ interface ProcessSignalTarget {
   kind: "group" | "process";
 }
 
-const processes = new Map<
-  string,
-  { child: ChildProcess; record: ProcessRecord }
->();
-const plannedStops = new Set<number>();
-
-mkdirSync(CONTROL_DIR, { recursive: true });
-
-function safeId(worktreeId: string): string {
-  return worktreeId.replace(/[^A-Za-z0-9_-]/g, "_");
-}
-
-export function logPath(worktreeId: string): string {
-  return join(CONTROL_DIR, `${safeId(worktreeId)}.log`);
-}
-
-function pidPath(worktreeId: string): string {
-  return join(CONTROL_DIR, `${safeId(worktreeId)}.pid`);
-}
-
-function failurePath(worktreeId: string): string {
-  return join(CONTROL_DIR, `${safeId(worktreeId)}.failure.json`);
-}
-
-function recordFailure(worktreeId: string, message: string): void {
-  const failure: ProcessFailure = {
-    failedAt: new Date().toISOString(),
-    message,
-  };
-  writeFileSync(failurePath(worktreeId), `${JSON.stringify(failure)}\n`);
-}
-
-function processTargetIsLive(target: ProcessSignalTarget): boolean {
-  try {
-    process.kill(target.kind === "group" ? -target.id : target.id, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function signalProcessTarget(
-  target: ProcessSignalTarget,
-  signal: NodeJS.Signals
-): void {
-  process.kill(target.kind === "group" ? -target.id : target.id, signal);
-}
-
-async function stopProcessTarget(
-  target: ProcessSignalTarget,
-  logId?: string
-): Promise<void> {
-  try {
-    signalProcessTarget(target, "SIGTERM");
-  } catch (error) {
-    if (!processTargetIsLive(target)) {
-      return;
-    }
-    throw error;
-  }
-  for (let attempt = 0; attempt < GRACEFUL_STOP_ATTEMPTS; attempt += 1) {
-    if (!processTargetIsLive(target)) {
-      return;
-    }
-    await delay(STOP_POLL_MS);
-  }
-  if (logId) {
-    appendManagedLog(
-      logId,
-      "[workgrove] Force-stopping processes that ignored SIGTERM"
-    );
-  }
-  try {
-    signalProcessTarget(target, "SIGKILL");
-  } catch (error) {
-    if (!processTargetIsLive(target)) {
-      return;
-    }
-    throw error;
-  }
-  for (let attempt = 0; attempt < FORCE_STOP_ATTEMPTS; attempt += 1) {
-    if (!processTargetIsLive(target)) {
-      return;
-    }
-    await delay(STOP_POLL_MS);
-  }
-  throw new Error(`Managed ${target.kind} ${target.id} did not stop`);
-}
-
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-function startMarker(pid: number): string {
-  const result = spawnSync("ps", ["-p", String(pid), "-o", "lstart="], {
-    encoding: "utf8",
-  });
-  return result.status === 0 ? result.stdout.trim() : "";
-}
-
-function persistedRecord(worktreeId: string): ProcessRecord | null {
-  const file = pidPath(worktreeId);
-  if (!existsSync(file)) {
-    return null;
-  }
-  try {
-    const value = JSON.parse(readFileSync(file, "utf8")) as ProcessRecord;
-    return Number.isInteger(value.pid) &&
-      value.pid > 0 &&
-      typeof value.cwd === "string" &&
-      typeof value.startMarker === "string" &&
-      value.startMarker.length > 0
-      ? value
-      : null;
-  } catch {
-    // Numeric files from older Workgrove versions are intentionally not trusted.
-    return null;
-  }
-}
-
-export function managedPid(
-  worktreeId: string,
-  expectedWorktreePath: string
-): number | null {
-  const tracked = processes.get(worktreeId);
-  if (
-    tracked?.child.pid &&
-    pathInside(tracked.record.cwd, expectedWorktreePath) &&
-    processTargetIsLive({ id: tracked.child.pid, kind: "process" })
-  ) {
-    return tracked.child.pid;
-  }
-  const record = persistedRecord(worktreeId);
-  if (
-    !(
-      record &&
-      pathInside(record.cwd, expectedWorktreePath) &&
-      processTargetIsLive({ id: record.pid, kind: "process" }) &&
-      pidOwnedByWorktree(record.pid, expectedWorktreePath)
-    ) ||
-    startMarker(record.pid) !== record.startMarker
-  ) {
-    return null;
-  }
-  return record.pid;
-}
-
-export function startManagedProcess(input: {
-  argv: string[];
-  cwd: string;
-  env: Record<string, string>;
-  logId?: string;
-  label?: string;
-  ownerId?: string;
-  ownerRoot: string;
-  trackExitFailure?: boolean;
-  worktreeId: string;
-}): number {
-  if (!pathInside(input.cwd, input.ownerRoot)) {
-    const message = "Command working directory must stay inside its worktree";
-    if (input.trackExitFailure) {
-      recordFailure(input.worktreeId, message);
-    }
-    throw new Error(message);
-  }
-  const existing = managedPid(input.worktreeId, input.cwd);
-  if (existing) {
-    throw new Error(`Apps are already managed by pid ${existing}`);
-  }
-  const [command, ...args] = input.argv;
-  if (!command) {
-    throw new Error("Start command requires at least one argv entry");
-  }
-  if (input.trackExitFailure) {
-    rmSync(failurePath(input.worktreeId), { force: true });
-  }
-  const log = openSync(logPath(input.logId ?? input.worktreeId), "a");
-  const child = (() => {
-    try {
-      return spawn(command, args, {
-        cwd: input.cwd,
-        detached: true,
-        env: { ...process.env, ...input.env },
-        stdio: ["ignore", log, log],
-      });
-    } finally {
-      closeSync(log);
-    }
-  })();
-  child.once("error", (error) => {
-    appendManagedLog(
-      input.logId ?? input.worktreeId,
-      `[workgrove] Failed to start ${command}: ${error.message}`
-    );
-    if (input.trackExitFailure) {
-      recordFailure(input.worktreeId, error.message);
-    }
-    if (processes.get(input.worktreeId)?.record.pid === child.pid) {
-      processes.delete(input.worktreeId);
-    }
-    rmSync(pidPath(input.worktreeId), { force: true });
-  });
-  if (!child.pid) {
-    throw new Error(`Failed to start ${command}`);
-  }
-  const record: ProcessRecord = {
-    argv: input.argv,
-    cwd: input.cwd,
-    pid: child.pid,
-    label: input.label,
-    ownerId: input.ownerId ?? input.logId ?? input.worktreeId,
-    startedAt: new Date().toISOString(),
-    startMarker: startMarker(child.pid),
-  };
-  processes.set(input.worktreeId, { child, record });
-  writeFileSync(pidPath(input.worktreeId), `${JSON.stringify(record)}\n`);
-  child.once("exit", (code, signal) => {
-    if (input.trackExitFailure) {
-      if (code === 0) {
-        rmSync(failurePath(input.worktreeId), { force: true });
-      } else {
-        recordFailure(
-          input.worktreeId,
-          signal
-            ? `Exited after ${signal}`
-            : `Exited with status ${code ?? "unknown"}`
-        );
-      }
-    }
-    if (processes.get(input.worktreeId)?.record.pid === child.pid) {
-      processes.delete(input.worktreeId);
-      rmSync(pidPath(input.worktreeId), { force: true });
-    }
-    if (child.pid && !plannedStops.has(child.pid)) {
-      const groupTarget: ProcessSignalTarget = {
-        id: child.pid,
-        kind: "group",
-      };
-      if (processTargetIsLive(groupTarget)) {
-        const logId = input.logId ?? input.worktreeId;
-        appendManagedLog(
-          logId,
-          "[workgrove] Managed process exited; stopping remaining descendants"
-        );
-        stopProcessTarget(groupTarget, logId).catch((error) => {
-          appendManagedLog(
-            logId,
-            `[workgrove] Failed to stop remaining descendants: ${error instanceof Error ? error.message : String(error)}`
-          );
-        });
-      }
-    }
-  });
-  child.unref();
-  return child.pid;
-}
-
-export async function runFiniteCommand(input: {
-  argv: string[];
-  cwd: string;
-  env: Record<string, string>;
-  label: string;
-  logId: string;
-}): Promise<void> {
-  const [command, ...args] = input.argv;
-  if (!command) {
-    throw new Error(`${input.label} requires at least one argv entry`);
-  }
-  appendManagedLog(
-    input.logId,
-    `[workgrove] ${input.label}: ${input.argv.join(" ")}`
-  );
-  const log = openSync(logPath(input.logId), "a");
-  const child = (() => {
-    try {
-      return spawn(command, args, {
-        cwd: input.cwd,
-        env: { ...process.env, ...input.env },
-        stdio: ["ignore", log, log],
-      });
-    } finally {
-      closeSync(log);
-    }
-  })();
-  await new Promise<void>((resolve, reject) => {
-    child.once("error", reject);
-    child.once("exit", (code, signal) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      reject(
-        new Error(
-          signal
-            ? `${input.label} exited after ${signal}`
-            : `${input.label} exited with status ${code ?? "unknown"}`
-        )
-      );
-    });
-  });
-}
-
 export interface ManagedProcessSummary {
   argv: string[];
   cwd: string;
@@ -352,35 +50,16 @@ export interface ManagedProcessSummary {
   startedAt: string;
 }
 
-export function listManagedProcesses(): ManagedProcessSummary[] {
-  return readdirSync(CONTROL_DIR)
-    .filter((name) => name.endsWith(".pid"))
-    .flatMap((name) => {
-      try {
-        const record = JSON.parse(
-          readFileSync(join(CONTROL_DIR, name), "utf8")
-        ) as ProcessRecord;
-        if (
-          !processTargetIsLive({ id: record.pid, kind: "process" }) ||
-          startMarker(record.pid) !== record.startMarker ||
-          !pidOwnedByWorktree(record.pid, record.cwd)
-        ) {
-          return [];
-        }
-        return [
-          {
-            argv: record.argv,
-            cwd: record.cwd,
-            label: record.label ?? record.argv[0] ?? "Process",
-            ownerId: record.ownerId ?? name.slice(0, -4),
-            pid: record.pid,
-            startedAt: record.startedAt,
-          },
-        ];
-      } catch {
-        return [];
-      }
-    });
+export interface StartManagedProcessInput {
+  argv: string[];
+  cwd: string;
+  env: Record<string, string>;
+  label?: string;
+  logId?: string;
+  ownerId?: string;
+  ownerRoot: string;
+  processId: string;
+  trackExitFailure?: boolean;
 }
 
 export function setupProcessId(worktreeId: string): string {
@@ -389,75 +68,393 @@ export function setupProcessId(worktreeId: string): string {
 
 export function appGroupProcessId(
   worktreeId: string,
-  appGroupName: string
+  appGroupId: string
 ): string {
-  return `${worktreeId}--app-group--${Buffer.from(appGroupName).toString("base64url")}`;
+  return `${worktreeId}--app-group--${Buffer.from(appGroupId).toString("base64url")}`;
 }
 
-export function managedFailure(worktreeId: string): ProcessFailure | null {
-  try {
-    return JSON.parse(
-      readFileSync(failurePath(worktreeId), "utf8")
-    ) as ProcessFailure;
-  } catch {
-    return null;
-  }
+function safeId(processId: string): string {
+  return processId.replace(/[^A-Za-z0-9_-]/g, "_");
 }
 
-export async function stopManagedProcess(
-  worktreeId: string,
-  worktreePath: string
-): Promise<number | null> {
-  const pid = managedPid(worktreeId, worktreePath);
-  if (!pid) {
-    return null;
-  }
-  const groupTarget: ProcessSignalTarget = { id: pid, kind: "group" };
-  const target = processTargetIsLive(groupTarget)
-    ? groupTarget
-    : ({ id: pid, kind: "process" } satisfies ProcessSignalTarget);
-  plannedStops.add(pid);
-  try {
-    await stopProcessTarget(target, worktreeId);
-  } finally {
-    plannedStops.delete(pid);
-  }
-  if (processes.get(worktreeId)?.record.pid === pid) {
-    processes.delete(worktreeId);
-  }
-  if (persistedRecord(worktreeId)?.pid === pid) {
-    rmSync(pidPath(worktreeId), { force: true });
-  }
-  return pid;
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-export async function stopOwnedProcess(
-  pid: number,
-  logId: string
-): Promise<boolean> {
-  const target: ProcessSignalTarget = { id: pid, kind: "process" };
-  if (!processTargetIsLive(target)) {
-    return false;
+export class ProcessSupervisor {
+  readonly controlDirectory: string;
+  private readonly plannedStops = new Set<number>();
+  private readonly processes = new Map<
+    string,
+    { child: ChildProcess; record: ProcessRecord }
+  >();
+
+  constructor(
+    controlDirectory = process.env.WORKGROVE_CONTROL_DIR ??
+      join(homedir(), ".workgrove")
+  ) {
+    this.controlDirectory = controlDirectory;
+    mkdirSync(this.controlDirectory, { recursive: true });
   }
-  await stopProcessTarget(target, logId);
-  return true;
-}
 
-export function appendManagedLog(worktreeId: string, message: string): void {
-  const fd = openSync(logPath(worktreeId), "a");
-  writeFileSync(fd, `${message}\n`);
-  closeSync(fd);
-}
-
-export function readManagedLog(worktreeId: string, maxLines = 2000): string[] {
-  const file = logPath(worktreeId);
-  if (!existsSync(file)) {
-    return [];
+  logPath(processId: string): string {
+    return join(this.controlDirectory, `${safeId(processId)}.log`);
   }
-  const content = readFileSync(file, "utf8").replace(TRAILING_LINE_BREAK, "");
-  return content === "" ? [] : content.split(LINE_BREAK).slice(-maxLines);
-}
 
-export function clearManagedLog(worktreeId: string): void {
-  writeFileSync(logPath(worktreeId), "");
+  managedPid(processId: string, expectedWorktreePath: string): number | null {
+    const tracked = this.processes.get(processId);
+    if (
+      tracked?.child.pid &&
+      pathInside(tracked.record.cwd, expectedWorktreePath) &&
+      this.processTargetIsLive({ id: tracked.child.pid, kind: "process" })
+    ) {
+      return tracked.child.pid;
+    }
+    const record = this.persistedRecord(processId);
+    if (
+      !(
+        record &&
+        pathInside(record.cwd, expectedWorktreePath) &&
+        this.processTargetIsLive({ id: record.pid, kind: "process" }) &&
+        pidOwnedByWorktree(record.pid, expectedWorktreePath)
+      ) ||
+      processStartMarker(record.pid) !== record.startMarker
+    ) {
+      return null;
+    }
+    return record.pid;
+  }
+
+  startManagedProcess(input: StartManagedProcessInput): number {
+    if (!pathInside(input.cwd, input.ownerRoot)) {
+      const message = "Command working directory must stay inside its worktree";
+      if (input.trackExitFailure) {
+        this.recordFailure(input.processId, message);
+      }
+      throw new Error(message);
+    }
+    const existing = this.managedPid(input.processId, input.cwd);
+    if (existing) {
+      throw new Error(`Apps are already managed by pid ${existing}`);
+    }
+    const [command, ...args] = input.argv;
+    if (!command) {
+      throw new Error("Start command requires at least one argv entry");
+    }
+    if (input.trackExitFailure) {
+      rmSync(this.failurePath(input.processId), { force: true });
+    }
+    const log = openSync(this.logPath(input.logId ?? input.processId), "a");
+    const child = (() => {
+      try {
+        return spawn(command, args, {
+          cwd: input.cwd,
+          detached: true,
+          env: { ...process.env, ...input.env },
+          stdio: ["ignore", log, log],
+        });
+      } finally {
+        closeSync(log);
+      }
+    })();
+    child.once("error", (error) => {
+      this.appendManagedLog(
+        input.logId ?? input.processId,
+        `[workgrove] Failed to start ${command}: ${error.message}`
+      );
+      if (input.trackExitFailure) {
+        this.recordFailure(input.processId, error.message);
+      }
+      if (this.processes.get(input.processId)?.record.pid === child.pid) {
+        this.processes.delete(input.processId);
+      }
+      rmSync(this.pidPath(input.processId), { force: true });
+    });
+    if (!child.pid) {
+      throw new Error(`Failed to start ${command}`);
+    }
+    const record: ProcessRecord = {
+      argv: input.argv,
+      cwd: input.cwd,
+      pid: child.pid,
+      label: input.label,
+      ownerId: input.ownerId ?? input.logId ?? input.processId,
+      startedAt: new Date().toISOString(),
+      startMarker: processStartMarker(child.pid),
+    };
+    this.processes.set(input.processId, { child, record });
+    writeFileSync(this.pidPath(input.processId), `${JSON.stringify(record)}\n`);
+    child.once("exit", (code, signal) => {
+      if (input.trackExitFailure) {
+        if (code === 0) {
+          rmSync(this.failurePath(input.processId), { force: true });
+        } else {
+          this.recordFailure(
+            input.processId,
+            signal
+              ? `Exited after ${signal}`
+              : `Exited with status ${code ?? "unknown"}`
+          );
+        }
+      }
+      if (this.processes.get(input.processId)?.record.pid === child.pid) {
+        this.processes.delete(input.processId);
+        rmSync(this.pidPath(input.processId), { force: true });
+      }
+      if (child.pid && !this.plannedStops.has(child.pid)) {
+        const groupTarget: ProcessSignalTarget = {
+          id: child.pid,
+          kind: "group",
+        };
+        if (this.processTargetIsLive(groupTarget)) {
+          const logId = input.logId ?? input.processId;
+          this.appendManagedLog(
+            logId,
+            "[workgrove] Managed process exited; stopping remaining descendants"
+          );
+          this.stopProcessTarget(groupTarget, logId).catch((error) => {
+            this.appendManagedLog(
+              logId,
+              `[workgrove] Failed to stop remaining descendants: ${error instanceof Error ? error.message : String(error)}`
+            );
+          });
+        }
+      }
+    });
+    child.unref();
+    return child.pid;
+  }
+
+  async runFiniteCommand(input: {
+    argv: string[];
+    cwd: string;
+    env: Record<string, string>;
+    label: string;
+    logId: string;
+  }): Promise<void> {
+    const [command, ...args] = input.argv;
+    if (!command) {
+      throw new Error(`${input.label} requires at least one argv entry`);
+    }
+    this.appendManagedLog(
+      input.logId,
+      `[workgrove] ${input.label}: ${input.argv.join(" ")}`
+    );
+    const log = openSync(this.logPath(input.logId), "a");
+    const child = (() => {
+      try {
+        return spawn(command, args, {
+          cwd: input.cwd,
+          env: { ...process.env, ...input.env },
+          stdio: ["ignore", log, log],
+        });
+      } finally {
+        closeSync(log);
+      }
+    })();
+    await new Promise<void>((resolve, reject) => {
+      child.once("error", reject);
+      child.once("exit", (code, signal) => {
+        if (code === 0) {
+          resolve();
+          return;
+        }
+        reject(
+          new Error(
+            signal
+              ? `${input.label} exited after ${signal}`
+              : `${input.label} exited with status ${code ?? "unknown"}`
+          )
+        );
+      });
+    });
+  }
+
+  listManagedProcesses(): ManagedProcessSummary[] {
+    return readdirSync(this.controlDirectory)
+      .filter((name) => name.endsWith(".pid"))
+      .flatMap((name) => {
+        try {
+          const record = JSON.parse(
+            readFileSync(join(this.controlDirectory, name), "utf8")
+          ) as ProcessRecord;
+          if (
+            !this.processTargetIsLive({ id: record.pid, kind: "process" }) ||
+            processStartMarker(record.pid) !== record.startMarker ||
+            !pidOwnedByWorktree(record.pid, record.cwd)
+          ) {
+            return [];
+          }
+          return [
+            {
+              argv: record.argv,
+              cwd: record.cwd,
+              label: record.label ?? record.argv[0] ?? "Process",
+              ownerId: record.ownerId ?? name.slice(0, -4),
+              pid: record.pid,
+              startedAt: record.startedAt,
+            },
+          ];
+        } catch {
+          return [];
+        }
+      });
+  }
+
+  managedFailure(processId: string): ProcessFailure | null {
+    try {
+      return JSON.parse(
+        readFileSync(this.failurePath(processId), "utf8")
+      ) as ProcessFailure;
+    } catch {
+      return null;
+    }
+  }
+
+  async stopManagedProcess(
+    processId: string,
+    worktreePath: string
+  ): Promise<number | null> {
+    const pid = this.managedPid(processId, worktreePath);
+    if (!pid) {
+      return null;
+    }
+    const groupTarget: ProcessSignalTarget = { id: pid, kind: "group" };
+    const target = this.processTargetIsLive(groupTarget)
+      ? groupTarget
+      : ({ id: pid, kind: "process" } satisfies ProcessSignalTarget);
+    this.plannedStops.add(pid);
+    try {
+      await this.stopProcessTarget(target, processId);
+    } finally {
+      this.plannedStops.delete(pid);
+    }
+    if (this.processes.get(processId)?.record.pid === pid) {
+      this.processes.delete(processId);
+    }
+    if (this.persistedRecord(processId)?.pid === pid) {
+      rmSync(this.pidPath(processId), { force: true });
+    }
+    return pid;
+  }
+
+  async stopOwnedProcess(pid: number, logId: string): Promise<boolean> {
+    const target: ProcessSignalTarget = { id: pid, kind: "process" };
+    if (!this.processTargetIsLive(target)) {
+      return false;
+    }
+    await this.stopProcessTarget(target, logId);
+    return true;
+  }
+
+  appendManagedLog(processId: string, message: string): void {
+    const fd = openSync(this.logPath(processId), "a");
+    writeFileSync(fd, `${message}\n`);
+    closeSync(fd);
+  }
+
+  readManagedLog(processId: string, maxLines = 2000): string[] {
+    const file = this.logPath(processId);
+    if (!existsSync(file)) {
+      return [];
+    }
+    const content = readFileSync(file, "utf8").replace(TRAILING_LINE_BREAK, "");
+    return content === "" ? [] : content.split(LINE_BREAK).slice(-maxLines);
+  }
+
+  clearManagedLog(processId: string): void {
+    writeFileSync(this.logPath(processId), "");
+  }
+
+  private pidPath(processId: string): string {
+    return join(this.controlDirectory, `${safeId(processId)}.pid`);
+  }
+
+  private failurePath(processId: string): string {
+    return join(this.controlDirectory, `${safeId(processId)}.failure.json`);
+  }
+
+  private recordFailure(processId: string, message: string): void {
+    const failure: ProcessFailure = {
+      failedAt: new Date().toISOString(),
+      message,
+    };
+    writeFileSync(this.failurePath(processId), `${JSON.stringify(failure)}\n`);
+  }
+
+  private persistedRecord(processId: string): ProcessRecord | null {
+    const file = this.pidPath(processId);
+    if (!existsSync(file)) {
+      return null;
+    }
+    try {
+      const value = JSON.parse(readFileSync(file, "utf8")) as ProcessRecord;
+      return Number.isInteger(value.pid) &&
+        value.pid > 0 &&
+        typeof value.cwd === "string" &&
+        typeof value.startMarker === "string" &&
+        value.startMarker.length > 0
+        ? value
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private processTargetIsLive(target: ProcessSignalTarget): boolean {
+    try {
+      process.kill(target.kind === "group" ? -target.id : target.id, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private signalProcessTarget(
+    target: ProcessSignalTarget,
+    signal: NodeJS.Signals
+  ): void {
+    process.kill(target.kind === "group" ? -target.id : target.id, signal);
+  }
+
+  private async stopProcessTarget(
+    target: ProcessSignalTarget,
+    logId?: string
+  ): Promise<void> {
+    try {
+      this.signalProcessTarget(target, "SIGTERM");
+    } catch (error) {
+      if (!this.processTargetIsLive(target)) {
+        return;
+      }
+      throw error;
+    }
+    for (let attempt = 0; attempt < GRACEFUL_STOP_ATTEMPTS; attempt += 1) {
+      if (!this.processTargetIsLive(target)) {
+        return;
+      }
+      await delay(STOP_POLL_MS);
+    }
+    if (logId) {
+      this.appendManagedLog(
+        logId,
+        "[workgrove] Force-stopping processes that ignored SIGTERM"
+      );
+    }
+    try {
+      this.signalProcessTarget(target, "SIGKILL");
+    } catch (error) {
+      if (!this.processTargetIsLive(target)) {
+        return;
+      }
+      throw error;
+    }
+    for (let attempt = 0; attempt < FORCE_STOP_ATTEMPTS; attempt += 1) {
+      if (!this.processTargetIsLive(target)) {
+        return;
+      }
+      await delay(STOP_POLL_MS);
+    }
+    throw new Error(`Managed ${target.kind} ${target.id} did not stop`);
+  }
 }

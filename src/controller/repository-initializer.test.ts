@@ -39,11 +39,14 @@ describe("repository initialization", () => {
       });
       expect(() => readFileSync(preview.configPath)).toThrow();
 
-      const created = initializeRepository(root);
+      const options = { controlDirectory: join(root, ".control") };
+      const created = initializeRepository(root, options);
       expect(JSON.parse(readFileSync(created.configPath, "utf8"))).toEqual(
         created.config
       );
-      expect(() => initializeRepository(root)).toThrow("already exists");
+      expect(() => initializeRepository(root, options)).toThrow(
+        "already exists"
+      );
     } finally {
       rmSync(root, { force: true, recursive: true });
     }
