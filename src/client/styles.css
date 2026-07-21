@@ -429,28 +429,6 @@
   width: 100%;
 }
 
-.slot-select-content {
-  min-width: 20rem;
-}
-
-.slot-select-row {
-  display: flex;
-  gap: 1.5rem;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-}
-
-.slot-select-identity {
-  display: grid;
-  gap: 0.125rem;
-}
-
-.slot-select-identity small,
-.slot-select-ports {
-  color: var(--muted-foreground);
-}
-
 .port-preview,
 .detection-grid {
   display: grid;

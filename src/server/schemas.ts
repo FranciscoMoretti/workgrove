@@ -8,39 +8,32 @@ export const LogsQuerySchema = WorkspaceQuerySchema.extend({
 });
 
 const AppEndpointSchema = z.object({
+  directUrl: z.string().nullable(),
   id: z.string(),
   label: z.string(),
   listening: z.boolean(),
   open: z.boolean(),
   ownership: z.enum(["owned", "foreign", "none"]),
-  port: z.number().int(),
-  probe: z.enum(["tcp", "none"]),
-  required: z.boolean(),
-  url: z.string(),
+  port: z.number().int().nullable(),
+  protocol: z.enum(["http", "tcp"]),
+  readiness: z.enum(["ready", "unready", "waiting"]),
+  routeState: z.enum(["inactive", "active", "conflict", "unavailable"]),
+  url: z.string().nullable(),
 });
 
 const AppGroupSchema = z.object({
   apps: z.array(AppEndpointSchema),
   health: z.enum(["not-running", "partially-running", "running"]),
+  id: z.string().min(1),
   name: z.string().min(1),
   processRunning: z.boolean(),
-  slot: z.number().int().nonnegative(),
-  slotState: z.enum(["assigned", "conflicting", "invalid"]),
   stop: z.enum(["command", "process"]),
 });
 
-const SlotOptionSchema = z.object({
-  apps: z.array(z.object({ label: z.string(), port: z.number().int() })),
-  collisionOwners: z.array(z.object({ id: z.string(), name: z.string() })),
-  slot: z.number().int().nonnegative(),
-});
-
 export const WorkspaceSnapshotSchema = z.object({
-  appGroupSlotOptions: z.record(z.string(), z.array(SlotOptionSchema)),
   config: WorkgroveConfigSchema,
   configPath: z.string(),
   configRevision: z.string().min(1),
-  defaultSlot: z.number().int().nonnegative(),
   globalProcesses: z.array(
     z.object({
       argv: z.array(z.string()),
@@ -56,8 +49,6 @@ export const WorkspaceSnapshotSchema = z.object({
   primaryAppGroup: z.string().min(1),
   repoName: z.string(),
   repoPath: z.string(),
-  slotFile: z.string(),
-  slotOptions: z.array(SlotOptionSchema),
   trustCommands: z.array(z.string()),
   trustRequired: z.boolean(),
   trusted: z.boolean(),
@@ -75,8 +66,6 @@ export const WorkspaceSnapshotSchema = z.object({
       path: z.string(),
       processRunning: z.boolean(),
       setupState: z.enum(["failed", "idle", "running"]),
-      slot: z.number().int().nonnegative(),
-      slotState: z.enum(["assigned", "conflicting", "invalid"]),
     })
   ),
 });

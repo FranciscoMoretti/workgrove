@@ -1,25 +1,49 @@
 import { describe, expect, it } from "bun:test";
 import {
-  resolveWorkgroveAppGroup,
+  type ResolvedWorkgroveAppGroups,
+  resolveStartCommand,
   type WorkgroveConfig,
 } from "workgrove/config";
 
 describe("public config contract", () => {
-  it("resolves repository app ports through the package subpath", () => {
+  it("resolves slot-free app endpoints through the package subpath", () => {
     const config: WorkgroveConfig = {
-      version: 2,
-      setup: { argv: ["npm", "install"] },
+      version: 1,
+      setup: { argv: ["bun", "install"] },
       appGroups: {
         Apps: {
-          slot: { default: 0, stride: 10 },
-          start: { argv: ["npm", "run", "dev"] },
+          start: {
+            argv: ["bun", "run", "dev", "--url", "{apps.web.url}"],
+          },
           stop: "process",
-          apps: { web: { basePort: 3000 } },
+          env: { APP_URL: "{apps.web.url}" },
+          apps: { web: { protocol: "http", readiness: "tcp" } },
         },
       },
     };
-    expect(resolveWorkgroveAppGroup(config, "Apps", 3).apps.web.port).toBe(
-      3030
-    );
+    const appGroups: ResolvedWorkgroveAppGroups = {
+      Apps: {
+        id: "Apps",
+        apps: {
+          web: {
+            directUrl: "http://127.0.0.1:49152",
+            host: "127.0.0.1",
+            port: 49_152,
+            url: "http://web.main.repo.localhost:1355",
+          },
+        },
+      },
+    };
+
+    expect(resolveStartCommand(config, "Apps", appGroups)).toEqual({
+      argv: [
+        "bun",
+        "run",
+        "dev",
+        "--url",
+        "http://web.main.repo.localhost:1355",
+      ],
+      env: { APP_URL: "http://web.main.repo.localhost:1355" },
+    });
   });
 });

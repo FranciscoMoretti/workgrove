@@ -11,7 +11,8 @@ import { join } from "node:path";
 import type { WorkgroveCommand } from "./workgrove-command";
 import type { WorkgroveConfig } from "./workgrove-config";
 
-const CONTROL_DIR = join(homedir(), ".workgrove");
+const CONTROL_DIR =
+  process.env.WORKGROVE_CONTROL_DIR ?? join(homedir(), ".workgrove");
 const TRUST_FILE = join(CONTROL_DIR, "trusted-repositories.json");
 
 function trustStore(): Record<string, boolean | string> {
@@ -33,7 +34,7 @@ export function repositoryRequiresTrust(_config: WorkgroveConfig): boolean {
 }
 
 function fingerprintCommand(command: WorkgroveCommand) {
-  return { argv: command.argv };
+  return { argv: command.argv, ...(command.cwd ? { cwd: command.cwd } : {}) };
 }
 
 export function repositoryCommandFingerprint(config: WorkgroveConfig): string {
@@ -43,7 +44,7 @@ export function repositoryCommandFingerprint(config: WorkgroveConfig): string {
         name,
         {
           apps: group.apps,
-          slot: group.slot,
+          env: group.env ?? {},
           start: fingerprintCommand(group.start),
           stop:
             group.stop === "process"
@@ -52,7 +53,6 @@ export function repositoryCommandFingerprint(config: WorkgroveConfig): string {
         },
       ])
     ),
-    environment: config.env ?? {},
     setup: fingerprintCommand(config.setup),
   };
   return createHash("sha256")

@@ -19,11 +19,10 @@ export async function startAllApps(
     worktree.appGroups
       .filter(
         (group) =>
-          (!requestedGroup || group.name === requestedGroup) &&
-          group.slotState === "assigned" &&
+          (!requestedGroup || group.id === requestedGroup) &&
           appGroupIsStopped(group)
       )
-      .map((group) => ({ appGroupName: group.name, worktreeId: worktree.id }))
+      .map((group) => ({ appGroupName: group.id, worktreeId: worktree.id }))
   );
   for (const target of targets) {
     await startApps(controller, { repoPath, ...target });

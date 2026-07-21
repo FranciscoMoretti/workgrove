@@ -1,20 +1,22 @@
 {
   "$schema": "../schema/workgrove.schema.json",
-  "version": 2,
+  "version": 1,
   "setup": { "argv": ["bun", "install"] },
   "appGroups": {
     "Product Apps": {
-      "slot": { "default": 0, "stride": 10 },
       "start": { "argv": ["bun", "run", "dev:workgrove"] },
       "stop": "process",
+      "env": {
+        "WEB_PORT": "{apps.Web.port}",
+        "API_PORT": "{apps.API.port}"
+      },
       "apps": {
-        "Web": { "basePort": 3000 },
-        "API": { "basePort": 8000 }
+        "Web": { "protocol": "http", "readiness": "tcp" },
+        "API": {
+          "protocol": "http",
+          "readiness": { "type": "http", "path": "/health" }
+        }
       }
     }
-  },
-  "env": {
-    "WEB_PORT": "{appGroups.Product Apps.apps.Web.port}",
-    "API_PORT": "{appGroups.Product Apps.apps.API.port}"
   }
 }

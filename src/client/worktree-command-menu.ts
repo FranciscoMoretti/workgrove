@@ -45,7 +45,7 @@ export function worktreeCommandMenuItems({
     ...(includeLifecycle && stopped
       ? [
           {
-            disabled: pending || worktree.slotState !== "assigned",
+            disabled: pending,
             icon: PlayIcon,
             id: "start",
             label: "Start apps",

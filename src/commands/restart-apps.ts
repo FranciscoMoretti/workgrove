@@ -21,9 +21,6 @@ export async function restartApps(
       `${appGroupName} must be running before it can be restarted`
     );
   }
-  if (current.slotState !== "assigned") {
-    throw new Error(`Choose a valid slot before restarting ${appGroupName}`);
-  }
   await stopAppsAndWait(
     controller,
     { appGroupName, repoPath, worktreeId },

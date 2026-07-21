@@ -3,14 +3,16 @@ import type { WorkgroveAppGroup } from "./workgrove-schema";
 const TOKEN_PATTERN = /\{([^{}]+)\}/;
 const BRACE_PATTERN = /[{}]/;
 
+export interface ResolvedTemplateApp {
+  directUrl?: string;
+  host?: string;
+  port?: number;
+  url?: string;
+}
+
 export interface WorkgroveTemplateContext {
-  appGroups: Record<
-    string,
-    {
-      apps: Record<string, { port: number; url: string }>;
-      slot: number;
-    }
-  >;
+  appGroups: Record<string, { apps: Record<string, ResolvedTemplateApp> }>;
+  currentGroup: string;
 }
 
 interface TemplateValue {
@@ -18,11 +20,13 @@ interface TemplateValue {
   value: string | null;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: token availability is most legible as one protocol-aware matrix.
 function templateValues(
   appGroups: Record<
     string,
     WorkgroveAppGroup | WorkgroveTemplateContext["appGroups"][string]
-  >
+  >,
+  currentGroup: string
 ): Map<string, TemplateValue> {
   const values = new Map<string, TemplateValue>();
   function add(token: string, value: string | null): void {
@@ -32,14 +36,28 @@ function templateValues(
       value: existing?.value ?? value,
     });
   }
-  for (const [groupName, group] of Object.entries(appGroups)) {
-    const prefix = `appGroups.${groupName}`;
-    add(`{${prefix}.slot}`, "slot" in group ? String(group.slot) : null);
-    for (const appName of Object.keys(group.apps)) {
-      const appPrefix = `${prefix}.apps.${appName}`;
-      const app = group.apps[appName];
-      add(`{${appPrefix}.port}`, "port" in app ? String(app.port) : null);
-      add(`{${appPrefix}.url}`, "url" in app ? app.url : null);
+  for (const [groupId, group] of Object.entries(appGroups)) {
+    for (const [appId, app] of Object.entries(group.apps)) {
+      const resolved =
+        "port" in app || "host" in app || "url" in app || "directUrl" in app;
+      const isHttp = resolved ? app.url !== undefined : app.protocol === "http";
+      const fullPrefix = `appGroups.${groupId}.apps.${appId}`;
+      if (isHttp) {
+        add(`{${fullPrefix}.url}`, resolved ? (app.url ?? null) : null);
+      }
+      if (groupId !== currentGroup) {
+        continue;
+      }
+      const localPrefix = `apps.${appId}`;
+      add(`{${localPrefix}.host}`, resolved ? (app.host ?? null) : null);
+      add(`{${localPrefix}.port}`, resolved ? String(app.port) : null);
+      if (isHttp) {
+        add(
+          `{${localPrefix}.directUrl}`,
+          resolved ? (app.directUrl ?? null) : null
+        );
+        add(`{${localPrefix}.url}`, resolved ? (app.url ?? null) : null);
+      }
     }
   }
   return values;
@@ -82,9 +100,14 @@ function replaceKnownTokens(
 
 export function workgroveTemplateError(
   template: string,
-  appGroups: Record<string, WorkgroveAppGroup>
+  appGroups: Record<string, WorkgroveAppGroup>,
+  currentGroup: string
 ): string | null {
-  return replaceKnownTokens(template, templateValues(appGroups), false).error;
+  return replaceKnownTokens(
+    template,
+    templateValues(appGroups, currentGroup),
+    false
+  ).error;
 }
 
 export function renderWorkgroveTemplate(
@@ -93,7 +116,7 @@ export function renderWorkgroveTemplate(
 ): string {
   const rendered = replaceKnownTokens(
     template,
-    templateValues(context.appGroups),
+    templateValues(context.appGroups, context.currentGroup),
     true
   );
   if (rendered.error) {
@@ -104,23 +127,25 @@ export function renderWorkgroveTemplate(
 
 export function renameWorkgroveAppTemplateReferences(
   template: string,
-  groupName: string,
+  groupId: string,
   previousId: string,
   nextId: string
 ): string {
-  return template.replaceAll(
-    `{appGroups.${groupName}.apps.${previousId}.`,
-    `{appGroups.${groupName}.apps.${nextId}.`
-  );
+  return template
+    .replaceAll(`{apps.${previousId}.`, `{apps.${nextId}.`)
+    .replaceAll(
+      `{appGroups.${groupId}.apps.${previousId}.`,
+      `{appGroups.${groupId}.apps.${nextId}.`
+    );
 }
 
 export function renameWorkgroveAppGroupTemplateReferences(
   template: string,
-  previousName: string,
-  nextName: string
+  previousId: string,
+  nextId: string
 ): string {
   return template.replaceAll(
-    `{appGroups.${previousName}.`,
-    `{appGroups.${nextName}.`
+    `{appGroups.${previousId}.`,
+    `{appGroups.${nextId}.`
   );
 }

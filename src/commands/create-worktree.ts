@@ -10,13 +10,10 @@ import {
   setupProcessId,
   startManagedProcess,
 } from "../runtime/process-supervisor";
-import { requiredSlot, requiredString } from "./command";
+import { requiredString } from "./command";
 
 const BRANCH_PATTERN = /^[A-Za-z0-9._/@-]+$/;
 const FOLDER_PATTERN = /^[A-Za-z0-9._-]+$/;
-
-import { setSlot } from "./set-slot";
-import { worktreeSlotAssignments } from "./start-apps";
 
 function run(argv: string[], cwd: string, env = process.env): string {
   const [command, ...args] = argv;
@@ -41,23 +38,15 @@ export function createWorktree(
   const repoPath = requiredString(input.repoPath, "Repository path");
   controller.assertTrusted(repoPath);
   const branch = requiredString(input.branch, "Branch");
-  const slot = requiredSlot(input.slot);
   const createBranch = input.createBranch !== false;
   if (branch.startsWith("-") || !BRANCH_PATTERN.test(branch)) {
     throw new Error("Branch contains unsupported characters");
   }
   const workspace = controller.inspect(repoPath);
-  const appGroupName = workspace.primaryAppGroup;
-  const slotOption = workspace.appGroupSlotOptions[appGroupName]?.find(
-    (option) => option.slot === slot
-  );
-  if (!slotOption) {
-    throw new Error(`Slot ${slot} is outside the supported range`);
-  }
   const folderName =
     typeof input.folderName === "string" && input.folderName.trim()
       ? input.folderName.trim()
-      : `${workspace.repoName}-${slot}`;
+      : `${workspace.repoName}-${branch.replaceAll("/", "-")}`;
   if (!FOLDER_PATTERN.test(folderName)) {
     throw new Error(
       "Folder name can only contain letters, numbers, dot, underscore, and dash"
@@ -81,22 +70,15 @@ export function createWorktree(
   if (!created) {
     throw new Error("Worktree was created but could not be rediscovered");
   }
-  setSlot(controller, {
-    appGroupName,
-    repoPath: target,
-    slot,
-    worktreeId: created.id,
-  });
   const config = controller.config(target);
-  const refreshed = controller.worktree(target, created.id).worktree;
-  const setup = resolveSetupCommand(config, worktreeSlotAssignments(refreshed));
+  const setup = resolveSetupCommand(config);
   appendManagedLog(
     created.id,
     `[workgrove] Running setup: ${setup.argv.join(" ")}`
   );
   startManagedProcess({
     argv: setup.argv,
-    cwd: target,
+    cwd: controller.commandWorkingDirectory(target, setup.cwd),
     env: setup.env,
     label: "Setup",
     logId: created.id,
@@ -107,7 +89,7 @@ export function createWorktree(
   });
   return {
     command: "create-worktree",
-    message: `Created ${folderName} on slot ${slot}; setup is running`,
+    message: `Created ${folderName}; setup is running`,
     ok: true,
     worktreeId: created.id,
   };

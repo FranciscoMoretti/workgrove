@@ -3,7 +3,6 @@ import { BotIcon, GitBranchIcon, PlayIcon, SquareIcon } from "lucide-react";
 import type { CodexIntegrationSnapshot } from "../../codex/codex-integration";
 
 import type {
-  AppGroupSlotOption,
   AppGroupSnapshot,
   WorktreeSnapshot,
 } from "../../controller/workspace-snapshot";
@@ -13,16 +12,8 @@ import { AppGroupActionsMenu } from "./app-group-actions-menu";
 import { AppPort } from "./app-port";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
-import { ButtonGroup } from "./ui/button-group";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
 import { ScrollArea } from "./ui/scroll-area";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-} from "./ui/select";
 import { Spinner } from "./ui/spinner";
 import {
   Table,
@@ -98,17 +89,20 @@ function CodexTaskSummary({
   );
 }
 
+function friendlyUrlLabel(url: string): string {
+  const parsed = new URL(url);
+  return `${parsed.hostname}${parsed.port ? `:${parsed.port}` : ""}`;
+}
+
 export function WorktreeTable({
   appGroupActionBlocked,
   appGroupActionPending,
-  appGroupSlots,
   codexAvailability = "ready",
   codexWorktrees,
   commandActions,
   onDelete,
   onInspect,
   onRestartAppGroup,
-  onSetSlot,
   onToggleAppGroup,
   selectedId,
   worktreeActionPending,
@@ -116,7 +110,6 @@ export function WorktreeTable({
 }: {
   appGroupActionBlocked: (worktreeId: string, appGroupName: string) => boolean;
   appGroupActionPending: (worktreeId: string, appGroupName: string) => boolean;
-  appGroupSlots: Record<string, AppGroupSlotOption[]>;
   codexAvailability?: "loading" | "ready" | "unavailable";
   codexWorktrees?: CodexIntegrationSnapshot["worktrees"];
   commandActions: WorktreeCommandActions;
@@ -125,11 +118,6 @@ export function WorktreeTable({
   onRestartAppGroup: (
     worktree: WorktreeSnapshot,
     group: AppGroupSnapshot
-  ) => void;
-  onSetSlot: (
-    worktree: WorktreeSnapshot,
-    group: AppGroupSnapshot,
-    slot: AppGroupSlotOption
   ) => void;
   onToggleAppGroup: (
     worktree: WorktreeSnapshot,
@@ -209,19 +197,18 @@ export function WorktreeTable({
                     {worktree.appGroups.map((group) => {
                       const blocked = appGroupActionBlocked(
                         worktree.id,
-                        group.name
+                        group.id
                       );
                       const pending = appGroupActionPending(
                         worktree.id,
-                        group.name
+                        group.id
                       );
                       const running = appGroupIsRunning(group);
-                      const slots = appGroupSlots[group.name] ?? [];
                       return (
                         <div
                           className="grid min-w-0 grid-cols-[minmax(7rem,auto)_auto_minmax(0,1fr)_auto] items-center gap-2 border-l pl-4"
                           data-app-group={group.name}
-                          key={group.name}
+                          key={group.id}
                         >
                           <span
                             className="min-w-0 truncate font-medium"
@@ -229,66 +216,21 @@ export function WorktreeTable({
                           >
                             {group.name}
                           </span>
-                          <ButtonGroup
-                            onClick={(event) => event.stopPropagation()}
+                          <Button
+                            aria-label={`${running ? "Stop" : "Start"} ${group.name} for ${worktree.name}`}
+                            className="min-w-24 justify-start"
+                            data-health={group.health}
+                            disabled={blocked}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onToggleAppGroup(worktree, group);
+                            }}
+                            title={status(group)}
+                            variant="outline"
                           >
-                            <Button
-                              aria-label={`${running ? "Stop" : "Start"} ${group.name} for ${worktree.name}`}
-                              className="min-w-24 justify-start"
-                              data-health={group.health}
-                              disabled={
-                                blocked ||
-                                (!running && group.slotState !== "assigned")
-                              }
-                              onClick={() => onToggleAppGroup(worktree, group)}
-                              title={`${status(group)} · Slot ${group.slot}`}
-                              variant="outline"
-                            >
-                              {actionIcon(pending, running)}
-                              Slot {group.slot}
-                            </Button>
-                            <Select
-                              disabled={blocked}
-                              onValueChange={(value) => {
-                                const option = slots.find(
-                                  (candidate) =>
-                                    candidate.slot === Number(value)
-                                );
-                                if (option && option.slot !== group.slot) {
-                                  onSetSlot(worktree, group, option);
-                                }
-                              }}
-                              value={String(group.slot)}
-                            >
-                              <SelectTrigger
-                                aria-label={`Choose slot for ${group.name} in ${worktree.name}`}
-                                className="w-8 [&_[data-slot=select-value]]:hidden"
-                              />
-                              <SelectContent className="min-w-72">
-                                <SelectGroup>
-                                  {slots.map((option) => (
-                                    <SelectItem
-                                      disabled={blocked}
-                                      key={option.slot}
-                                      value={String(option.slot)}
-                                    >
-                                      <span className="flex w-full justify-between gap-6">
-                                        <b>Slot {option.slot}</b>
-                                        <span className="text-muted-foreground">
-                                          {option.apps
-                                            .map(
-                                              (app) =>
-                                                `${app.label} :${app.port}`
-                                            )
-                                            .join(" · ")}
-                                        </span>
-                                      </span>
-                                    </SelectItem>
-                                  ))}
-                                </SelectGroup>
-                              </SelectContent>
-                            </Select>
-                          </ButtonGroup>
+                            {actionIcon(pending, running)}
+                            {running ? "Stop" : "Start"}
+                          </Button>
                           <div className="flex min-w-0 flex-wrap gap-x-3 gap-y-1">
                             {group.apps.map((app) => (
                               <span
@@ -306,11 +248,11 @@ export function WorktreeTable({
                                 {app.open && app.listening ? (
                                   <a
                                     className="underline"
-                                    href={app.url}
+                                    href={app.url ?? undefined}
                                     rel="noreferrer"
                                     target="_blank"
                                   >
-                                    <AppPort port={app.port} />
+                                    {friendlyUrlLabel(app.url ?? "")}
                                   </a>
                                 ) : (
                                   <AppPort port={app.port} />
@@ -319,9 +261,6 @@ export function WorktreeTable({
                             ))}
                           </div>
                           <div className="flex items-center gap-1">
-                            {group.slotState === "conflicting" ? (
-                              <Badge variant="destructive">port conflict</Badge>
-                            ) : null}
                             <AppGroupActionsMenu
                               group={group}
                               onRestart={() =>

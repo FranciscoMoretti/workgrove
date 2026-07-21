@@ -6,7 +6,7 @@ import type { CodexTaskSnapshot } from "../../codex/codex-integration";
 import type { WorktreeSnapshot } from "../../controller/workspace-snapshot";
 import { DetailsPanel } from "./details-panel";
 
-const LINKED_CODE_PORT = /<a[^>]*><code[^>]*>3000<\/code><\/a>/;
+const LINKED_FRIENDLY_URL = /<a[^>]*>chat\.project\.repo\.localhost:1355<\/a>/;
 const STOPPED_CODE_PORT = /<code class="[^"]*font-mono[^"]*"[^>]*>3002<\/code>/;
 
 const worktree: WorktreeSnapshot = {
@@ -16,10 +16,9 @@ const worktree: WorktreeSnapshot = {
     {
       apps: [],
       health: "not-running",
+      id: "apps",
       name: "Apps",
       processRunning: false,
-      slot: 0,
-      slotState: "assigned",
       stop: "process",
     },
   ],
@@ -31,8 +30,6 @@ const worktree: WorktreeSnapshot = {
   path: "/tmp/project",
   processRunning: false,
   setupState: "idle",
-  slot: 0,
-  slotState: "assigned",
 };
 
 function renderDetails(
@@ -108,29 +105,33 @@ describe("details panel", () => {
         {
           id: "chat",
           label: "Chat",
+          directUrl: "http://127.0.0.1:3000",
           listening: true,
           open: true,
           ownership: "owned",
           port: 3000,
-          probe: "tcp",
-          required: true,
-          url: "http://localhost:3000",
+          protocol: "http",
+          readiness: "ready",
+          routeState: "active",
+          url: "http://chat.project.repo.localhost:1355",
         },
         {
           id: "site",
           label: "Site",
+          directUrl: "http://127.0.0.1:3002",
           listening: false,
-          open: true,
+          open: false,
           ownership: "none",
           port: 3002,
-          probe: "tcp",
-          required: true,
-          url: "http://localhost:3002",
+          protocol: "http",
+          readiness: "unready",
+          routeState: "inactive",
+          url: null,
         },
       ],
     });
 
-    expect(markup).toMatch(LINKED_CODE_PORT);
+    expect(markup).toMatch(LINKED_FRIENDLY_URL);
     expect(markup).toMatch(STOPPED_CODE_PORT);
   });
 

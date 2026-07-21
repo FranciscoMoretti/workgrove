@@ -180,6 +180,11 @@ function CodexTasksSection({
   );
 }
 
+function friendlyUrlLabel(url: string): string {
+  const parsed = new URL(url);
+  return `${parsed.hostname}${parsed.port ? `:${parsed.port}` : ""}`;
+}
+
 function terminalContent({
   end,
   error,
@@ -298,11 +303,7 @@ export function DetailsPanel({
               <GitBranchIcon />
               {worktree.branch}
             </Badge>
-            <Badge variant="outline">
-              {worktree.slot === null
-                ? "Unassigned"
-                : `App slot ${worktree.slot}`}
-            </Badge>
+            <Badge variant="outline">Dynamic endpoints</Badge>
           </div>
         </div>
         <Button
@@ -330,11 +331,11 @@ export function DetailsPanel({
                 {app.open && app.listening ? (
                   <a
                     className="underline underline-offset-3"
-                    href={app.url}
+                    href={app.url ?? undefined}
                     rel="noreferrer"
                     target="_blank"
                   >
-                    <AppPort port={app.port} />
+                    {friendlyUrlLabel(app.url ?? "")}
                   </a>
                 ) : (
                   <AppPort port={app.port} />
@@ -346,9 +347,7 @@ export function DetailsPanel({
       </section>
       <div className="detail-actions">
         <Button
-          disabled={
-            actionBlocked || (!running && worktree.slotState !== "assigned")
-          }
+          disabled={actionBlocked}
           onClick={onToggleApps}
           variant={running ? "secondary" : "default"}
         >

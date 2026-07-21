@@ -13,13 +13,7 @@ import { useCommands } from "./mutations";
 import type { RequestRepositoryTrust } from "./use-repository-trust";
 import type { WorktreeCommandActions } from "./worktree-command-menu";
 
-const APP_GROUP_COMMANDS = new Set([
-  "restart-apps",
-  "set-slot",
-  "start-apps",
-  "stop-apps",
-  "switch-slot",
-]);
+const APP_GROUP_COMMANDS = new Set(["restart-apps", "start-apps", "stop-apps"]);
 const ALL_APP_GROUP_COMMANDS = new Set([
   "restart-running-apps",
   "start-all-apps",
@@ -170,12 +164,12 @@ export function useWorktreeCommandActions({
   );
   const primaryGroup = useCallback(
     (worktree: WorktreeSnapshot) =>
-      worktree.appGroups.find((group) => group.name === primaryAppGroup),
+      worktree.appGroups.find((group) => group.id === primaryAppGroup),
     [primaryAppGroup]
   );
   const startApps = useCallback(
     (worktree: WorktreeSnapshot) => {
-      const appGroupName = primaryGroup(worktree)?.name;
+      const appGroupName = primaryGroup(worktree)?.id;
       if (!appGroupName) {
         return;
       }
@@ -192,7 +186,7 @@ export function useWorktreeCommandActions({
 
   const stopApps = useCallback(
     (worktree: WorktreeSnapshot) => {
-      const appGroupName = primaryGroup(worktree)?.name;
+      const appGroupName = primaryGroup(worktree)?.id;
       if (appGroupName) {
         commands.stopApps.mutate({
           appGroupName,
@@ -206,7 +200,7 @@ export function useWorktreeCommandActions({
 
   const restartApps = useCallback(
     (worktree: WorktreeSnapshot) => {
-      const appGroupName = primaryGroup(worktree)?.name;
+      const appGroupName = primaryGroup(worktree)?.id;
       if (!appGroupName) {
         return;
       }
@@ -259,14 +253,14 @@ export function useWorktreeCommandActions({
       if (appGroupIsStopped(group)) {
         requestRepositoryTrust(`Start ${group.name}`, () => {
           commands.startApps.mutate({
-            appGroupName: group.name,
+            appGroupName: group.id,
             repoPath,
             worktreeId: worktree.id,
           });
         });
       } else {
         commands.stopApps.mutate({
-          appGroupName: group.name,
+          appGroupName: group.id,
           repoPath,
           worktreeId: worktree.id,
         });
@@ -279,7 +273,7 @@ export function useWorktreeCommandActions({
     (worktree: WorktreeSnapshot, group: AppGroupSnapshot) => {
       requestRepositoryTrust(`Restart ${group.name}`, () => {
         commands.restartApps.mutate({
-          appGroupName: group.name,
+          appGroupName: group.id,
           repoPath,
           worktreeId: worktree.id,
         });

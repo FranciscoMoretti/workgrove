@@ -16,14 +16,14 @@ interface WorkgroveContextSnapshot {
       label: string;
       listening: boolean;
       ownership: "foreign" | "none" | "owned";
-      port: number;
-      url: string;
+      port: number | null;
+      readiness: WorktreeSnapshot["appGroups"][number]["apps"][number]["readiness"];
+      routeState: WorktreeSnapshot["appGroups"][number]["apps"][number]["routeState"];
+      url: string | null;
     }>;
     health: WorktreeSnapshot["appGroups"][number]["health"];
     name: string;
     processRunning: boolean;
-    slot: number;
-    slotState: WorktreeSnapshot["appGroups"][number]["slotState"];
   }>;
   branch: string;
   path: string;
@@ -49,13 +49,13 @@ function contextSnapshot(worktree: WorktreeSnapshot): WorkgroveContextSnapshot {
         listening: app.listening,
         ownership: app.ownership,
         port: app.port,
+        readiness: app.readiness,
+        routeState: app.routeState,
         url: app.url,
       })),
       health: group.health,
       name: group.name,
       processRunning: group.processRunning,
-      slot: group.slot,
-      slotState: group.slotState,
     })),
     branch: worktree.branch,
     path: worktree.path,
@@ -85,15 +85,16 @@ function renderWorkgroveContext(
     lines.push(
       "",
       `App group: ${encodedData(group.name)}`,
-      `Slot: ${group.slot} (${group.slotState})`,
       `Health: ${group.health}`,
       `Process: ${processState(group.processRunning)}`
     );
     for (const app of group.apps) {
       lines.push(
         `- App: ${encodedData(app.label)}`,
-        `  Friendly URL: ${encodedData(app.url)}`,
-        `  Backing endpoint: 127.0.0.1:${app.port}`,
+        `  Friendly URL: ${app.url ? encodedData(app.url) : "unavailable"}`,
+        `  Backing endpoint: ${app.port === null ? "unavailable" : `127.0.0.1:${app.port}`}`,
+        `  Readiness: ${app.readiness}`,
+        `  Route: ${app.routeState}`,
         `  Listener: ${listenerState(app.listening)}`,
         `  Ownership: ${app.ownership}`
       );

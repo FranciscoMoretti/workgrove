@@ -1,13 +1,9 @@
 import type { UseMutationResult } from "@tanstack/react-query";
 import type { FormEvent } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 
-import type {
-  CommandReceipt,
-  SlotOption,
-} from "../../controller/workspace-snapshot";
+import type { CommandReceipt } from "../../controller/workspace-snapshot";
 import type { RequestRepositoryTrust } from "../use-repository-trust";
-import { AppPort, AppPortList } from "./app-port";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import {
@@ -26,58 +22,28 @@ import {
   FieldLabel,
 } from "./ui/field";
 import { Input } from "./ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "./ui/select";
 
 type CreateWorktreeInput = Record<string, unknown> & { repoPath: string };
 
 export function CreateWorktreeDialog({
   mutation,
   onClose,
-  open,
   repoName,
   repoPath,
   requestRepositoryTrust,
-  slots,
 }: {
-  mutation: UseMutationResult<
-    CommandReceipt,
-    Error,
-    Record<string, unknown> & { repoPath: string; worktreeId?: string }
-  >;
+  mutation: UseMutationResult<CommandReceipt, Error, CreateWorktreeInput>;
   onClose: () => void;
-  open: boolean;
   repoName: string;
   repoPath: string;
   requestRepositoryTrust: RequestRepositoryTrust;
-  slots: SlotOption[];
 }) {
-  const available = useMemo(
-    () => slots.filter((slot) => slot.collisionOwners.length === 0),
-    [slots]
-  );
   const [branch, setBranch] = useState("");
   const [createBranch, setCreateBranch] = useState(true);
   const [folderName, setFolderName] = useState("");
-  const [slot, setSlot] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    if (open) {
-      setBranch("");
-      setCreateBranch(true);
-      setError(null);
-      setFolderName("");
-      setSlot(available[0]?.slot ?? null);
-    }
-  }, [available, open]);
-  const selected = available.find((option) => option.slot === slot) ?? null;
-  async function createWorktree(input: CreateWorktreeInput) {
+
+  async function create(input: CreateWorktreeInput) {
     try {
       setError(null);
       await mutation.mutateAsync(input);
@@ -88,38 +54,31 @@ export function CreateWorktreeDialog({
       );
     }
   }
+
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (slot === null || branch.trim() === "") {
-      setError("Branch and an available slot are required.");
+    if (!branch.trim()) {
+      setError("Branch is required.");
       return;
     }
-    const input = {
-      branch: branch.trim(),
-      createBranch,
-      folderName: folderName.trim() || undefined,
-      repoPath,
-      slot,
-    };
     requestRepositoryTrust("Create this worktree and run setup", () =>
-      createWorktree(input)
+      create({
+        branch: branch.trim(),
+        createBranch,
+        folderName: folderName.trim() || undefined,
+        repoPath,
+      })
     );
   }
+
   return (
-    <Dialog
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) {
-          onClose();
-        }
-      }}
-      open={open}
-    >
+    <Dialog onOpenChange={(next) => !next && onClose()} open>
       <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-xl overflow-auto">
         <DialogHeader className="pr-8">
           <DialogTitle>New worktree</DialogTitle>
           <DialogDescription>
-            Create a linked worktree, assign a free slot, then run the
-            repository&apos;s configured setup command.
+            Create a linked worktree and run the repository&apos;s setup
+            command. App endpoints are assigned automatically when started.
           </DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={submit}>
@@ -152,57 +111,11 @@ export function CreateWorktreeDialog({
                 disabled={mutation.isPending}
                 id="new-worktree-folder"
                 onChange={(event) => setFolderName(event.target.value)}
-                placeholder={
-                  slot === null ? `${repoName}-N` : `${repoName}-${slot}`
-                }
+                placeholder={`${repoName}-${branch.replaceAll("/", "-") || "branch"}`}
                 value={folderName}
               />
               <FieldDescription>Optional</FieldDescription>
             </Field>
-            <Field>
-              <FieldLabel htmlFor="new-worktree-slot">App slot</FieldLabel>
-              <Select
-                disabled={mutation.isPending}
-                onValueChange={(value) => setSlot(Number(value))}
-                value={slot === null ? undefined : String(slot)}
-              >
-                <SelectTrigger
-                  className="form-select-trigger"
-                  id="new-worktree-slot"
-                >
-                  <SelectValue placeholder="Choose an app slot">
-                    {selected ? `App ${selected.slot}` : undefined}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent className="slot-select-content">
-                  <SelectGroup>
-                    {available.map((option) => (
-                      <SelectItem key={option.slot} value={String(option.slot)}>
-                        <span className="slot-select-row">
-                          <span className="slot-select-identity">
-                            <b>App {option.slot}</b>
-                            <small>Available</small>
-                          </span>
-                          <span className="slot-select-ports">
-                            <AppPortList apps={option.apps} />
-                          </span>
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
-            {selected ? (
-              <div className="port-preview">
-                {selected.apps.map((app) => (
-                  <span key={`${app.label}:${app.port}`}>
-                    <b>{app.label}</b>
-                    <AppPort port={app.port} />
-                  </span>
-                ))}
-              </div>
-            ) : null}
             {error ? <FieldError>{error}</FieldError> : null}
           </FieldGroup>
           <DialogFooter>
@@ -215,9 +128,7 @@ export function CreateWorktreeDialog({
               Cancel
             </Button>
             <Button
-              disabled={
-                mutation.isPending || branch.trim() === "" || slot === null
-              }
+              disabled={mutation.isPending || !branch.trim()}
               type="submit"
             >
               {mutation.isPending ? "Creating…" : "Create worktree"}

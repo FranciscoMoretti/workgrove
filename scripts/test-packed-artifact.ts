@@ -120,7 +120,7 @@ try {
     "bun",
     [
       "-e",
-      'import { resolveWorkgroveAppGroup } from "workgrove/config"; const appGroup = resolveWorkgroveAppGroup({ version: 2, setup: { argv: ["npm", "install"] }, appGroups: { Apps: { slot: { default: 0, stride: 10 }, start: { argv: ["npm", "run", "dev"] }, stop: "process", apps: { web: { basePort: 4000 } } } } }, "Apps", 0); if (appGroup.apps.web.port !== 4000) process.exit(1);',
+      'import { WorkgroveConfigSchema } from "workgrove/config"; const config = WorkgroveConfigSchema.parse({ version: 1, setup: { argv: ["bun", "install"] }, appGroups: { Apps: { start: { argv: ["bun", "run", "dev"] }, stop: "process", env: { PORT: "{apps.web.port}" }, apps: { web: { protocol: "http", readiness: "tcp" } } } } }); if (config.appGroups.Apps.apps.web.protocol !== "http") process.exit(1);',
     ],
     { cwd: installDirectory }
   );
@@ -138,11 +138,16 @@ try {
     `${JSON.stringify(
       {
         version: 1,
-        stride: 10,
-        setup: { argv: ["npm", "install"] },
-        start: { argv: ["npm", "run", "dev"] },
-        apps: {
-          fixture: { basePort: 45_000 },
+        setup: { argv: ["bun", "install"] },
+        appGroups: {
+          Apps: {
+            start: { argv: ["bun", "run", "dev"] },
+            stop: "process",
+            env: { PORT: "{apps.fixture.port}" },
+            apps: {
+              fixture: { protocol: "http", readiness: "tcp" },
+            },
+          },
         },
       },
       null,
