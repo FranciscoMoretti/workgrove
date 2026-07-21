@@ -191,6 +191,26 @@ function delay(milliseconds: number): Promise<void> {
   );
 }
 
+function assertManagedStartHealthy(input: {
+  active: boolean;
+  label: string;
+  processId: string;
+  worktreePath: string;
+}): void {
+  if (
+    !input.active ||
+    managedPid(input.processId, input.worktreePath) !== null
+  ) {
+    return;
+  }
+  const failure = managedFailure(input.processId);
+  if (failure) {
+    throw new Error(
+      `${input.label} exited before Friendly URLs were activated: ${failure.message}`
+    );
+  }
+}
+
 export interface WorkspaceControllerRuntimeOptions {
   codexContext?: CodexContextStore;
   codexHooks?: CodexHookActivityStore;
@@ -530,10 +550,8 @@ export class WorkspaceController {
     }
 
     const processId = appGroupProcessId(worktree.id, groupId);
-    if (
-      managedPid(processId, worktree.path) === null &&
-      !allReady.some(Boolean)
-    ) {
+    let managedStart = managedPid(processId, worktree.path) !== null;
+    if (!(managedStart || allReady.some(Boolean))) {
       const command = resolveStartCommand(
         config,
         groupId,
@@ -551,6 +569,7 @@ export class WorkspaceController {
         trackExitFailure: true,
         worktreeId: processId,
       });
+      managedStart = true;
     }
 
     await Promise.all(
@@ -570,7 +589,14 @@ export class WorkspaceController {
         );
       }
     }
-    await this.activateRoutes(run);
+    const managedStartHealth = {
+      active: managedStart,
+      label: displayName(groupId, group),
+      processId,
+      worktreePath: worktree.path,
+    };
+    assertManagedStartHealthy(managedStartHealth);
+    await this.activateRoutesForManagedStart(run, managedStartHealth);
     return "started";
   }
 
@@ -916,6 +942,23 @@ export class WorkspaceController {
         }
       }
       throw new Error(failures.join("; "));
+    }
+  }
+
+  private async activateRoutesForManagedStart(
+    run: { apps: Record<string, RunEndpoint> },
+    managedStart: {
+      active: boolean;
+      label: string;
+      processId: string;
+      worktreePath: string;
+    }
+  ): Promise<void> {
+    try {
+      await this.activateRoutes(run);
+    } catch (error) {
+      assertManagedStartHealthy(managedStart);
+      throw error;
     }
   }
 

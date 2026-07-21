@@ -45,6 +45,7 @@ const processes = new Map<
   string,
   { child: ChildProcess; record: ProcessRecord }
 >();
+const plannedStops = new Set<number>();
 
 mkdirSync(CONTROL_DIR, { recursive: true });
 
@@ -273,6 +274,25 @@ export function startManagedProcess(input: {
       processes.delete(input.worktreeId);
       rmSync(pidPath(input.worktreeId), { force: true });
     }
+    if (child.pid && !plannedStops.has(child.pid)) {
+      const groupTarget: ProcessSignalTarget = {
+        id: child.pid,
+        kind: "group",
+      };
+      if (processTargetIsLive(groupTarget)) {
+        const logId = input.logId ?? input.worktreeId;
+        appendManagedLog(
+          logId,
+          "[workgrove] Managed process exited; stopping remaining descendants"
+        );
+        stopProcessTarget(groupTarget, logId).catch((error) => {
+          appendManagedLog(
+            logId,
+            `[workgrove] Failed to stop remaining descendants: ${error instanceof Error ? error.message : String(error)}`
+          );
+        });
+      }
+    }
   });
   child.unref();
   return child.pid;
@@ -396,7 +416,12 @@ export async function stopManagedProcess(
   const target = processTargetIsLive(groupTarget)
     ? groupTarget
     : ({ id: pid, kind: "process" } satisfies ProcessSignalTarget);
-  await stopProcessTarget(target, worktreeId);
+  plannedStops.add(pid);
+  try {
+    await stopProcessTarget(target, worktreeId);
+  } finally {
+    plannedStops.delete(pid);
+  }
   if (processes.get(worktreeId)?.record.pid === pid) {
     processes.delete(worktreeId);
   }

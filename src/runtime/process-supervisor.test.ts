@@ -16,14 +16,29 @@ import {
 const worktreeId = `clear-log-test-${process.pid}`;
 const stopTestId = `app-group-stop-test-${process.pid}`;
 const stubbornStopTestId = `stubborn-app-group-stop-test-${process.pid}`;
+const orphanCleanupTestId = `orphan-cleanup-test-${process.pid}`;
 const DESCENDANT_PID_PATTERN = /descendant:(\d+)/;
 let stubbornDescendantPid: number | null = null;
 let stubbornOwnedPid: number | null = null;
+let orphanDescendantPid: number | null = null;
+
+async function waitForProcessExit(pid: number): Promise<void> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`Process ${pid} did not exit`);
+}
 
 afterEach(() => {
   rmSync(logPath(worktreeId), { force: true });
   rmSync(logPath(stopTestId), { force: true });
   rmSync(logPath(stubbornStopTestId), { force: true });
+  rmSync(logPath(orphanCleanupTestId), { force: true });
   if (stubbornDescendantPid) {
     try {
       process.kill(stubbornDescendantPid, "SIGKILL");
@@ -39,6 +54,14 @@ afterEach(() => {
       // The supervisor already terminated the stubborn owned process.
     }
     stubbornOwnedPid = null;
+  }
+  if (orphanDescendantPid) {
+    try {
+      process.kill(orphanDescendantPid, "SIGKILL");
+    } catch {
+      // The supervisor already terminated the orphaned descendant.
+    }
+    orphanDescendantPid = null;
   }
 });
 
@@ -129,6 +152,37 @@ describe("managed logs", () => {
     expect(await stopManagedProcess(stubbornStopTestId, process.cwd())).toBe(
       pid
     );
+    await waitForProcessExit(descendantPid);
+  });
+
+  it("stops descendants when their managed launcher exits unexpectedly", async () => {
+    startManagedProcess({
+      argv: [
+        process.execPath,
+        "-e",
+        `const { spawn } = require("node:child_process"); const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" }); console.log("descendant:" + child.pid); setTimeout(() => process.exit(1), 20);`,
+      ],
+      cwd: process.cwd(),
+      env: {},
+      ownerRoot: process.cwd(),
+      worktreeId: orphanCleanupTestId,
+    });
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const match = readManagedLog(orphanCleanupTestId)
+        .join("\n")
+        .match(DESCENDANT_PID_PATTERN);
+      if (match) {
+        orphanDescendantPid = Number(match[1]);
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const descendantPid = orphanDescendantPid;
+    if (!descendantPid) {
+      throw new Error("Orphaned descendant did not start");
+    }
+    await waitForProcessExit(descendantPid);
+    orphanDescendantPid = null;
     expect(() => process.kill(descendantPid, 0)).toThrow();
   });
 
