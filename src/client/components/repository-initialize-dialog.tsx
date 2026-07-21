@@ -15,16 +15,13 @@ import {
 export function RepositoryInitializeDialog({
   onClose,
   onCreated,
-  open,
   repoPath,
 }: {
   onClose: () => void;
   onCreated: () => void | Promise<void>;
-  open: boolean;
   repoPath: string;
 }) {
   const preview = useQuery({
-    enabled: open,
     queryFn: () => previewRepositoryConfig(repoPath),
     queryKey: ["repository-initialization", repoPath],
     retry: false,
@@ -41,7 +38,7 @@ export function RepositoryInitializeDialog({
           onClose();
         }
       }}
-      open={open}
+      open
     >
       <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-xl overflow-auto">
         <DialogHeader className="pr-8">

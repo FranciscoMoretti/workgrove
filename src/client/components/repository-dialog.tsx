@@ -21,12 +21,10 @@ export function RepositoryDialog({
   currentPath,
   onClose,
   onConfirm,
-  open,
 }: {
   currentPath: string;
   onClose: () => void;
   onConfirm: (path: string, snapshot: WorkspaceSnapshot) => void;
-  open: boolean;
 }) {
   const [draft, setDraft] = useState(currentPath);
   const opener = useRepositoryOpen((path, snapshot) => {
@@ -72,7 +70,7 @@ export function RepositoryDialog({
             onClose();
           }
         }}
-        open={open}
+        open
       >
         <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-xl overflow-auto">
           <DialogHeader className="pr-8">

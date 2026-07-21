@@ -24,17 +24,15 @@ export function useRepositorySetup({
       />
     ) : null;
   }
-  const dialog = (
+  const dialog = open ? (
     <RepositoryInitializeDialog
-      key={open ? "initialize-open" : "initialize-closed"}
       onClose={() => setOpen(false)}
       onCreated={async () => {
         setOpen(false);
         await onCreated();
       }}
-      open={open}
       repoPath={repoPath}
     />
-  );
+  ) : null;
   return { active: configPath !== null, dialog, notice };
 }

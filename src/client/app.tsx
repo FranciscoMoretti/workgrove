@@ -580,32 +580,33 @@ export function App() {
       ) : (
         mainPanel
       )}
-      <CreateWorktreeDialog
-        mutation={commands.createWorktree}
-        onClose={() => setCreateOpen(false)}
-        open={createOpen}
-        repoName={data.repoName}
-        repoPath={repoPath}
-        requestRepositoryTrust={repositoryTrust.requestTrust}
-      />
-      <RepositoryDialog
-        currentPath={repoPath}
-        key={repositoryOpen ? "repository-open" : "repository-closed"}
-        onClose={() => setRepositoryOpen(false)}
-        onConfirm={(path, snapshot) => {
-          openRepository(path, snapshot);
-          setSelectedId(null);
-        }}
-        open={repositoryOpen}
-      />
-      <DeleteWorktreeDialog
-        key={deleteTarget?.id ?? "no-delete"}
-        mutation={commands.deleteWorktree}
-        onClose={() => setDeleteTarget(null)}
-        open={deleteTarget !== null}
-        repoPath={repoPath}
-        worktree={deleteTarget}
-      />
+      {createOpen ? (
+        <CreateWorktreeDialog
+          mutation={commands.createWorktree}
+          onClose={() => setCreateOpen(false)}
+          repoName={data.repoName}
+          repoPath={repoPath}
+          requestRepositoryTrust={repositoryTrust.requestTrust}
+        />
+      ) : null}
+      {repositoryOpen ? (
+        <RepositoryDialog
+          currentPath={repoPath}
+          onClose={() => setRepositoryOpen(false)}
+          onConfirm={(path, snapshot) => {
+            openRepository(path, snapshot);
+            setSelectedId(null);
+          }}
+        />
+      ) : null}
+      {deleteTarget ? (
+        <DeleteWorktreeDialog
+          mutation={commands.deleteWorktree}
+          onClose={() => setDeleteTarget(null)}
+          repoPath={repoPath}
+          worktree={deleteTarget}
+        />
+      ) : null}
       <RepositoryTrustDialog
         actionLabel={repositoryTrust.actionLabel}
         commands={data.trustCommands}

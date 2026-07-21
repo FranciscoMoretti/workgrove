@@ -19,7 +19,6 @@ import {
 export function DeleteWorktreeDialog({
   mutation,
   onClose,
-  open,
   repoPath,
   worktree,
 }: {
@@ -29,19 +28,14 @@ export function DeleteWorktreeDialog({
     Record<string, unknown> & { repoPath: string; worktreeId?: string }
   >;
   onClose: () => void;
-  open: boolean;
   repoPath: string;
-  worktree: WorktreeSnapshot | null;
+  worktree: WorktreeSnapshot;
 }) {
   const [error, setError] = useState<string | null>(null);
-  if (!worktree) {
-    return null;
-  }
-  const target = worktree;
   async function confirm() {
     try {
       setError(null);
-      await mutation.mutateAsync({ repoPath, worktreeId: target.id });
+      await mutation.mutateAsync({ repoPath, worktreeId: worktree.id });
       onClose();
     } catch (caught) {
       setError(
@@ -56,7 +50,7 @@ export function DeleteWorktreeDialog({
           onClose();
         }
       }}
-      open={open}
+      open
     >
       <AlertDialogContent>
         <AlertDialogHeader>

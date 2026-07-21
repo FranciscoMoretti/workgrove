@@ -37,7 +37,9 @@ export function RepositoryConfigPage({
   const [source, setSource] = useState(
     () => loadConfigDraft(configPath, original) ?? original
   );
-  const [discardOpen, setDiscardOpen] = useState(false);
+  const [discardRequested, setDiscardRequested] = useState(false);
+  const [ignoredNavigationRequest, setIgnoredNavigationRequest] =
+    useState(navigationRequest);
   const parsed = useMemo(() => {
     try {
       return WorkgroveConfigSchema.safeParse(JSON.parse(source));
@@ -61,11 +63,8 @@ export function RepositoryConfigPage({
     onDirtyChange(dirty);
     return () => onDirtyChange(false);
   }, [dirty, onDirtyChange]);
-  useEffect(() => {
-    if (navigationRequest > 0 && dirty) {
-      setDiscardOpen(true);
-    }
-  }, [dirty, navigationRequest]);
+  const discardOpen =
+    discardRequested || (dirty && navigationRequest > ignoredNavigationRequest);
 
   let validationMessage: string | null = null;
   if (!parsed.success) {
@@ -82,10 +81,15 @@ export function RepositoryConfigPage({
 
   function requestClose() {
     if (dirty) {
-      setDiscardOpen(true);
+      setDiscardRequested(true);
     } else {
       onClose();
     }
+  }
+
+  function keepEditing(): void {
+    setDiscardRequested(false);
+    setIgnoredNavigationRequest(navigationRequest);
   }
 
   async function saveConfiguration(): Promise<void> {
@@ -164,7 +168,7 @@ export function RepositoryConfigPage({
               <p className="mr-auto text-muted-foreground">
                 Discard unsaved configuration changes?
               </p>
-              <Button onClick={() => setDiscardOpen(false)} variant="outline">
+              <Button onClick={keepEditing} variant="outline">
                 Keep editing
               </Button>
               <Button onClick={discardChanges} variant="destructive">

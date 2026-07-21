@@ -1,6 +1,6 @@
 import type { UseMutationResult } from "@tanstack/react-query";
 import type { FormEvent } from "react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import type { CommandReceipt } from "../../controller/workspace-snapshot";
 import type { RequestRepositoryTrust } from "../use-repository-trust";
@@ -28,14 +28,12 @@ type CreateWorktreeInput = Record<string, unknown> & { repoPath: string };
 export function CreateWorktreeDialog({
   mutation,
   onClose,
-  open,
   repoName,
   repoPath,
   requestRepositoryTrust,
 }: {
   mutation: UseMutationResult<CommandReceipt, Error, CreateWorktreeInput>;
   onClose: () => void;
-  open: boolean;
   repoName: string;
   repoPath: string;
   requestRepositoryTrust: RequestRepositoryTrust;
@@ -44,15 +42,6 @@ export function CreateWorktreeDialog({
   const [createBranch, setCreateBranch] = useState(true);
   const [folderName, setFolderName] = useState("");
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (open) {
-      setBranch("");
-      setCreateBranch(true);
-      setFolderName("");
-      setError(null);
-    }
-  }, [open]);
 
   async function create(input: CreateWorktreeInput) {
     try {
@@ -83,7 +72,7 @@ export function CreateWorktreeDialog({
   }
 
   return (
-    <Dialog onOpenChange={(next) => !next && onClose()} open={open}>
+    <Dialog onOpenChange={(next) => !next && onClose()} open>
       <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-xl overflow-auto">
         <DialogHeader className="pr-8">
           <DialogTitle>New worktree</DialogTitle>
