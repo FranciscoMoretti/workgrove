@@ -13,6 +13,39 @@ import {
   waitUntil,
 } from "./portless-fixture";
 
+test("serializes concurrent lifecycle requests and scopes trust to the fixture", async () => {
+  const fixture = await PortlessIntegrationFixture.create();
+  try {
+    assert(
+      existsSync(join(fixture.controlDirectory, "trusted-repositories.json")),
+      "Fixture trust was not written to its isolated control directory"
+    );
+    const main = fixture.controller
+      .inspect(fixture.root)
+      .worktrees.find((worktree) => worktree.isMain);
+    assert(main, "Main worktree disappeared");
+    const results = await Promise.all([
+      fixture.controller.startAppGroup(fixture.root, main.id, "development"),
+      fixture.controller.startAppGroup(fixture.root, main.id, "development"),
+    ]);
+    assert(
+      results.filter((result) => result === "started").length === 1 &&
+        results.filter((result) => result === "already-running").length === 1,
+      "Concurrent Start requests did not share one lifecycle result"
+    );
+    const [restartResult, stopResult] = await Promise.all([
+      fixture.controller.startAppGroup(fixture.root, main.id, "development"),
+      fixture.controller.stopAppGroup(fixture.root, main.id, "development"),
+    ]);
+    assert(
+      restartResult === "already-running" && stopResult === "stopped",
+      "Concurrent Start and Stop requests did not run in call order"
+    );
+  } finally {
+    await fixture.cleanup();
+  }
+}, 120_000);
+
 test("isolates routes, environments, logs, and stable URLs across worktrees", async () => {
   const fixture = await PortlessIntegrationFixture.create();
   try {
@@ -376,6 +409,73 @@ test("rejects and preserves a foreign Friendly URL route", async () => {
       fixture.routing.observe(conflictRoute) === "active",
       "Stop removed a foreign Portless route"
     );
+  } finally {
+    if (conflictRoute) {
+      await fixture.routing.deactivate(conflictRoute);
+    }
+    await new Promise<void>((resolve) => conflictServer.close(() => resolve()));
+    await fixture.cleanup();
+  }
+}, 120_000);
+
+test("preserves an existing Friendly URL when another route conflicts", async () => {
+  const fixture = await PortlessIntegrationFixture.create();
+  const conflictServer = createServer((socket) => {
+    socket.end(
+      "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 13\r\nConnection: close\r\n\r\nforeign route"
+    );
+  });
+  let conflictRoute: { hostname: string; port: number } | null = null;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      conflictServer.once("error", reject);
+      conflictServer.listen(0, "127.0.0.1", resolve);
+    });
+    const address = conflictServer.address();
+    assert(
+      address && typeof address !== "string",
+      "Could not allocate conflict port"
+    );
+    const main = fixture.controller
+      .inspect(fixture.root)
+      .worktrees.find((worktree) => worktree.isMain);
+    assert(main, "Main worktree disappeared");
+    await fixture.controller.startAppGroup(
+      fixture.root,
+      main.id,
+      "development"
+    );
+    const run = new FileWorkgroveStateStore(fixture.statePath).run({
+      groupId: "development",
+      repoPath: fixture.root,
+      worktreePath: main.path,
+    });
+    const api = run?.apps.api;
+    const site = run?.apps.site;
+    assert(api?.hostname && site?.hostname, "HTTP routes were not allocated");
+    const apiRoute = { hostname: api.hostname, port: api.port };
+    const siteRoute = { hostname: site.hostname, port: site.port };
+    await fixture.routing.deactivate(apiRoute);
+    conflictRoute = { hostname: api.hostname, port: address.port };
+    await fixture.routing.activate(conflictRoute);
+
+    let conflictRejected = false;
+    try {
+      await fixture.controller.startAppGroup(
+        fixture.root,
+        main.id,
+        "development"
+      );
+    } catch (error) {
+      conflictRejected =
+        error instanceof Error && error.message.includes("already routed");
+    }
+    assert(conflictRejected, "A foreign route conflict was not rejected");
+    assert(
+      fixture.routing.observe(siteRoute) === "active",
+      "Route rollback removed a Friendly URL that Start did not create"
+    );
+    await fixture.controller.stopAppGroup(fixture.root, main.id, "development");
   } finally {
     if (conflictRoute) {
       await fixture.routing.deactivate(conflictRoute);

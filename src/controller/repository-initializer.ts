@@ -131,12 +131,13 @@ export function planRepositoryInitialization(
 }
 
 export function initializeRepository(
-  repoPath: string
+  repoPath: string,
+  options: { controlDirectory?: string } = {}
 ): RepositoryInitializationPlan {
   const plan = planRepositoryInitialization(repoPath);
   writeFileSync(plan.configPath, `${JSON.stringify(plan.config, null, 2)}\n`, {
     flag: "wx",
   });
-  trustRepository(plan.repoPath, plan.config);
+  trustRepository(plan.repoPath, plan.config, options.controlDirectory);
   return plan;
 }

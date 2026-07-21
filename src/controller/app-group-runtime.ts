@@ -6,7 +6,11 @@ import {
   resolveStopCommand,
 } from "../config/workgrove-config";
 import type { WorkgroveApp, WorkgroveConfig } from "../config/workgrove-schema";
-import type { LocalRoute, LocalRoutingEngine } from "../runtime/local-routing";
+import type {
+  LocalRoute,
+  LocalRouteState,
+  LocalRoutingEngine,
+} from "../runtime/local-routing";
 import type {
   EndpointAssignment,
   FileWorkgroveStateStore,
@@ -65,6 +69,7 @@ function delay(milliseconds: number): Promise<void> {
 }
 
 export class AppGroupRuntime {
+  private readonly lifecycleOperations = new Map<string, Promise<void>>();
   private readonly processes: ProcessSupervisor;
   private readonly routing: LocalRoutingEngine;
   private readonly state: FileWorkgroveStateStore;
@@ -110,7 +115,13 @@ export class AppGroupRuntime {
     };
   }
 
-  async start(target: AppGroupTarget): Promise<"already-running" | "started"> {
+  start(target: AppGroupTarget): Promise<"already-running" | "started"> {
+    return this.serializeLifecycle(target, () => this.startUnlocked(target));
+  }
+
+  private async startUnlocked(
+    target: AppGroupTarget
+  ): Promise<"already-running" | "started"> {
     const group = this.group(target);
     const key = this.runKey(target);
     let run = this.state.run(key);
@@ -240,8 +251,14 @@ export class AppGroupRuntime {
     return "started";
   }
 
+  stop(target: AppGroupTarget): Promise<"already-stopped" | "stopped"> {
+    return this.serializeLifecycle(target, () => this.stopUnlocked(target));
+  }
+
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: route, command, process, and quarantine failures must be accumulated in lifecycle order.
-  async stop(target: AppGroupTarget): Promise<"already-stopped" | "stopped"> {
+  private async stopUnlocked(
+    target: AppGroupTarget
+  ): Promise<"already-stopped" | "stopped"> {
     const group = this.group(target);
     const key = this.runKey(target);
     const run = this.state.run(key);
@@ -341,6 +358,31 @@ export class AppGroupRuntime {
       repoPath: target.repoPath,
       worktreePath: target.worktree.path,
     };
+  }
+
+  private async serializeLifecycle<T>(
+    target: AppGroupTarget,
+    operation: () => Promise<T>
+  ): Promise<T> {
+    const key = [target.repoPath, target.worktree.path, target.groupId].join(
+      "\0"
+    );
+    const predecessor = this.lifecycleOperations.get(key) ?? Promise.resolve();
+    let release: () => void = () => undefined;
+    const completion = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const tail = predecessor.catch(() => undefined).then(() => completion);
+    this.lifecycleOperations.set(key, tail);
+    await predecessor.catch(() => undefined);
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.lifecycleOperations.get(key) === tail) {
+        this.lifecycleOperations.delete(key);
+      }
+    }
   }
 
   private endpointAssignment(
@@ -496,32 +538,49 @@ export class AppGroupRuntime {
         ? [this.endpointRoute(endpoint)]
         : []
     );
+    const newlyActivated: LocalRoute[] = [];
     try {
+      const initialStates = new Map<LocalRoute, LocalRouteState>();
       for (const route of routes) {
-        if (this.routing.observe(route) === "conflict") {
+        const state = this.routing.observe(route);
+        initialStates.set(route, state);
+        if (state === "conflict") {
           throw new Error(`${route.hostname} is already routed elsewhere`);
         }
       }
       for (const route of routes) {
+        if (initialStates.get(route) === "inactive") {
+          newlyActivated.push(route);
+        }
         await this.routing.activate(route);
       }
     } catch (error) {
-      const failures = [error instanceof Error ? error.message : String(error)];
-      for (const route of routes.toReversed()) {
-        try {
-          const routeState = this.routing.observe(route);
-          if (routeState !== "active" && routeState !== "unavailable") {
-            continue;
-          }
-          await this.routing.deactivate(route);
-        } catch (rollbackError) {
-          failures.push(
-            `Route rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
-          );
-        }
-      }
+      const failures = [
+        error instanceof Error ? error.message : String(error),
+        ...(await this.rollbackRoutes(newlyActivated)),
+      ];
       throw new Error(failures.join("; "));
     }
+  }
+
+  private async rollbackRoutes(
+    routes: readonly LocalRoute[]
+  ): Promise<string[]> {
+    const failures: string[] = [];
+    for (const route of routes.toReversed()) {
+      try {
+        const routeState = this.routing.observe(route);
+        if (routeState !== "active" && routeState !== "unavailable") {
+          continue;
+        }
+        await this.routing.deactivate(route);
+      } catch (error) {
+        failures.push(
+          `Route rollback failed: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+    return failures;
   }
 
   private async activateRoutesForManagedStart(

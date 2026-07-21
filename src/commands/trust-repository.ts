@@ -1,4 +1,3 @@
-import { trustRepository as saveRepositoryTrust } from "../config/repository-trust";
 import type { WorkspaceController } from "../controller/workspace-controller";
 import type { CommandReceipt } from "../controller/workspace-snapshot";
 import { requiredString } from "./command";
@@ -8,8 +7,7 @@ export function trustRepository(
   input: Record<string, unknown>
 ): CommandReceipt {
   const repoPath = requiredString(input.repoPath, "Repository path");
-  const workspace = controller.inspect(repoPath);
-  saveRepositoryTrust(workspace.repoPath, workspace.config);
+  controller.trustRepository(repoPath);
   return {
     command: "trust-repository",
     message: "Trusted repository commands",

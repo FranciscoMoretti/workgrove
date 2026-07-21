@@ -6,7 +6,6 @@ import { dirname, join } from "node:path";
 
 import { CodexHookActivityStore } from "../codex/codex-hook-activity";
 import { UnavailableCodexIntegrationAdapter } from "../codex/codex-integration";
-import { trustRepository } from "../config/repository-trust";
 import type { WorkgroveConfig } from "../config/workgrove-schema";
 import { WorkspaceController } from "../controller/workspace-controller";
 import type { AppEndpointSnapshot } from "../controller/workspace-snapshot";
@@ -138,15 +137,27 @@ export class PortlessIntegrationFixture {
   }
 
   static async create(): Promise<PortlessIntegrationFixture> {
-    const sandbox = realpathSync(
-      mkdtempSync(join(tmpdir(), "workgrove-portless-integration-"))
+    let lastFailure: unknown = new Error(
+      "Could not allocate a Portless integration proxy"
     );
-    const reservation = await reserveBackingPort();
-    const proxyPort = reservation.port;
-    await reservation.release();
-    const fixture = new PortlessIntegrationFixture({ proxyPort, sandbox });
-    fixture.initializeRepository();
-    return fixture;
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const sandbox = realpathSync(
+        mkdtempSync(join(tmpdir(), "workgrove-portless-integration-"))
+      );
+      const reservation = await reserveBackingPort();
+      const proxyPort = reservation.port;
+      await reservation.release();
+      const fixture = new PortlessIntegrationFixture({ proxyPort, sandbox });
+      try {
+        await fixture.routing.prepare();
+        fixture.initializeRepository();
+        return fixture;
+      } catch (error) {
+        lastFailure = error;
+        await fixture.cleanup();
+      }
+    }
+    throw lastFailure;
   }
 
   rebuildController(): WorkspaceController {
@@ -262,6 +273,6 @@ writeFileSync("integration-command-stopped", String(pid));
       this.detachedPath,
       "HEAD",
     ]);
-    trustRepository(this.root, integrationConfig);
+    this.controller.trustRepository(this.root);
   }
 }

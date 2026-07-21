@@ -19,6 +19,7 @@ export interface LocalRoutingEngine {
   activate(route: LocalRoute): Promise<void>;
   deactivate(route: LocalRoute): Promise<void>;
   observe(route: LocalRoute): LocalRouteState;
+  prepare?(): Promise<void>;
   url(hostname: string): string;
 }
 
@@ -84,6 +85,10 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
         (await this.proxyResponse(route.hostname)) === "routed",
       `Portless did not activate ${route.hostname}`
     );
+  }
+
+  async prepare(): Promise<void> {
+    await this.ensureProxy();
   }
 
   async deactivate(route: LocalRoute): Promise<void> {

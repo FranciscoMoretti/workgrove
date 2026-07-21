@@ -1,9 +1,6 @@
 import { spawnSync } from "node:child_process";
 
 export function processStartMarker(pid: number): string {
-  if (process.platform !== "darwin") {
-    return "";
-  }
   const result = spawnSync("ps", ["-p", String(pid), "-o", "lstart="], {
     encoding: "utf8",
   });

@@ -63,7 +63,10 @@ describe("WorkspaceController Codex hook bridge", () => {
           tasks: [],
           updatedAt: "2026-07-18T12:00:00.000Z",
         }),
-        { codexHooks: new CodexHookActivityStore({ persist: false }) }
+        {
+          codexHooks: new CodexHookActivityStore({ persist: false }),
+          state: new FileWorkgroveStateStore(join(root, "state.json")),
+        }
       );
 
       const result = controller.handleCodexHook({
@@ -127,6 +130,7 @@ describe("WorkspaceController Codex hook bridge", () => {
         {
           codexContext: new CodexContextStore(),
           codexHooks: new CodexHookActivityStore({ persist: false }),
+          state: new FileWorkgroveStateStore(join(root, "state.json")),
         }
       );
       const worktreeId = controller.inspect(root).worktrees[0].id;
@@ -213,6 +217,7 @@ describe("WorkspaceController Codex hook bridge", () => {
         {
           codexContext: new CodexContextStore(),
           codexHooks: new CodexHookActivityStore({ persist: false }),
+          state: new FileWorkgroveStateStore(join(root, "state.json")),
         }
       );
       await controller.inspectCodex(root);

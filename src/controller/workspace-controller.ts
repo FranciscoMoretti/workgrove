@@ -16,7 +16,7 @@ import { CodexContextStore } from "../codex/workgrove-context";
 import { clearLogs } from "../commands/clear-logs";
 import { createWorktree } from "../commands/create-worktree";
 import { deleteWorktree } from "../commands/delete-worktree";
-import { initializeRepository } from "../commands/initialize-repository";
+import { initializeRepository as initializeRepositoryCommand } from "../commands/initialize-repository";
 import { pickRepository } from "../commands/pick-repository";
 import { previewRepositoryConfig } from "../commands/preview-repository-config";
 import { restartApps } from "../commands/restart-apps";
@@ -31,6 +31,7 @@ import { updateRepositoryConfig } from "../commands/update-repository-config";
 import {
   repositoryIsTrusted,
   repositoryRequiresTrust,
+  trustRepository as saveRepositoryTrust,
 } from "../config/repository-trust";
 import type { WorkgroveCommand } from "../config/workgrove-command";
 import {
@@ -62,6 +63,7 @@ import {
   type WorkgroveCommandName,
   type WorkgroveCommandResult,
 } from "./command-contract";
+import { initializeRepository as initializeRepositoryConfig } from "./repository-initializer";
 import type { WorkspaceSnapshot } from "./workspace-snapshot";
 import { commandWorkingDirectory } from "./worktree-command";
 
@@ -74,7 +76,7 @@ const COMMAND_HANDLERS: Record<WorkgroveCommandName, CommandHandler> = {
   "clear-logs": clearLogs,
   "create-worktree": createWorktree,
   "delete-worktree": deleteWorktree,
-  "initialize-repository": initializeRepository,
+  "initialize-repository": initializeRepositoryCommand,
   "pick-repository": pickRepository,
   "preview-repository-config": previewRepositoryConfig,
   "restart-apps": restartApps,
@@ -378,7 +380,11 @@ export class WorkspaceController {
         ...lifecycleCommands,
       ],
       trustRequired: repositoryRequiresTrust(config),
-      trusted: repositoryIsTrusted(selectedRoot, config),
+      trusted: repositoryIsTrusted(
+        selectedRoot,
+        config,
+        this.processes.controlDirectory
+      ),
       updatedAt: new Date().toISOString(),
       worktrees,
     };
@@ -445,6 +451,21 @@ export class WorkspaceController {
     if (!workspace.trusted) {
       throw new Error("Review and trust this repository's commands first");
     }
+  }
+
+  trustRepository(repoPath: string): void {
+    const workspace = this.inspect(repoPath);
+    saveRepositoryTrust(
+      workspace.repoPath,
+      workspace.config,
+      this.processes.controlDirectory
+    );
+  }
+
+  initializeRepository(repoPath: string) {
+    return initializeRepositoryConfig(repoPath, {
+      controlDirectory: this.processes.controlDirectory,
+    });
   }
 
   worktree(repoPath: string, id: string) {

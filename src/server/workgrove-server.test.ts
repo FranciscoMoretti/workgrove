@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -79,5 +79,79 @@ describe("Workgrove HTTP server", () => {
       rmSync(appRoot, { force: true, recursive: true });
     }
     expect(closeCalls).toBe(1);
+  });
+
+  it("formats IPv6 hosts as valid origins", async () => {
+    const appRoot = mkdtempSync(join(tmpdir(), "workgrove-server-ipv6-"));
+    const controller = {
+      close: () => Promise.resolve(),
+      execute: () => Promise.reject(new Error("not used")),
+      handleCodexHook: () => ({ accepted: false }),
+      inspect: () => {
+        throw new Error("not used");
+      },
+      inspectCodex: () => Promise.reject(new Error("not used")),
+      logs: () => [],
+    } as unknown as WorkgroveServerController;
+    const server = await createWorkgroveServer({
+      appRoot,
+      controller,
+      development: false,
+      enableCodexHooks: false,
+      host: "::1",
+      port: 0,
+    });
+
+    try {
+      const url = await server.listen();
+      expect(url).toStartWith("http://[::1]:");
+      expect((await fetch(new URL("/api/health", url))).status).toBe(200);
+    } finally {
+      await server.close();
+      rmSync(appRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("cleans up the Codex hook capability on process exit", async () => {
+    const appRoot = mkdtempSync(join(tmpdir(), "workgrove-server-exit-"));
+    const codexDirectory = join(appRoot, "codex");
+    const capabilityFile = join(codexDirectory, "capability.json");
+    const controller = {
+      close: () => Promise.resolve(),
+      execute: () => Promise.reject(new Error("not used")),
+      handleCodexHook: () => ({ accepted: false }),
+      inspect: () => {
+        throw new Error("not used");
+      },
+      inspectCodex: () => Promise.reject(new Error("not used")),
+      logs: () => [],
+    } as unknown as WorkgroveServerController;
+    const previousExitListeners = new Set(process.listeners("exit"));
+    const server = await createWorkgroveServer({
+      appRoot,
+      codexControlDirectory: codexDirectory,
+      controller,
+      development: false,
+      port: 0,
+    });
+
+    try {
+      await server.listen();
+      expect(existsSync(capabilityFile)).toBe(true);
+      const exitHandler = process
+        .listeners("exit")
+        .find((listener) => !previousExitListeners.has(listener));
+      expect(exitHandler).toBeDefined();
+      exitHandler?.(0);
+      expect(existsSync(capabilityFile)).toBe(false);
+    } finally {
+      await server.close();
+      rmSync(appRoot, { force: true, recursive: true });
+    }
+    expect(
+      process
+        .listeners("exit")
+        .every((listener) => previousExitListeners.has(listener))
+    ).toBe(true);
   });
 });

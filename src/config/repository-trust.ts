@@ -11,16 +11,23 @@ import { join } from "node:path";
 import type { WorkgroveCommand } from "./workgrove-command";
 import type { WorkgroveConfig } from "./workgrove-config";
 
-const CONTROL_DIR =
-  process.env.WORKGROVE_CONTROL_DIR ?? join(homedir(), ".workgrove");
-const TRUST_FILE = join(CONTROL_DIR, "trusted-repositories.json");
+function defaultControlDirectory(): string {
+  return process.env.WORKGROVE_CONTROL_DIR ?? join(homedir(), ".workgrove");
+}
 
-function trustStore(): Record<string, boolean | string> {
-  if (!existsSync(TRUST_FILE)) {
+function trustFile(controlDirectory = defaultControlDirectory()): string {
+  return join(controlDirectory, "trusted-repositories.json");
+}
+
+function trustStore(
+  controlDirectory?: string
+): Record<string, boolean | string> {
+  const file = trustFile(controlDirectory);
+  if (!existsSync(file)) {
     return {};
   }
   try {
-    return JSON.parse(readFileSync(TRUST_FILE, "utf8")) as Record<
+    return JSON.parse(readFileSync(file, "utf8")) as Record<
       string,
       boolean | string
     >;
@@ -62,28 +69,36 @@ export function repositoryCommandFingerprint(config: WorkgroveConfig): string {
 
 export function repositoryIsTrusted(
   repoPath: string,
-  config: WorkgroveConfig
+  config: WorkgroveConfig,
+  controlDirectory?: string
 ): boolean {
   return (
     !repositoryRequiresTrust(config) ||
-    trustStore()[repoPath] === repositoryCommandFingerprint(config)
+    trustStore(controlDirectory)[repoPath] ===
+      repositoryCommandFingerprint(config)
   );
 }
 
 export function trustRepository(
   repoPath: string,
-  config: WorkgroveConfig
+  config: WorkgroveConfig,
+  controlDirectory?: string
 ): void {
-  mkdirSync(CONTROL_DIR, { recursive: true });
-  const temporary = `${TRUST_FILE}.${process.pid}`;
+  const directory = controlDirectory ?? defaultControlDirectory();
+  const file = trustFile(directory);
+  mkdirSync(directory, { recursive: true });
+  const temporary = `${file}.${process.pid}`;
   writeFileSync(
     temporary,
     `${JSON.stringify(
-      { ...trustStore(), [repoPath]: repositoryCommandFingerprint(config) },
+      {
+        ...trustStore(directory),
+        [repoPath]: repositoryCommandFingerprint(config),
+      },
       null,
       2
     )}\n`,
     { mode: 0o600 }
   );
-  renameSync(temporary, TRUST_FILE);
+  renameSync(temporary, file);
 }

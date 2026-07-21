@@ -78,6 +78,12 @@ function errorBody(error: unknown) {
   return { error: error instanceof Error ? error.message : String(error) };
 }
 
+function httpOrigin(host: string, port: number): string {
+  const urlHost =
+    host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+  return `http://${urlHost}:${port}`;
+}
+
 async function readJson(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -110,6 +116,7 @@ export async function createWorkgroveServer(
     null;
   let handleCodexHook: ReturnType<typeof createCodexHookRequestHandler> | null =
     null;
+  let exitCleanupRegistered = false;
   let listeningUrl: string | null = null;
   let shutdownPromise: Promise<void> | null = null;
 
@@ -235,7 +242,9 @@ export async function createWorkgroveServer(
   const server = createServer(async (request, response) => {
     const url = new URL(
       request.url ?? "/",
-      `http://${request.headers.host ?? `${host}:${configuredPort}`}`
+      request.headers.host
+        ? `http://${request.headers.host}`
+        : httpOrigin(host, configuredPort)
     );
     try {
       if (
@@ -283,7 +292,7 @@ export async function createWorkgroveServer(
         ...(options.codexControlDirectory
           ? { directory: options.codexControlDirectory }
           : {}),
-        endpoint: `http://${host}:${port}/api/codex/hooks`,
+        endpoint: `${httpOrigin(host, port)}/api/codex/hooks`,
         pid: process.pid,
         processStartMarker: processStartMarker(process.pid),
       });
@@ -291,10 +300,18 @@ export async function createWorkgroveServer(
         observe: (observation) => controller.handleCodexHook(observation),
         token: codexHookCapability.record.token,
       });
+      if (!exitCleanupRegistered) {
+        process.once("exit", cleanupCodexHookCapability);
+        exitCleanupRegistered = true;
+      }
     } catch {
       codexHookCapability = null;
       handleCodexHook = null;
     }
+  }
+
+  function cleanupCodexHookCapability(): void {
+    codexHookCapability?.cleanup();
   }
 
   return {
@@ -305,7 +322,13 @@ export async function createWorkgroveServer(
         vite?.close() ?? Promise.resolve(),
       ])
         .then(() => undefined)
-        .finally(() => codexHookCapability?.cleanup());
+        .finally(() => {
+          if (exitCleanupRegistered) {
+            process.off("exit", cleanupCodexHookCapability);
+            exitCleanupRegistered = false;
+          }
+          cleanupCodexHookCapability();
+        });
       return shutdownPromise;
     },
     listen(): Promise<string> {
@@ -322,7 +345,7 @@ export async function createWorkgroveServer(
             return;
           }
           enableCodexHookBridge(address.port);
-          listeningUrl = `http://${host}:${address.port}/`;
+          listeningUrl = `${httpOrigin(host, address.port)}/`;
           resolve(listeningUrl);
         });
       });
