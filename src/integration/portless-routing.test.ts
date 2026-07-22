@@ -146,9 +146,9 @@ test("isolates routes, environments, logs, and stable URLs across worktrees", as
     );
     assert(
       stoppedLinked?.appGroups[0]?.apps.every(
-        (app) => !(app.open || app.port || app.url)
+        (app) => !app.open && app.port !== null && app.url === null
       ),
-      "Stopping one worktree left its runtime exposed"
+      "Stopping one worktree did not retain only its stable endpoint assignments"
     );
     for (const url of Object.values(linkedUrls)) {
       assert(
@@ -371,14 +371,20 @@ test("rejects and preserves a foreign Friendly URL route", async () => {
       .worktrees.find((worktree) => worktree.isMain);
     assert(main, "Main worktree disappeared");
     const state = new FileWorkgroveStateStore(fixture.statePath);
-    const assignment = state.endpoint({
-      appId: "site",
-      appLabel: "site",
+    const instance = state.instance({
       groupId: "development",
+      mode: "per-worktree",
       repoLabel: "repo",
       repoPath: fixture.root,
       worktreeLabel: main.branch,
       worktreePath: main.path,
+    });
+    const assignment = state.endpoint({
+      appId: "site",
+      appLabel: "site",
+      groupId: "development",
+      instanceId: instance.id,
+      repoPath: fixture.root,
     });
     conflictRoute = { hostname: assignment.hostname, port: address.port };
     await fixture.routing.activate(conflictRoute);
@@ -404,11 +410,29 @@ test("rejects and preserves a foreign Friendly URL route", async () => {
       conflicted?.appGroups[0]?.apps.every((app) => !(app.open || app.url)),
       "A partial set of Friendly URLs was published after a route conflict"
     );
-    await fixture.controller.stopAppGroup(fixture.root, main.id, "development");
+    let stopConflictRejected = false;
+    try {
+      await fixture.controller.stopAppGroup(
+        fixture.root,
+        main.id,
+        "development"
+      );
+    } catch (error) {
+      stopConflictRejected =
+        error instanceof Error &&
+        error.message.includes("points to a different Backing endpoint");
+    }
+    assert(
+      stopConflictRejected,
+      "Stop did not report the foreign Friendly URL conflict"
+    );
     assert(
       fixture.routing.observe(conflictRoute) === "active",
       "Stop removed a foreign Portless route"
     );
+    await fixture.routing.deactivate(conflictRoute);
+    conflictRoute = null;
+    await fixture.controller.stopAppGroup(fixture.root, main.id, "development");
   } finally {
     if (conflictRoute) {
       await fixture.routing.deactivate(conflictRoute);
@@ -445,10 +469,14 @@ test("preserves an existing Friendly URL when another route conflicts", async ()
       main.id,
       "development"
     );
+    const development = fixture.controller
+      .inspect(fixture.root)
+      .worktrees.find((worktree) => worktree.id === main.id)
+      ?.appGroups.find((group) => group.id === "development");
+    assert(development, "Development app group disappeared");
     const run = new FileWorkgroveStateStore(fixture.statePath).run({
-      groupId: "development",
+      instanceId: development.instance.id,
       repoPath: fixture.root,
-      worktreePath: main.path,
     });
     const api = run?.apps.api;
     const site = run?.apps.site;
@@ -475,6 +503,8 @@ test("preserves an existing Friendly URL when another route conflicts", async ()
       fixture.routing.observe(siteRoute) === "active",
       "Route rollback removed a Friendly URL that Start did not create"
     );
+    await fixture.routing.deactivate(conflictRoute);
+    conflictRoute = null;
     await fixture.controller.stopAppGroup(fixture.root, main.id, "development");
   } finally {
     if (conflictRoute) {

@@ -87,6 +87,15 @@ export function portOwnership(
   return "foreign";
 }
 
+export function listeningPortPids(
+  snapshot: PortSnapshot,
+  port: number
+): number[] {
+  return [...(snapshot.pidsByPort.get(port) ?? [])].toSorted(
+    (left, right) => left - right
+  );
+}
+
 export function ownedPortPids(
   snapshot: PortSnapshot,
   ports: readonly number[],

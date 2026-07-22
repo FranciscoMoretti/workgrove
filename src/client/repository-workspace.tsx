@@ -174,7 +174,10 @@ export function RepositoryWorkspace({
     appGroupActionPending,
     commandActions,
     commands,
+    createAppGroupInstance,
     restartAppGroup,
+    retryAppGroup,
+    selectAppGroupInstance,
     toggleAppGroup,
     toggleApps,
     worktreeActionPending,
@@ -225,9 +228,12 @@ export function RepositoryWorkspace({
       codexAvailability={codexAvailability(codex)}
       codexWorktrees={codexWorktrees}
       commandActions={commandActions}
+      onCreateAppGroupInstance={createAppGroupInstance}
       onDelete={setDeleteTarget}
       onInspect={setSelectedId}
       onRestartAppGroup={restartAppGroup}
+      onRetryAppGroup={retryAppGroup}
+      onSelectAppGroupInstance={selectAppGroupInstance}
       onToggleAppGroup={toggleAppGroup}
       selectedId={selectedId}
       worktreeActionPending={worktreeActionPending}

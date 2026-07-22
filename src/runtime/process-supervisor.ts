@@ -73,6 +73,10 @@ export function appGroupProcessId(
   return `${worktreeId}--app-group--${Buffer.from(appGroupId).toString("base64url")}`;
 }
 
+export function appGroupInstanceProcessId(instanceId: string): string {
+  return `${instanceId}--app-group-instance`;
+}
+
 function safeId(processId: string): string {
   return processId.replace(/[^A-Za-z0-9_-]/g, "_");
 }

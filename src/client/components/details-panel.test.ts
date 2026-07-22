@@ -17,6 +17,8 @@ const worktree: WorktreeSnapshot = {
       apps: [],
       health: "not-running",
       id: "apps",
+      instance: { id: "apps-main", mode: "per-worktree", name: "main" },
+      instances: [{ id: "apps-main", name: "main", running: false }],
       name: "Apps",
       processRunning: false,
       stop: "process",

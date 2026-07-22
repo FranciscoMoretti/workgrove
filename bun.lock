@@ -13,7 +13,7 @@
         "clsx": "^2.1.1",
         "lucide-react": "0.553.0",
         "node": "24.18.0",
-        "portless": "0.15.4",
+        "portless": "git+https://github.com/FranciscoMoretti/portless.git#d6a6e8873aef71883f57271533df487785fe3443",
         "react": "19.2.3",
         "react-dom": "19.2.3",
         "react-hook-form": "^7.81.0",
@@ -665,7 +665,7 @@
 
     "pkg-up": ["pkg-up@3.1.0", "", { "dependencies": { "find-up": "^3.0.0" } }, "sha512-nDywThFk1i4BQK4twPQ6TA4RT8bDY96yeuCVBWL3ePARCiEKDRSrNGbFIgUJpLp+XeIR65v8ra7WuJOFUBtkMA=="],
 
-    "portless": ["portless@0.15.4", "", { "os": [ "linux", "win32", "darwin", ], "bin": { "portless": "dist/cli.js" } }, "sha512-tOxEsdlDGuPHO6DPkuK3c3mMV5ctXEgVFm53Sa8nfZ2RsRGTq4By424C6z5+JWfNbd3ktR5SOd1FJBOlB1Woqg=="],
+    "portless": ["portless@github:FranciscoMoretti/portless#d6a6e88", { "bin": { "portless": "./dist/cli.js" } }, "FranciscoMoretti-portless-d6a6e88", "sha512-GP8waLN2KdBmGDiwcUisXoLuBAJCE058dP34vnv0Bf/UoWzWKHbADL1ji2ol1dXV8ut3AoAPe4H+2uacCEN2RA=="],
 
     "postcss": ["postcss@8.5.17", "", { "dependencies": { "nanoid": "^3.3.12", "picocolors": "^1.1.1", "source-map-js": "^1.2.1" } }, "sha512-J7EF+8X+CzRPaJPOv9Ck2wNWJvGnnl3PcNPAdGg6GTLjyVpyQ0yATMSXRFRV01BviT/9Gwuc3rjEyJbDJG9a4w=="],
 

@@ -27,11 +27,19 @@ function useCommand(command: string, repoPath: string) {
 
 export function useCommands(repoPath: string) {
   const clearLogs = useCommand("clear-logs", repoPath);
+  const createAppGroupInstance = useCommand(
+    "create-app-group-instance",
+    repoPath
+  );
   const setupAllApps = useCommand("setup-all-apps", repoPath);
   const startApps = useCommand("start-apps", repoPath);
   const startAllApps = useCommand("start-all-apps", repoPath);
   const restartApps = useCommand("restart-apps", repoPath);
   const restartRunningApps = useCommand("restart-running-apps", repoPath);
+  const selectAppGroupInstance = useCommand(
+    "select-app-group-instance",
+    repoPath
+  );
   const stopApps = useCommand("stop-apps", repoPath);
   const stopAllApps = useCommand("stop-all-apps", repoPath);
   const trustRepository = useCommand("trust-repository", repoPath);
@@ -43,10 +51,12 @@ export function useCommands(repoPath: string) {
   const deleteWorktree = useCommand("delete-worktree", repoPath);
   const mutations = {
     clearLogs,
+    createAppGroupInstance,
     createWorktree,
     deleteWorktree,
     restartApps,
     restartRunningApps,
+    selectAppGroupInstance,
     setupAllApps,
     startAllApps,
     startApps,

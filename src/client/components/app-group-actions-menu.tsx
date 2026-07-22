@@ -1,6 +1,7 @@
 import {
   MoreHorizontalIcon,
   PlayIcon,
+  RefreshCwIcon,
   RotateCwIcon,
   SquareIcon,
 } from "lucide-react";
@@ -25,15 +26,21 @@ import {
 export function appGroupCommandMenuItems({
   group,
   onRestart,
+  onRetry,
   onToggle,
   pending,
 }: {
   group: AppGroupSnapshot;
   onRestart: () => void;
+  onRetry: () => void;
   onToggle: () => void;
   pending: boolean;
 }): CommandMenuItem[] {
   const running = appGroupIsRunning(group);
+  const retryable =
+    running &&
+    (group.health !== "running" ||
+      group.apps.some((app) => app.routeState === "unavailable"));
   return [
     {
       disabled: pending,
@@ -42,6 +49,17 @@ export function appGroupCommandMenuItems({
       label: running ? `Stop ${group.name}` : `Start ${group.name}`,
       onSelect: onToggle,
     },
+    ...(retryable
+      ? [
+          {
+            disabled: pending,
+            icon: RefreshCwIcon,
+            id: "retry",
+            label: `Retry ${group.name} readiness and routes`,
+            onSelect: onRetry,
+          },
+        ]
+      : []),
     ...(appGroupCanRestart(group)
       ? [
           {
@@ -59,12 +77,14 @@ export function appGroupCommandMenuItems({
 export function AppGroupActionsMenu({
   group,
   onRestart,
+  onRetry,
   onToggle,
   pending,
   worktree,
 }: {
   group: AppGroupSnapshot;
   onRestart: () => void;
+  onRetry: () => void;
   onToggle: () => void;
   pending: boolean;
   worktree: WorktreeSnapshot;
@@ -72,6 +92,7 @@ export function AppGroupActionsMenu({
   const items = appGroupCommandMenuItems({
     group,
     onRestart,
+    onRetry,
     onToggle,
     pending,
   });

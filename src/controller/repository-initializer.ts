@@ -108,6 +108,7 @@ export function planRepositoryInitialization(
     setup,
     appGroups: {
       Apps: {
+        instances: { mode: "per-worktree" },
         start,
         stop: "process",
         env: { PORT: "{apps.App.port}" },

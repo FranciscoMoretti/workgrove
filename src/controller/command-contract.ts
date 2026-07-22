@@ -34,6 +34,9 @@ export const RepositoryInitializationPlanSchema = z.object({
 
 const INPUT_SCHEMAS = {
   "clear-logs": StartStopSchema,
+  "create-app-group-instance": StartStopSchema.extend({
+    name: z.string().trim().min(1),
+  }),
   "create-worktree": RepositoryPathSchema.extend({
     branch: z.string().min(1),
     createBranch: z.boolean(),
@@ -45,6 +48,9 @@ const INPUT_SCHEMAS = {
   "preview-repository-config": RepositoryPathSchema,
   "restart-apps": StartStopSchema,
   "restart-running-apps": VisibleBulkSchema,
+  "select-app-group-instance": StartStopSchema.extend({
+    instanceId: z.string().min(1),
+  }),
   "setup-all-apps": VisibleBulkSchema,
   "start-all-apps": VisibleBulkSchema,
   "start-apps": StartStopSchema,
@@ -59,6 +65,7 @@ const INPUT_SCHEMAS = {
 
 const RESULT_SCHEMAS = {
   "clear-logs": CommandReceiptSchema,
+  "create-app-group-instance": CommandReceiptSchema,
   "create-worktree": CommandReceiptSchema,
   "delete-worktree": CommandReceiptSchema,
   "initialize-repository": RepositoryInitializationPlanSchema,
@@ -66,6 +73,7 @@ const RESULT_SCHEMAS = {
   "preview-repository-config": RepositoryInitializationPlanSchema,
   "restart-apps": CommandReceiptSchema,
   "restart-running-apps": CommandReceiptSchema,
+  "select-app-group-instance": CommandReceiptSchema,
   "setup-all-apps": CommandReceiptSchema,
   "start-all-apps": CommandReceiptSchema,
   "start-apps": CommandReceiptSchema,

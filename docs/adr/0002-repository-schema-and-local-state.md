@@ -27,6 +27,7 @@ The intended shape is:
   },
   "appGroups": {
     "development": {
+      "instances": { "mode": "per-worktree" },
       "name": "Development",
       "start": {
         "argv": ["bun", "run", "dev"]
@@ -55,6 +56,7 @@ The intended shape is:
       }
     },
     "services": {
+      "instances": { "mode": "selectable" },
       "start": {
         "argv": ["docker", "compose", "up", "-d"]
       },
@@ -81,7 +83,9 @@ The schema version is the new public schema's own version; it does not imply mig
 
 The keys under `appGroups` and `apps` are readable, stable logical IDs. An optional `name` is a mutable display label. Editing a display label preserves local endpoint identity and Friendly URLs. Manually changing a logical ID is delete-and-create; an explicit future migration operation may preserve identity across such a change.
 
-Workgrove combines repository and worktree identity with the stable group and app IDs when assigning a local endpoint identity. It does not put opaque UUIDs in the checked-in file.
+Workgrove combines repository identity with the selected App-group instance and stable app IDs when assigning a local endpoint identity. It does not put opaque UUIDs in the checked-in file.
+
+Every App group has an instance mode. `per-worktree` is the default and creates exactly one automatic instance per worktree. `selectable` creates a shared Default instance and lets a user create named alternatives, then select one independently for each worktree. This preserves the useful part of slots—occasionally isolating a reusable service group—without checked-in port arithmetic or slot numbers.
 
 ## Commands
 
@@ -92,7 +96,7 @@ Every app group defines Start and one of two Stop strategies:
 - `"stop": "process"` means Workgrove owns and terminates the foreground process group and its verified worktree-owned listeners.
 - A Stop command supports external runtimes such as Docker whose services may outlive the process that started them.
 
-Workgrove may manage a still-running Start process even when the group also has a Stop command. During Stop it removes routes, runs the Stop command, terminates any surviving managed starter, verifies listeners, and only then releases Backing endpoints. A failed Stop quarantines endpoints still reachable by a route or listener and remains retryable.
+Workgrove may manage a still-running Start process even when the group also has a Stop command. During Stop it removes routes, runs the Stop command, terminates any surviving managed starter, and verifies listeners. Stable Backing endpoint assignments remain attached to the instance for future Starts. A failed Stop quarantines endpoints still reachable by a route or listener and remains retryable.
 
 ## App-group environment
 
@@ -105,7 +109,7 @@ Within a group, templates may reference:
 - `{apps.<app>.directUrl}` for HTTP apps; and
 - `{apps.<app>.url}` for an HTTP app's Friendly URL.
 
-Cross-group templates may reference only an HTTP app's stable Friendly URL through `{appGroups.<group>.apps.<app>.url}`. Cross-group Backing ports and direct URLs are invalid because the referenced group may not be running or allocated.
+Cross-group templates may reference the selected instance's host, port, direct URL, or Friendly URL through `{appGroups.<group>.apps.<app>.<field>}`. Before Start, Workgrove materializes stable endpoint assignments for every effective App-group instance in the worktree, so these values exist even when the referenced group is not running. A run captures the complete group-to-instance mapping used to render its Start environment; command-based Stop uses that same captured mapping.
 
 Workgrove does not infer a generic `PORT`, `PORTLESS_URL`, or framework flag. A repository consumes dynamic values explicitly through environment or argv templates. Changing the resolved environment requires Restart.
 
@@ -140,9 +144,10 @@ The local state may persist only:
 
 - repositories explicitly opened or initialized by the user;
 - repository-wide trust fingerprints explicitly approved by the user;
-- generated repository, worktree, app-group, and app identities;
+- generated repository, worktree, App-group instance, and app identities;
+- per-worktree selections of named reusable App-group instances;
 - stable route-label and Friendly URL assignments;
-- Backing endpoint leases and quarantines created by Start or Stop;
+- stable Backing endpoint assignments and quarantines created by lifecycle operations;
 - process PID and start marker records created when Workgrove launches a process; and
 - expected Portless hostname-to-port routes created during lifecycle operations.
 

@@ -10,6 +10,7 @@ describe("Workgrove App group environment", () => {
       setup: { argv: ["true"] },
       appGroups: {
         web: {
+          instances: { mode: "per-worktree" },
           apps: { site: { protocol: "http", readiness: "tcp" } },
           env: {
             APP_HOST: "{apps.site.host}",
@@ -46,17 +47,19 @@ describe("Workgrove App group environment", () => {
     });
   });
 
-  it("renders another group's stable HTTP URL without its active backing port", () => {
+  it("renders another selected instance's stable HTTP endpoint", () => {
     const config: WorkgroveConfig = {
       version: 1,
       setup: { argv: ["true"] },
       appGroups: {
         api: {
+          instances: { mode: "per-worktree" },
           apps: { service: { protocol: "http", readiness: "tcp" } },
           start: { argv: ["bun", "run", "api"] },
           stop: "process",
         },
         web: {
+          instances: { mode: "per-worktree" },
           apps: { site: { protocol: "http", readiness: "tcp" } },
           env: {
             API_URL: "{appGroups.api.apps.service.url}",
@@ -73,7 +76,12 @@ describe("Workgrove App group environment", () => {
         api: {
           id: "api",
           apps: {
-            service: { url: "http://service.main.repo.localhost:1355" },
+            service: {
+              directUrl: "http://127.0.0.1:49153",
+              host: "127.0.0.1",
+              port: 49_153,
+              url: "http://service.main.repo.localhost:1355",
+            },
           },
         },
         web: {

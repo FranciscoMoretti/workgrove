@@ -21,6 +21,16 @@ export interface AppGroupSnapshot {
   apps: AppEndpointSnapshot[];
   health: AppHealth;
   id: string;
+  instance: {
+    id: string;
+    mode: "per-worktree" | "selectable";
+    name: string;
+  };
+  instances: Array<{
+    id: string;
+    name: string;
+    running: boolean;
+  }>;
   name: string;
   processRunning: boolean;
   stop: "command" | "process";
@@ -70,7 +80,11 @@ export function appGroupCanRestart(
 export function worktreeHasRunningAppGroups(
   worktree: Pick<WorktreeSnapshot, "appGroups">
 ): boolean {
-  return worktree.appGroups.some(appGroupIsRunning);
+  return worktree.appGroups.some(
+    (group) =>
+      appGroupIsRunning(group) ||
+      group.instances.some((instance) => instance.running)
+  );
 }
 
 export function appsAreRunning(

@@ -14,6 +14,7 @@ const validConfig = {
   setup: { argv: ["bun", "install"] },
   appGroups: {
     development: {
+      instances: { mode: "per-worktree" },
       name: "Development",
       start: { argv: ["bun", "run", "dev"] },
       stop: "process",
@@ -35,6 +36,7 @@ const validConfig = {
       },
     },
     services: {
+      instances: { mode: "selectable" },
       start: { argv: ["docker", "compose", "up", "-d"] },
       stop: { argv: ["docker", "compose", "down"] },
       env: { DATABASE_PORT: "{apps.database.port}" },
@@ -97,7 +99,7 @@ describe("shared Workgrove schema", () => {
     ).toBe(false);
   });
 
-  it("rejects invalid and cross-group dynamic environment references", () => {
+  it("rejects invalid references and accepts cross-group instance references", () => {
     const unknown = structuredClone(validConfig);
     unknown.appGroups.development.env.WEB_PORT = "{apps.missing.port}";
     expect(WorkgroveConfigSchema.safeParse(unknown).success).toBe(false);
@@ -105,7 +107,7 @@ describe("shared Workgrove schema", () => {
     const crossGroup = structuredClone(validConfig);
     crossGroup.appGroups.development.env.WEB_PORT =
       "{appGroups.services.apps.database.port}";
-    expect(WorkgroveConfigSchema.safeParse(crossGroup).success).toBe(false);
+    expect(WorkgroveConfigSchema.safeParse(crossGroup).success).toBe(true);
   });
 
   it("keeps TCP Apps off HTTP readiness", () => {

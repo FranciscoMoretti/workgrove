@@ -21,7 +21,11 @@ import type {
 } from "../runtime/local-routing";
 import { FileWorkgroveStateStore } from "../runtime/local-state";
 import { WorkspaceController } from "./workspace-controller";
-import { appGroupCanRestart, appsCanRestart } from "./workspace-snapshot";
+import {
+  appGroupCanRestart,
+  appsCanRestart,
+  worktreeHasRunningAppGroups,
+} from "./workspace-snapshot";
 import { commandWorkingDirectory } from "./worktree-command";
 
 class FakeRoutingEngine implements LocalRoutingEngine {
@@ -149,6 +153,32 @@ describe("app lifecycle availability", () => {
       appGroupCanRestart({
         health: "partially-running",
         processRunning: false,
+      })
+    ).toBe(true);
+  });
+
+  it("includes running selectable instances that are not selected", () => {
+    expect(
+      worktreeHasRunningAppGroups({
+        appGroups: [
+          {
+            apps: [],
+            health: "not-running",
+            id: "services",
+            instance: {
+              id: "selected",
+              mode: "selectable",
+              name: "Default",
+            },
+            instances: [
+              { id: "selected", name: "Default", running: false },
+              { id: "experiment", name: "Experiment", running: true },
+            ],
+            name: "Services",
+            processRunning: false,
+            stop: "command",
+          },
+        ],
       })
     ).toBe(true);
   });

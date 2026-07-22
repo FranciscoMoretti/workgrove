@@ -8,6 +8,8 @@ function group(health: AppGroupSnapshot["health"]): AppGroupSnapshot {
     apps: [],
     health,
     id: "product",
+    instance: { id: "product-main", mode: "per-worktree", name: "main" },
+    instances: [{ id: "product-main", name: "main", running: false }],
     name: "Product Apps",
     processRunning: false,
     stop: "process",
@@ -18,6 +20,7 @@ function itemIds(target: AppGroupSnapshot): string[] {
   return appGroupCommandMenuItems({
     group: target,
     onRestart: () => undefined,
+    onRetry: () => undefined,
     onToggle: () => undefined,
     pending: false,
   }).map((item) => item.id);
@@ -32,7 +35,32 @@ describe("app group actions menu", () => {
     expect(itemIds(group("running"))).toEqual(["stop", "restart"]);
   });
 
-  it("offers stop and restart while a group is partially running", () => {
-    expect(itemIds(group("partially-running"))).toEqual(["stop", "restart"]);
+  it("offers retry while a group is partially running", () => {
+    expect(itemIds(group("partially-running"))).toEqual([
+      "stop",
+      "retry",
+      "restart",
+    ]);
+  });
+
+  it("offers retry when a running group has an unavailable route", () => {
+    const unavailable = group("running");
+    unavailable.apps = [
+      {
+        directUrl: "http://127.0.0.1:3000",
+        id: "web",
+        label: "Web",
+        listening: true,
+        open: false,
+        ownership: "owned",
+        port: 3000,
+        protocol: "http",
+        readiness: "ready",
+        routeState: "unavailable",
+        url: null,
+      },
+    ];
+
+    expect(itemIds(unavailable)).toEqual(["stop", "retry", "restart"]);
   });
 });
