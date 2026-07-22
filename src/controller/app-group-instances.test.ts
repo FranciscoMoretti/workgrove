@@ -200,6 +200,80 @@ describe("App-group instance assignment", () => {
     }
   });
 
+  it("serializes concurrent Starts of a shared instance across worktrees", async () => {
+    const temporary = mkdtempSync(join(tmpdir(), "workgrove-shared-start-"));
+    const repository = join(temporary, "project");
+    const featureWorktree = join(temporary, "project-feature");
+    mkdirSync(repository);
+    let controller: WorkspaceController | null = null;
+    let mainId = "";
+    let featureId = "";
+    try {
+      git(repository, "init", "-q");
+      git(repository, "config", "user.email", "workgrove@example.test");
+      git(repository, "config", "user.name", "Workgrove Test");
+      writeFileSync(
+        join(repository, ".workgrove.json"),
+        JSON.stringify({
+          version: 1,
+          setup: { argv: ["true"] },
+          appGroups: {
+            Services: {
+              instances: { mode: "selectable" },
+              start: {
+                argv: [
+                  "bun",
+                  "-e",
+                  "require('node:net').createServer().listen(Number(process.env.SERVICE_PORT),'127.0.0.1')",
+                ],
+              },
+              stop: "process",
+              env: { SERVICE_PORT: "{apps.Service.port}" },
+              apps: { Service: { protocol: "tcp" } },
+            },
+          },
+        })
+      );
+      git(repository, "add", ".workgrove.json");
+      git(repository, "commit", "-qm", "test config");
+      git(repository, "worktree", "add", "-qb", "feature", featureWorktree);
+
+      controller = new TrustedWorkspaceController(undefined, {
+        routing: new InMemoryRoutingEngine(),
+        processes: new ProcessSupervisor(join(temporary, "control")),
+        state: new FileWorkgroveStateStore(join(temporary, "state.json")),
+      });
+      const initial = controller.inspect(repository);
+      mainId = initial.worktrees.find((worktree) => worktree.isMain)?.id ?? "";
+      featureId =
+        initial.worktrees.find((worktree) => !worktree.isMain)?.id ?? "";
+      const instanceIds = initial.worktrees.map(
+        (worktree) => worktree.appGroups[0]?.instance.id
+      );
+      expect(new Set(instanceIds).size).toBe(1);
+
+      const results = await Promise.all([
+        controller.startAppGroup(repository, mainId, "Services"),
+        controller.startAppGroup(repository, featureId, "Services"),
+      ]);
+      expect(results.toSorted()).toEqual(["already-running", "started"]);
+      const running = controller.inspect(repository);
+      expect(running.globalRunningCount).toBe(1);
+      expect(
+        running.worktrees.every(
+          (worktree) => worktree.appGroups[0]?.health === "running"
+        )
+      ).toBe(true);
+    } finally {
+      if (controller && mainId) {
+        await controller
+          .stopAppGroup(repository, mainId, "Services")
+          .catch(() => undefined);
+      }
+      rmSync(temporary, { force: true, recursive: true });
+    }
+  }, 10_000);
+
   it("materializes cross-group ports before Start and keeps them stable across Restart", async () => {
     const temporary = mkdtempSync(join(tmpdir(), "workgrove-runtime-"));
     const repository = join(temporary, "project");

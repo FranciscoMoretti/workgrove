@@ -126,6 +126,8 @@ interface LegacyWorkgroveLocalState {
   version: 1;
 }
 
+const DEFAULT_INSTANCE_NAME = "Default";
+
 function emptyState(): WorkgroveLocalState {
   return { repositories: {}, version: 2 };
 }
@@ -152,6 +154,10 @@ function uniqueLabel(base: string, used: Set<string>, id: string): string {
 
 function endpointKey(groupId: string, appId: string): string {
   return `${groupId}\0${appId}`;
+}
+
+function namesEqual(left: string, right: string): boolean {
+  return left.localeCompare(right, undefined, { sensitivity: "base" }) === 0;
 }
 
 function cloneInstance(instance: AppGroupInstance): AppGroupInstance {
@@ -239,7 +245,10 @@ export class FileWorkgroveStateStore {
     }
     const instance = this.createInstanceRecord(repository, worktree, request, {
       isDefault: request.mode === "selectable",
-      name: request.mode === "per-worktree" ? request.worktreeLabel : "Default",
+      name:
+        request.mode === "per-worktree"
+          ? request.worktreeLabel
+          : DEFAULT_INSTANCE_NAME,
       worktreePath:
         request.mode === "per-worktree" ? request.worktreePath : null,
     });
@@ -285,6 +294,9 @@ export class FileWorkgroveStateStore {
     if (!normalizedName) {
       throw new Error("Instance name is required");
     }
+    if (namesEqual(normalizedName, DEFAULT_INSTANCE_NAME)) {
+      throw new Error(`Instance name "${DEFAULT_INSTANCE_NAME}" is reserved`);
+    }
     const state = this.read();
     const repository = this.repository(state, request);
     const worktree = this.worktree(repository, request);
@@ -292,9 +304,7 @@ export class FileWorkgroveStateStore {
       (instance) =>
         instance.groupId === request.groupId &&
         instance.mode === "selectable" &&
-        instance.name.localeCompare(normalizedName, undefined, {
-          sensitivity: "base",
-        }) === 0
+        namesEqual(instance.name, normalizedName)
     );
     if (duplicate) {
       throw new Error(`An instance named "${normalizedName}" already exists`);

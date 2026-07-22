@@ -170,15 +170,22 @@ export class AppGroupRuntime {
   }
 
   start(target: AppGroupTarget): Promise<"already-running" | "started"> {
-    return this.serializeLifecycle(target, () => this.startUnlocked(target));
+    const effectiveInstances = this.worktreeInstances(target);
+    return this.serializeLifecycle(
+      Object.values(effectiveInstances).map((instance) =>
+        this.lifecycleKey(target.repoPath, instance.id)
+      ),
+      () => this.startUnlocked(target, effectiveInstances)
+    );
   }
 
   private async startUnlocked(
-    target: AppGroupTarget
+    target: AppGroupTarget,
+    effectiveInstances: Record<string, AppGroupInstance>
   ): Promise<"already-running" | "started"> {
     const group = this.group(target);
     await this.routing.prepare?.();
-    const effectiveInstances = await this.materializeWorktreeInstances(target);
+    await this.materializeWorktreeInstances(target, effectiveInstances);
     const instance = effectiveInstances[target.groupId];
     if (!instance) {
       throw new Error(`Unknown App group "${target.groupId}"`);
@@ -228,15 +235,19 @@ export class AppGroupRuntime {
   }
 
   stop(target: AppGroupTarget): Promise<"already-stopped" | "stopped"> {
-    return this.serializeLifecycle(target, () => this.stopUnlocked(target));
+    const instance = this.state.instance(this.instanceRequest(target));
+    return this.serializeLifecycle(
+      [this.lifecycleKey(target.repoPath, instance.id)],
+      () => this.stopUnlocked(target, instance)
+    );
   }
 
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: route, command, process, and quarantine failures must be accumulated in lifecycle order.
   private async stopUnlocked(
-    target: AppGroupTarget
+    target: AppGroupTarget,
+    instance: AppGroupInstance
   ): Promise<"already-stopped" | "stopped"> {
     const group = this.group(target);
-    const instance = this.state.instance(this.instanceRequest(target));
     const key = this.runKey(target.repoPath, instance.id);
     const run = this.state.run(key);
     const processPath = run?.worktreePath ?? target.worktree.path;
@@ -367,28 +378,58 @@ export class AppGroupRuntime {
   }
 
   private async serializeLifecycle<T>(
-    target: AppGroupTarget,
+    keys: readonly string[],
     operation: () => Promise<T>
   ): Promise<T> {
-    const key = [target.repoPath, target.worktree.path, target.groupId].join(
-      "\0"
-    );
-    const predecessor = this.lifecycleOperations.get(key) ?? Promise.resolve();
+    const operationKeys = [...new Set(keys)].toSorted();
+    const predecessor = Promise.all(
+      operationKeys.map((key) =>
+        (this.lifecycleOperations.get(key) ?? Promise.resolve()).catch(
+          () => undefined
+        )
+      )
+    ).then(() => undefined);
     let release: () => void = () => undefined;
     const completion = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const tail = predecessor.catch(() => undefined).then(() => completion);
-    this.lifecycleOperations.set(key, tail);
-    await predecessor.catch(() => undefined);
+    const tail = predecessor.then(() => completion);
+    for (const key of operationKeys) {
+      this.lifecycleOperations.set(key, tail);
+    }
+    await predecessor;
     try {
       return await operation();
     } finally {
       release();
-      if (this.lifecycleOperations.get(key) === tail) {
-        this.lifecycleOperations.delete(key);
+      for (const key of operationKeys) {
+        if (this.lifecycleOperations.get(key) === tail) {
+          this.lifecycleOperations.delete(key);
+        }
       }
     }
+  }
+
+  private lifecycleKey(repoPath: string, instanceId: string): string {
+    return [repoPath, instanceId].join("\0");
+  }
+
+  private worktreeInstances(
+    target: AppGroupTarget
+  ): Record<string, AppGroupInstance> {
+    return Object.fromEntries(
+      Object.entries(target.config.appGroups).map(([groupId, group]) => [
+        groupId,
+        this.state.instance({
+          groupId,
+          mode: group.instances.mode,
+          repoLabel: basename(target.repoPath),
+          repoPath: target.repoPath,
+          worktreeLabel: target.worktree.routeLabel,
+          worktreePath: target.worktree.path,
+        }),
+      ])
+    );
   }
 
   private runKey(repoPath: string, instanceId: string): RunKey {
@@ -758,22 +799,17 @@ export class AppGroupRuntime {
   }
 
   private async materializeWorktreeInstances(
-    target: AppGroupTarget
-  ): Promise<Record<string, AppGroupInstance>> {
+    target: AppGroupTarget,
+    instances: Readonly<Record<string, AppGroupInstance>>
+  ): Promise<void> {
     const leased = this.state.leasedPorts();
     const reservations: BackingPortLease[] = [];
-    const instances: Record<string, AppGroupInstance> = {};
     try {
       for (const [groupId, group] of Object.entries(target.config.appGroups)) {
-        const instance = this.state.instance({
-          groupId,
-          mode: group.instances.mode,
-          repoLabel: basename(target.repoPath),
-          repoPath: target.repoPath,
-          worktreeLabel: target.worktree.routeLabel,
-          worktreePath: target.worktree.path,
-        });
-        instances[groupId] = instance;
+        const instance = instances[groupId];
+        if (!instance) {
+          throw new Error(`Unknown App group "${groupId}"`);
+        }
         const key = this.runKey(target.repoPath, instance.id);
         for (const [appId, app] of Object.entries(group.apps)) {
           const assignment = this.endpointAssignment({
@@ -797,7 +833,6 @@ export class AppGroupRuntime {
         reservations.map((reservation) => reservation.release())
       );
     }
-    return instances;
   }
 
   private runEndpoint(

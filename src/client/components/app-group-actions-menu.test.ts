@@ -42,4 +42,25 @@ describe("app group actions menu", () => {
       "restart",
     ]);
   });
+
+  it("offers retry when a running group has an unavailable route", () => {
+    const unavailable = group("running");
+    unavailable.apps = [
+      {
+        directUrl: "http://127.0.0.1:3000",
+        id: "web",
+        label: "Web",
+        listening: true,
+        open: false,
+        ownership: "owned",
+        port: 3000,
+        protocol: "http",
+        readiness: "ready",
+        routeState: "unavailable",
+        url: null,
+      },
+    ];
+
+    expect(itemIds(unavailable)).toEqual(["stop", "retry", "restart"]);
+  });
 });

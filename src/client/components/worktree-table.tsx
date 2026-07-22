@@ -119,7 +119,7 @@ export function WorktreeTable({
   commandActions: WorktreeCommandActions;
   onDelete: (worktree: WorktreeSnapshot) => void;
   onInspect: (worktreeId: string) => void;
-  onCreateAppGroupInstance?: (
+  onCreateAppGroupInstance: (
     worktree: WorktreeSnapshot,
     group: AppGroupSnapshot,
     name: string
@@ -128,11 +128,11 @@ export function WorktreeTable({
     worktree: WorktreeSnapshot,
     group: AppGroupSnapshot
   ) => void;
-  onRetryAppGroup?: (
+  onRetryAppGroup: (
     worktree: WorktreeSnapshot,
     group: AppGroupSnapshot
   ) => void;
-  onSelectAppGroupInstance?: (
+  onSelectAppGroupInstance: (
     worktree: WorktreeSnapshot,
     group: AppGroupSnapshot,
     instanceId: string
@@ -239,14 +239,10 @@ export function WorktreeTable({
                               disabled={blocked}
                               group={group}
                               onCreate={(name) =>
-                                onCreateAppGroupInstance?.(
-                                  worktree,
-                                  group,
-                                  name
-                                ) ?? Promise.resolve()
+                                onCreateAppGroupInstance(worktree, group, name)
                               }
                               onSelect={(instanceId) =>
-                                onSelectAppGroupInstance?.(
+                                onSelectAppGroupInstance(
                                   worktree,
                                   group,
                                   instanceId
@@ -304,7 +300,7 @@ export function WorktreeTable({
                               onRestart={() =>
                                 onRestartAppGroup(worktree, group)
                               }
-                              onRetry={() => onRetryAppGroup?.(worktree, group)}
+                              onRetry={() => onRetryAppGroup(worktree, group)}
                               onToggle={() => onToggleAppGroup(worktree, group)}
                               pending={blocked}
                               worktree={worktree}

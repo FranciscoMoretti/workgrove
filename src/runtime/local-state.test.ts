@@ -90,6 +90,24 @@ describe("Workgrove local App-group instance state", () => {
     }
   });
 
+  it("reserves the automatic selectable instance name", () => {
+    const directory = mkdtempSync(join(tmpdir(), "workgrove-state-"));
+    try {
+      const store = new FileWorkgroveStateStore(join(directory, "state.json"));
+      const selectable = request({
+        groupId: "services",
+        mode: "selectable",
+      });
+
+      expect(() =>
+        store.createSelectableInstance(selectable, "default")
+      ).toThrow('Instance name "Default" is reserved');
+      expect(store.instance(selectable).name).toBe("Default");
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
+  });
+
   it("persists an automatically assigned port on the instance endpoint", () => {
     const directory = mkdtempSync(join(tmpdir(), "workgrove-state-"));
     try {

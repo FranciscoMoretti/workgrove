@@ -32,7 +32,7 @@ export function appGroupCommandMenuItems({
 }: {
   group: AppGroupSnapshot;
   onRestart: () => void;
-  onRetry?: () => void;
+  onRetry: () => void;
   onToggle: () => void;
   pending: boolean;
 }): CommandMenuItem[] {
@@ -56,7 +56,7 @@ export function appGroupCommandMenuItems({
             icon: RefreshCwIcon,
             id: "retry",
             label: `Retry ${group.name} readiness and routes`,
-            onSelect: onRetry ?? (() => undefined),
+            onSelect: onRetry,
           },
         ]
       : []),

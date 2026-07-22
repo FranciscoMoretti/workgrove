@@ -65,7 +65,10 @@ import {
   type WorkgroveCommandResult,
 } from "./command-contract";
 import { initializeRepository as initializeRepositoryConfig } from "./repository-initializer";
-import type { WorkspaceSnapshot } from "./workspace-snapshot";
+import {
+  type WorkspaceSnapshot,
+  worktreeHasRunningAppGroups,
+} from "./workspace-snapshot";
 import { commandWorkingDirectory } from "./worktree-command";
 
 type CommandHandler = (
@@ -438,9 +441,7 @@ export class WorkspaceController {
     const hasRunningProcesses = workspace.worktrees.some(
       (worktree) =>
         worktree.setupState === "running" ||
-        worktree.appGroups.some(
-          (group) => group.processRunning || group.health !== "not-running"
-        )
+        worktreeHasRunningAppGroups(worktree)
     );
     if (topologyChanged && hasRunningProcesses) {
       throw new Error(
