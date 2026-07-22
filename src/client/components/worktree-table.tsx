@@ -8,9 +8,9 @@ import type {
 } from "../../controller/workspace-snapshot";
 import { appGroupIsRunning } from "../../controller/workspace-snapshot";
 import type { WorktreeCommandActions } from "../worktree-command-menu";
+import { AppEndpointLink } from "./app-endpoint-link";
 import { AppGroupActionsMenu } from "./app-group-actions-menu";
 import { AppGroupInstanceControl } from "./app-group-instance-control";
-import { AppPort } from "./app-port";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
@@ -88,11 +88,6 @@ function CodexTaskSummary({
       ) : null}
     </div>
   );
-}
-
-function friendlyUrlLabel(url: string): string {
-  const parsed = new URL(url);
-  return `${parsed.hostname}${parsed.port ? `:${parsed.port}` : ""}`;
 }
 
 export function WorktreeTable({
@@ -278,19 +273,7 @@ export function WorktreeTable({
                                       : "size-1.5 rounded-full bg-muted-foreground/60"
                                   }
                                 />
-                                {app.label}{" "}
-                                {app.open && app.listening ? (
-                                  <a
-                                    className="underline"
-                                    href={app.url ?? undefined}
-                                    rel="noreferrer"
-                                    target="_blank"
-                                  >
-                                    {friendlyUrlLabel(app.url ?? "")}
-                                  </a>
-                                ) : (
-                                  <AppPort port={app.port} />
-                                )}
+                                {app.label} <AppEndpointLink app={app} />
                               </span>
                             ))}
                           </div>

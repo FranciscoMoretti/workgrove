@@ -12,11 +12,8 @@ import type {
   CommandReceipt,
   WorkspaceSnapshot,
 } from "../controller/workspace-snapshot";
-import {
-  LogsResponseSchema,
-  SessionResponseSchema,
-  WorkspaceSnapshotSchema,
-} from "../server/schemas";
+import { WorkspaceSnapshotSchema } from "../controller/workspace-snapshot";
+import { LogsResponseSchema, SessionResponseSchema } from "../server/schemas";
 
 let sessionToken: Promise<string> | null = null;
 
@@ -67,7 +64,7 @@ export async function fetchWorkspace(
   const query = new URLSearchParams({ repoPath });
   return WorkspaceSnapshotSchema.parse(
     await responseJson(await fetch(`/api/workspace?${query}`))
-  ) as WorkspaceSnapshot;
+  );
 }
 
 export async function fetchCodexIntegration(
@@ -95,11 +92,7 @@ export function runCommand(
   command: string,
   input: Record<string, unknown>
 ): Promise<CommandReceipt> {
-  return postCommand(
-    command,
-    input,
-    CommandReceiptSchema
-  ) as Promise<CommandReceipt>;
+  return postCommand(command, input, CommandReceiptSchema);
 }
 
 async function postCommand<T>(

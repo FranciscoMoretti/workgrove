@@ -442,8 +442,46 @@ describe("App-group instance assignment", () => {
 
       await expect(
         controller.startAppGroup(repository, id, "Apps")
-      ).rejects.toThrow("Portless unavailable");
+      ).rejects.toMatchObject({
+        code: "routing-unavailable",
+        message: "Portless unavailable",
+      });
       expect(existsSync(join(repository, "started.txt"))).toBe(false);
+    } finally {
+      rmSync(temporary, { force: true, recursive: true });
+    }
+  });
+
+  it("reports a stable code when the Start command cannot launch", async () => {
+    const temporary = mkdtempSync(join(tmpdir(), "workgrove-start-failure-"));
+    const repository = join(temporary, "project");
+    mkdirSync(repository);
+    try {
+      git(repository, "init", "-q");
+      writeFileSync(
+        join(repository, ".workgrove.json"),
+        JSON.stringify({
+          version: 1,
+          setup: { argv: ["true"] },
+          appGroups: {
+            Apps: {
+              start: { argv: [`missing-workgrove-command-${process.pid}`] },
+              stop: "process",
+              apps: { Api: { protocol: "tcp" } },
+            },
+          },
+        })
+      );
+      const controller = new TrustedWorkspaceController(undefined, {
+        routing: new InMemoryRoutingEngine(),
+        processes: new ProcessSupervisor(join(temporary, "control")),
+        state: new FileWorkgroveStateStore(join(temporary, "state.json")),
+      });
+      const id = controller.inspect(repository).worktrees[0]?.id ?? "";
+
+      await expect(
+        controller.startAppGroup(repository, id, "Apps")
+      ).rejects.toMatchObject({ code: "start-failed" });
     } finally {
       rmSync(temporary, { force: true, recursive: true });
     }
@@ -595,7 +633,7 @@ describe("App-group instance assignment", () => {
     }
   }, 10_000);
 
-  it("keeps an all-unready command runtime stoppable and retryable", async () => {
+  it("keeps an all-unready command App group stoppable and retryable", async () => {
     const temporary = mkdtempSync(join(tmpdir(), "workgrove-unready-command-"));
     const repository = join(temporary, "project");
     mkdirSync(repository);
@@ -652,8 +690,8 @@ describe("App-group instance assignment", () => {
 
       writeFileSync(join(repository, "service-ready"), "yes");
       expect(
-        await controller.startAppGroup(repository, worktreeId, "Services")
-      ).toBe("started");
+        await controller.retryAppGroup(repository, worktreeId, "Services")
+      ).toBe("retried");
       expect(
         controller.inspect(repository).worktrees[0]?.appGroups[0]?.health
       ).toBe("running");
@@ -668,7 +706,7 @@ describe("App-group instance assignment", () => {
     }
   }, 10_000);
 
-  it("does not project an unrelated listener as a running command instance", async () => {
+  it("requires a durable ownership claim for a command listener", async () => {
     const temporary = mkdtempSync(join(tmpdir(), "workgrove-ownership-"));
     const repository = join(temporary, "project");
     mkdirSync(repository);
@@ -715,7 +753,6 @@ describe("App-group instance assignment", () => {
           Database: {
             appId: "Database",
             host: "127.0.0.1",
-            observedPids: [2_147_483_647],
             port: address.port,
             protocol: "tcp",
           },
@@ -734,6 +771,24 @@ describe("App-group instance assignment", () => {
       expect(inspected?.apps[0]?.readiness).toBe("unready");
       expect(inspected?.health).toBe("not-running");
       expect(inspected?.instances[0]?.running).toBe(false);
+
+      const claimedRun = state.run(key);
+      expect(claimedRun).not.toBeNull();
+      if (!claimedRun) {
+        throw new Error("Expected a persisted App-group run");
+      }
+      const database = claimedRun.apps.Database;
+      if (!database) {
+        throw new Error("Expected a persisted Database endpoint");
+      }
+      database.listenerClaimed = true;
+      state.saveRun(key, claimedRun);
+
+      const replacedListener =
+        controller.inspect(repository).worktrees[0]?.appGroups[0];
+      expect(replacedListener?.apps[0]?.listening).toBe(true);
+      expect(replacedListener?.apps[0]?.ownership).toBe("owned");
+      expect(replacedListener?.health).toBe("running");
     } finally {
       await close(listener).catch(() => undefined);
       rmSync(temporary, { force: true, recursive: true });

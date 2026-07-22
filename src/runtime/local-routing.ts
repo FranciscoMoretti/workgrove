@@ -3,6 +3,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { z } from "zod";
+import { processIsLive } from "../host/process-inspection";
 
 export interface LocalRoute {
   hostname: string;
@@ -23,11 +25,18 @@ export interface LocalRoutingEngine {
   url(hostname: string): string;
 }
 
-interface PortlessRoute {
-  hostname: string;
-  pid: number;
-  port: number;
-}
+const PortlessRouteSchema = z.strictObject({
+  hostname: z.string().min(1),
+  ngrokPid: z.number().int().positive().optional(),
+  ngrokUrl: z.string().min(1).optional(),
+  pid: z.number().int().nonnegative(),
+  port: z.number().int().min(1).max(65_535),
+  tailscaleFunnel: z.boolean().optional(),
+  tailscaleHttpsPort: z.number().int().min(1).max(65_535).optional(),
+  tailscaleUrl: z.string().min(1).optional(),
+});
+const PortlessRoutesSchema = z.array(PortlessRouteSchema);
+type PortlessRoute = z.infer<typeof PortlessRouteSchema>;
 
 const require = createRequire(import.meta.url);
 const DEFAULT_PROXY_PORT = 1355;
@@ -43,15 +52,6 @@ function packageFile(packageName: string, ...parts: string[]): string {
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-function processIsLive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 export class PortlessRoutingEngine implements LocalRoutingEngine {
@@ -186,7 +186,9 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
       return null;
     }
     try {
-      const routes = JSON.parse(readFileSync(path, "utf8")) as PortlessRoute[];
+      const routes = PortlessRoutesSchema.parse(
+        JSON.parse(readFileSync(path, "utf8"))
+      );
       return routes.find((route) => route.hostname === hostname) ?? null;
     } catch {
       throw new Error("Portless route state is invalid");

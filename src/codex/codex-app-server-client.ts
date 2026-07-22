@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { z } from "zod";
 
 import packageMetadata from "../../package.json";
 import { CodexIntegrationUnavailableError } from "./codex-integration";
@@ -15,11 +16,12 @@ interface PendingRequest {
   timer: ReturnType<typeof setTimeout>;
 }
 
-interface RpcResponse {
-  error?: unknown;
-  id?: number;
-  result?: unknown;
-}
+const RpcResponseSchema = z.object({
+  error: z.unknown().optional(),
+  id: z.number().int().optional(),
+  result: z.unknown().optional(),
+});
+type RpcResponse = z.infer<typeof RpcResponseSchema>;
 
 export class CodexAppServerClient {
   private child: ChildProcess | null = null;
@@ -202,7 +204,7 @@ export class CodexAppServerClient {
   private receive(line: string): void {
     let message: RpcResponse;
     try {
-      message = JSON.parse(line) as RpcResponse;
+      message = RpcResponseSchema.parse(JSON.parse(line));
     } catch {
       this.fail("Codex returned an incompatible response");
       return;

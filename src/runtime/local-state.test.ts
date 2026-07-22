@@ -22,6 +22,34 @@ function request(
 }
 
 describe("Workgrove local App-group instance state", () => {
+  it("rejects structurally invalid persisted state", () => {
+    const directory = mkdtempSync(join(tmpdir(), "workgrove-state-"));
+    try {
+      const statePath = join(directory, "state.json");
+      writeFileSync(
+        statePath,
+        JSON.stringify({
+          repositories: {
+            [request().repoPath]: {
+              id: "repository",
+              instances: "not-an-instance-record",
+              path: request().repoPath,
+              routeLabel: "chat-js",
+              worktrees: {},
+            },
+          },
+          version: 2,
+        })
+      );
+
+      expect(() =>
+        new FileWorkgroveStateStore(statePath).instance(request())
+      ).toThrow("Invalid Workgrove local state");
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
+  });
+
   it("creates one stable instance and Friendly hostname per worktree", () => {
     const directory = mkdtempSync(join(tmpdir(), "workgrove-state-"));
     try {

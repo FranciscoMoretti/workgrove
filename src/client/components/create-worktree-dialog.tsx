@@ -28,13 +28,11 @@ type CreateWorktreeInput = Record<string, unknown> & { repoPath: string };
 export function CreateWorktreeDialog({
   mutation,
   onClose,
-  repoName,
   repoPath,
   requestRepositoryTrust,
 }: {
   mutation: UseMutationResult<CommandReceipt, Error, CreateWorktreeInput>;
   onClose: () => void;
-  repoName: string;
   repoPath: string;
   requestRepositoryTrust: RequestRepositoryTrust;
 }) {
@@ -61,11 +59,15 @@ export function CreateWorktreeDialog({
       setError("Branch is required.");
       return;
     }
+    if (!folderName.trim()) {
+      setError("Folder name is required.");
+      return;
+    }
     requestRepositoryTrust("Create this worktree and run setup", () =>
       create({
         branch: branch.trim(),
         createBranch,
-        folderName: folderName.trim() || undefined,
+        folderName: folderName.trim(),
         repoPath,
       })
     );
@@ -111,10 +113,12 @@ export function CreateWorktreeDialog({
                 disabled={mutation.isPending}
                 id="new-worktree-folder"
                 onChange={(event) => setFolderName(event.target.value)}
-                placeholder={`${repoName}-${branch.replaceAll("/", "-") || "branch"}`}
+                placeholder="my-worktree"
                 value={folderName}
               />
-              <FieldDescription>Optional</FieldDescription>
+              <FieldDescription>
+                Choose the sibling folder where Git will create the worktree.
+              </FieldDescription>
             </Field>
             {error ? <FieldError>{error}</FieldError> : null}
           </FieldGroup>
@@ -128,7 +132,9 @@ export function CreateWorktreeDialog({
               Cancel
             </Button>
             <Button
-              disabled={mutation.isPending || !branch.trim()}
+              disabled={
+                mutation.isPending || !branch.trim() || !folderName.trim()
+              }
               type="submit"
             >
               {mutation.isPending ? "Creating…" : "Create worktree"}

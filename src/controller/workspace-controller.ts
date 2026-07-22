@@ -22,6 +22,7 @@ import { pickRepository } from "../commands/pick-repository";
 import { previewRepositoryConfig } from "../commands/preview-repository-config";
 import { restartApps } from "../commands/restart-apps";
 import { restartRunningApps } from "../commands/restart-running-apps";
+import { retryApps } from "../commands/retry-apps";
 import { selectAppGroupInstance } from "../commands/select-app-group-instance";
 import { setupAllApps } from "../commands/setup-all-apps";
 import { startAllApps } from "../commands/start-all-apps";
@@ -86,6 +87,7 @@ const COMMAND_HANDLERS: Record<WorkgroveCommandName, CommandHandler> = {
   "preview-repository-config": previewRepositoryConfig,
   "restart-apps": restartApps,
   "restart-running-apps": restartRunningApps,
+  "retry-apps": retryApps,
   "select-app-group-instance": selectAppGroupInstance,
   "setup-all-apps": setupAllApps,
   "start-all-apps": startAllApps,
@@ -404,6 +406,17 @@ export class WorkspaceController {
   ): Promise<"already-running" | "started"> {
     this.assertTrusted(repoPath);
     return this.appGroups.start(
+      this.appGroupTarget(repoPath, worktreeIdValue, groupId)
+    );
+  }
+
+  retryAppGroup(
+    repoPath: string,
+    worktreeIdValue: string,
+    groupId: string
+  ): Promise<"already-running" | "retried"> {
+    this.assertTrusted(repoPath);
+    return this.appGroups.retry(
       this.appGroupTarget(repoPath, worktreeIdValue, groupId)
     );
   }

@@ -41,6 +41,7 @@ import {
   reserveBackingPort,
   waitForAppReadiness,
 } from "../runtime/readiness";
+import { AppGroupLifecycleError } from "./app-group-lifecycle-error";
 import type {
   AppEndpointSnapshot,
   AppGroupSnapshot,
@@ -57,6 +58,22 @@ export interface AppGroupTarget {
     path: string;
     routeLabel: string;
   };
+}
+
+interface LifecycleContext {
+  group: WorkgroveAppGroup;
+  key: RunKey;
+  processId: string;
+  processPath: string;
+  target: AppGroupTarget;
+}
+
+interface RunContext extends LifecycleContext {
+  run: AppGroupRun;
+}
+
+interface StopContext extends LifecycleContext {
+  run: AppGroupRun | null;
 }
 
 function displayName(id: string, value: { name?: string }): string {
@@ -76,20 +93,19 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-function samePids(left: readonly number[], right: readonly number[]): boolean {
-  return (
-    left.length === right.length &&
-    left.every((pid, index) => pid === right[index])
-  );
-}
-
-function endpointMatchesObservedPids(
+function commandEndpointIsClaimed(
   endpoint: RunEndpoint,
   ports: ReturnType<typeof inspectListeningPorts>
 ): boolean {
   const current = listeningPortPids(ports, endpoint.port);
-  return current.length > 0 && samePids(endpoint.observedPids ?? [], current);
+  return current.length > 0 && endpoint.listenerClaimed === true;
 }
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+const PORT_STOP_TIMEOUT_MS = 5000;
 
 export class AppGroupRuntime {
   private readonly lifecycleOperations = new Map<string, Promise<void>>();
@@ -184,8 +200,8 @@ export class AppGroupRuntime {
     effectiveInstances: Record<string, AppGroupInstance>
   ): Promise<"already-running" | "started"> {
     const group = this.group(target);
-    await this.routing.prepare?.();
-    await this.materializeWorktreeInstances(target, effectiveInstances);
+    await this.prepareRouting();
+    await this.materializeEffectiveInstances(target, effectiveInstances);
     const instance = effectiveInstances[target.groupId];
     if (!instance) {
       throw new Error(`Unknown App group "${target.groupId}"`);
@@ -205,33 +221,47 @@ export class AppGroupRuntime {
       this.state.saveRun(key, run);
     }
 
-    this.assertRunPortsAvailable(run, group, key, allocatedNow);
-    const readiness = await Promise.all(
-      Object.entries(group.apps).map(([appId, app]) =>
-        appIsReady(app, run.apps[appId] as RunEndpoint)
-      )
-    );
-    if (readiness.every(Boolean) && this.allRoutesAreActive(run)) {
+    const context = this.runContext(target, instance, run);
+    this.assertRunPortsAvailable(context, allocatedNow);
+    const readiness = await this.readinessForRun(context);
+    if (readiness.every(Boolean) && this.allRoutesAreActive(context.run)) {
       return "already-running";
     }
 
-    const processId = appGroupInstanceProcessId(instance.id);
-    this.launchRunProcess({
-      readiness,
-      group,
-      processId,
-      run,
-      target,
-    });
-    const readyAppIds = await this.waitForRunReadiness(
-      group,
-      run,
-      processId,
-      key
-    );
-    this.assertReadyEndpointsOwned(group, run, readyAppIds);
-    await this.publishReadyRun(key, run, readyAppIds);
+    this.launchRunProcess(context, readiness);
+    await this.waitForAndPublishRun(context);
     return "started";
+  }
+
+  retry(target: AppGroupTarget): Promise<"already-running" | "retried"> {
+    const instance = this.state.instance(this.instanceRequest(target));
+    return this.serializeLifecycle(
+      [this.lifecycleKey(target.repoPath, instance.id)],
+      () => this.retryUnlocked(target, instance)
+    );
+  }
+
+  private async retryUnlocked(
+    target: AppGroupTarget,
+    instance: AppGroupInstance
+  ): Promise<"already-running" | "retried"> {
+    await this.prepareRouting();
+    const key = this.runKey(target.repoPath, instance.id);
+    const run = this.state.run(key);
+    if (!run) {
+      throw new AppGroupLifecycleError(
+        "not-started",
+        `${displayName(target.groupId, this.group(target))} has not been started`
+      );
+    }
+    const context = this.runContext(target, instance, run);
+    this.assertRunPortsAvailable(context, false);
+    const readiness = await this.readinessForRun(context);
+    if (readiness.every(Boolean) && this.allRoutesAreActive(context.run)) {
+      return "already-running";
+    }
+    await this.waitForAndPublishRun(context);
+    return "retried";
   }
 
   stop(target: AppGroupTarget): Promise<"already-stopped" | "stopped"> {
@@ -242,22 +272,41 @@ export class AppGroupRuntime {
     );
   }
 
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: route, command, process, and quarantine failures must be accumulated in lifecycle order.
   private async stopUnlocked(
     target: AppGroupTarget,
     instance: AppGroupInstance
   ): Promise<"already-stopped" | "stopped"> {
-    const group = this.group(target);
     const key = this.runKey(target.repoPath, instance.id);
     const run = this.state.run(key);
-    const processPath = run?.worktreePath ?? target.worktree.path;
-    const processId = appGroupInstanceProcessId(instance.id);
-    if (!run && this.processes.managedPid(processId, processPath) === null) {
+    const context = this.stopContext(target, instance, run);
+    if (
+      !run &&
+      this.processes.managedPid(context.processId, context.processPath) === null
+    ) {
       return "already-stopped";
     }
 
+    const failures = await this.deactivateRunRoutes(context);
+    failures.push(...(await this.executeConfiguredStop(context)));
+    await this.stopRunProcesses(context);
+
+    if (context.run && !(await this.waitForPortsStopped(context.run))) {
+      failures.push(
+        "App listeners did not stop; Backing endpoints remain quarantined"
+      );
+    }
+    if (failures.length === 0) {
+      this.state.removeRun(context.key);
+    }
+    if (failures.length > 0) {
+      throw new AppGroupLifecycleError("stop-failed", failures.join("; "));
+    }
+    return "stopped";
+  }
+
+  private async deactivateRunRoutes(context: StopContext): Promise<string[]> {
     const failures: string[] = [];
-    for (const endpoint of Object.values(run?.apps ?? {})) {
+    for (const endpoint of Object.values(context.run?.apps ?? {})) {
       if (endpoint.protocol !== "http" || !endpoint.hostname) {
         continue;
       }
@@ -268,77 +317,73 @@ export class AppGroupRuntime {
           failures.push(
             `${route.hostname} points to a different Backing endpoint`
           );
-          continue;
-        }
-        if (routeState !== "inactive") {
+        } else if (routeState !== "inactive") {
           await this.routing.deactivate(route);
         }
       } catch (error) {
-        failures.push(error instanceof Error ? error.message : String(error));
+        failures.push(errorMessage(error));
       }
     }
+    return failures;
+  }
 
-    if (group.stop !== "process") {
-      try {
-        const command = resolveStopCommand(
-          target.config,
-          target.groupId,
-          this.templateGroups(
-            target.config,
-            target.repoPath,
-            processPath,
-            run?.instanceIdsByGroup
-          )
-        );
-        if (!command) {
-          throw new Error(
-            `${displayName(target.groupId, group)} has no Stop command`
-          );
-        }
-        await this.processes.runFiniteCommand({
-          argv: command.argv,
-          cwd: commandWorkingDirectory(processPath, command.cwd),
-          env: command.env,
-          label: `Stop ${displayName(target.groupId, group)}`,
-          logId: processId,
-        });
-      } catch (error) {
-        failures.push(error instanceof Error ? error.message : String(error));
-      }
+  private async executeConfiguredStop(context: StopContext): Promise<string[]> {
+    if (context.group.stop === "process") {
+      return [];
     }
-
-    await this.processes.stopManagedProcess(processId, processPath);
-    if (group.stop === "process" && run) {
-      const killed = new Set<number>();
-      for (const pid of ownedPortPids(
-        inspectListeningPorts(),
-        Object.values(run.apps).map((app) => app.port),
-        processPath
-      )) {
-        if (await this.processes.stopOwnedProcess(pid, processId)) {
-          killed.add(pid);
-        }
-      }
-      if (killed.size > 0) {
-        this.processes.appendManagedLog(
-          processId,
-          `[workgrove] Stopped ${killed.size} owned listener${killed.size === 1 ? "" : "s"}`
+    try {
+      const command = resolveStopCommand(
+        context.target.config,
+        context.target.groupId,
+        this.resolveTemplateAppGroups(
+          context.target.config,
+          context.target.repoPath,
+          context.processPath,
+          context.run?.instanceIdsByGroup
+        )
+      );
+      if (!command) {
+        throw new Error(
+          `${displayName(context.target.groupId, context.group)} has no Stop command`
         );
       }
+      await this.processes.runFiniteCommand({
+        argv: command.argv,
+        cwd: commandWorkingDirectory(context.processPath, command.cwd),
+        env: command.env,
+        label: `Stop ${displayName(context.target.groupId, context.group)}`,
+        logId: context.processId,
+      });
+      return [];
+    } catch (error) {
+      return [errorMessage(error)];
     }
+  }
 
-    if (run && !(await this.waitForPortsStopped(run))) {
-      failures.push(
-        "App listeners did not stop; Backing endpoints remain quarantined"
+  private async stopRunProcesses(context: StopContext): Promise<void> {
+    await this.processes.stopManagedProcess(
+      context.processId,
+      context.processPath
+    );
+    if (context.group.stop !== "process" || !context.run) {
+      return;
+    }
+    const killed = new Set<number>();
+    for (const pid of ownedPortPids(
+      inspectListeningPorts(),
+      Object.values(context.run.apps).map((app) => app.port),
+      context.processPath
+    )) {
+      if (await this.processes.stopOwnedProcess(pid, context.processId)) {
+        killed.add(pid);
+      }
+    }
+    if (killed.size > 0) {
+      this.processes.appendManagedLog(
+        context.processId,
+        `[workgrove] Stopped ${killed.size} owned listener${killed.size === 1 ? "" : "s"}`
       );
     }
-    if (failures.length === 0) {
-      this.state.removeRun(key);
-    }
-    if (failures.length > 0) {
-      throw new Error(failures.join("; "));
-    }
-    return "stopped";
   }
 
   createInstance(target: AppGroupTarget, name: string): AppGroupInstance {
@@ -436,6 +481,82 @@ export class AppGroupRuntime {
     return { instanceId, repoPath };
   }
 
+  private lifecycleContext(
+    target: AppGroupTarget,
+    instance: AppGroupInstance,
+    processPath: string
+  ): LifecycleContext {
+    return {
+      group: this.group(target),
+      key: this.runKey(target.repoPath, instance.id),
+      processId: appGroupInstanceProcessId(instance.id),
+      processPath,
+      target,
+    };
+  }
+
+  private runContext(
+    target: AppGroupTarget,
+    instance: AppGroupInstance,
+    run: AppGroupRun
+  ): RunContext {
+    return {
+      ...this.lifecycleContext(target, instance, run.worktreePath),
+      run,
+    };
+  }
+
+  private stopContext(
+    target: AppGroupTarget,
+    instance: AppGroupInstance,
+    run: AppGroupRun | null
+  ): StopContext {
+    return {
+      ...this.lifecycleContext(
+        target,
+        instance,
+        run?.worktreePath ?? target.worktree.path
+      ),
+      run,
+    };
+  }
+
+  private async prepareRouting(): Promise<void> {
+    try {
+      await this.routing.prepare?.();
+    } catch (error) {
+      throw new AppGroupLifecycleError(
+        "routing-unavailable",
+        errorMessage(error)
+      );
+    }
+  }
+
+  private runEndpointFor(run: AppGroupRun, appId: string): RunEndpoint {
+    const endpoint = run.apps[appId];
+    if (!endpoint) {
+      throw new AppGroupLifecycleError(
+        "invalid-run-state",
+        `Persisted run is missing App "${appId}"`
+      );
+    }
+    return endpoint;
+  }
+
+  private readinessForRun(context: RunContext): Promise<boolean[]> {
+    return Promise.all(
+      Object.entries(context.group.apps).map(([appId, app]) =>
+        appIsReady(app, this.runEndpointFor(context.run, appId))
+      )
+    );
+  }
+
+  private async waitForAndPublishRun(context: RunContext): Promise<void> {
+    const readyAppIds = await this.waitForRunReadiness(context);
+    this.assertReadyEndpointsOwned(context.group, context.run, readyAppIds);
+    await this.publishReadyRun(context, readyAppIds);
+  }
+
   private instanceIsRunning(
     instance: AppGroupInstance,
     stop: WorkgroveAppGroup["stop"],
@@ -457,7 +578,7 @@ export class AppGroupRuntime {
       const ownership = portOwnership(ports, endpoint.port, run.worktreePath);
       return stop === "process"
         ? ownership === "owned"
-        : endpointMatchesObservedPids(endpoint, ports);
+        : commandEndpointIsClaimed(endpoint, ports);
     });
   }
 
@@ -497,13 +618,11 @@ export class AppGroupRuntime {
   }
 
   private assertRunPortsAvailable(
-    run: AppGroupRun,
-    group: WorkgroveAppGroup,
-    key: RunKey,
+    context: RunContext,
     allocatedNow: boolean
   ): void {
     const ports = inspectListeningPorts();
-    const occupied = Object.values(run.apps).find((endpoint) => {
+    const occupied = Object.values(context.run.apps).find((endpoint) => {
       const pids = listeningPortPids(ports, endpoint.port);
       if (pids.length === 0) {
         return false;
@@ -511,20 +630,22 @@ export class AppGroupRuntime {
       if (allocatedNow) {
         return true;
       }
-      if (group.stop === "process") {
+      if (context.group.stop === "process") {
         return (
-          portOwnership(ports, endpoint.port, run.worktreePath) !== "owned"
+          portOwnership(ports, endpoint.port, context.run.worktreePath) !==
+          "owned"
         );
       }
-      return !samePids(endpoint.observedPids ?? [], pids);
+      return endpoint.listenerClaimed !== true;
     });
     if (!occupied) {
       return;
     }
     if (allocatedNow) {
-      this.state.removeRun(key);
+      this.state.removeRun(context.key);
     }
-    throw new Error(
+    throw new AppGroupLifecycleError(
+      "port-occupied",
       `Backing endpoint ${occupied.port} is occupied by an unrelated process`
     );
   }
@@ -538,52 +659,48 @@ export class AppGroupRuntime {
     );
   }
 
-  private launchRunProcess(input: {
-    readiness: readonly boolean[];
-    group: WorkgroveAppGroup;
-    processId: string;
-    run: AppGroupRun;
-    target: AppGroupTarget;
-  }): void {
+  private launchRunProcess(
+    context: RunContext,
+    readiness: readonly boolean[]
+  ): void {
     if (
-      this.processes.managedPid(input.processId, input.run.worktreePath) !==
+      this.processes.managedPid(context.processId, context.processPath) !==
         null ||
-      input.readiness.some(Boolean)
+      readiness.some(Boolean)
     ) {
       return;
     }
-    const command = resolveStartCommand(
-      input.target.config,
-      input.target.groupId,
-      this.templateGroups(
-        input.target.config,
-        input.target.repoPath,
-        input.run.worktreePath,
-        input.run.instanceIdsByGroup
-      )
-    );
-    this.processes.startManagedProcess({
-      argv: command.argv,
-      cwd: commandWorkingDirectory(input.run.worktreePath, command.cwd),
-      env: command.env,
-      label: displayName(input.target.groupId, input.group),
-      logId: input.processId,
-      ownerId: input.processId,
-      ownerRoot: input.run.worktreePath,
-      trackExitFailure: true,
-      processId: input.processId,
-    });
+    try {
+      const command = resolveStartCommand(
+        context.target.config,
+        context.target.groupId,
+        this.resolveTemplateAppGroups(
+          context.target.config,
+          context.target.repoPath,
+          context.processPath,
+          context.run.instanceIdsByGroup
+        )
+      );
+      this.processes.startManagedProcess({
+        argv: command.argv,
+        cwd: commandWorkingDirectory(context.processPath, command.cwd),
+        env: command.env,
+        label: displayName(context.target.groupId, context.group),
+        logId: context.processId,
+        ownerId: context.processId,
+        ownerRoot: context.processPath,
+        trackExitFailure: true,
+        processId: context.processId,
+      });
+    } catch (error) {
+      throw new AppGroupLifecycleError("start-failed", errorMessage(error));
+    }
   }
 
-  private async waitForRunReadiness(
-    group: WorkgroveAppGroup,
-    run: AppGroupRun,
-    processId: string,
-    key: RunKey
-  ): Promise<Set<string>> {
+  private async waitForRunReadiness(context: RunContext): Promise<Set<string>> {
     const settled = await Promise.allSettled(
-      Object.entries(group.apps).map(async ([appId, app]) => {
-        await waitForAppReadiness(app, run.apps[appId] as RunEndpoint);
+      Object.entries(context.group.apps).map(async ([appId, app]) => {
+        await waitForAppReadiness(app, this.runEndpointFor(context.run, appId));
         return appId;
       })
     );
@@ -593,21 +710,18 @@ export class AppGroupRuntime {
       )
     );
     const failures = settled.flatMap((result) =>
-      result.status === "rejected"
-        ? [
-            result.reason instanceof Error
-              ? result.reason.message
-              : String(result.reason),
-          ]
-        : []
+      result.status === "rejected" ? [errorMessage(result.reason)] : []
     );
     if (readyAppIds.size === 0) {
-      this.observeRunListeners(run);
-      this.state.saveRun(key, run);
-      throw new Error(failures.join("; "));
+      this.observeRunListeners(context.run);
+      this.state.saveRun(context.key, context.run);
+      throw new AppGroupLifecycleError("readiness-failed", failures.join("; "));
     }
     for (const failure of failures) {
-      this.processes.appendManagedLog(processId, `[workgrove] ${failure}`);
+      this.processes.appendManagedLog(
+        context.processId,
+        `[workgrove] ${failure}`
+      );
     }
     return readyAppIds;
   }
@@ -627,25 +741,25 @@ export class AppGroupRuntime {
         portOwnership(ports, endpoint.port, run.worktreePath) !== "owned"
     );
     if (unowned) {
-      throw new Error(
+      throw new AppGroupLifecycleError(
+        "endpoint-ownership-conflict",
         `Backing endpoint ${unowned.port} became ready outside this worktree; no Friendly URLs were published`
       );
     }
   }
 
   private async publishReadyRun(
-    key: RunKey,
-    run: AppGroupRun,
+    context: RunContext,
     readyAppIds: ReadonlySet<string>
   ): Promise<void> {
-    this.observeRunListeners(run);
+    this.observeRunListeners(context.run);
     try {
-      await this.activateRoutes(run, readyAppIds);
+      await this.activateRoutes(context.run, readyAppIds);
     } catch (error) {
-      this.state.saveRun(key, run);
+      this.state.saveRun(context.key, context.run);
       throw error;
     }
-    this.state.saveRun(key, run);
+    this.state.saveRun(context.key, context.run);
   }
 
   private observeRunListeners(run: AppGroupRun): void {
@@ -653,7 +767,7 @@ export class AppGroupRuntime {
     for (const endpoint of Object.values(run.apps)) {
       const observedPids = listeningPortPids(ports, endpoint.port);
       if (observedPids.length > 0) {
-        endpoint.observedPids = observedPids;
+        endpoint.listenerClaimed = true;
       }
     }
   }
@@ -703,7 +817,7 @@ export class AppGroupRuntime {
       input.run.port,
       input.worktreePath
     );
-    const commandEndpointVerified = endpointMatchesObservedPids(
+    const commandEndpointVerified = commandEndpointIsClaimed(
       input.run,
       input.ports
     );
@@ -748,7 +862,7 @@ export class AppGroupRuntime {
     };
   }
 
-  private templateGroups(
+  private resolveTemplateAppGroups(
     config: WorkgroveConfig,
     repoPath: string,
     worktreePath: string,
@@ -798,7 +912,7 @@ export class AppGroupRuntime {
     );
   }
 
-  private async materializeWorktreeInstances(
+  private async materializeEffectiveInstances(
     target: AppGroupTarget,
     instances: Readonly<Record<string, AppGroupInstance>>
   ): Promise<void> {
@@ -858,7 +972,7 @@ export class AppGroupRuntime {
   }
 
   private async waitForPortsStopped(run: AppGroupRun): Promise<boolean> {
-    const deadline = Date.now() + 5000;
+    const deadline = Date.now() + PORT_STOP_TIMEOUT_MS;
     const ports = new Set(Object.values(run.apps).map((app) => app.port));
     while (Date.now() < deadline) {
       const snapshot = inspectListeningPorts();
@@ -892,7 +1006,10 @@ export class AppGroupRuntime {
         const state = this.routing.observe(route);
         initialStates.set(route, state);
         if (state === "conflict") {
-          throw new Error(`${route.hostname} is already routed elsewhere`);
+          throw new AppGroupLifecycleError(
+            "route-conflict",
+            `${route.hostname} is already routed elsewhere`
+          );
         }
       }
       for (const route of routes) {
@@ -903,10 +1020,15 @@ export class AppGroupRuntime {
       }
     } catch (error) {
       const failures = [
-        error instanceof Error ? error.message : String(error),
+        errorMessage(error),
         ...(await this.rollbackRoutes(newlyActivated)),
       ];
-      throw new Error(failures.join("; "));
+      throw new AppGroupLifecycleError(
+        error instanceof AppGroupLifecycleError
+          ? error.code
+          : "route-publication-failed",
+        failures.join("; ")
+      );
     }
   }
 
@@ -922,9 +1044,7 @@ export class AppGroupRuntime {
         }
         await this.routing.deactivate(route);
       } catch (error) {
-        failures.push(
-          `Route rollback failed: ${error instanceof Error ? error.message : String(error)}`
-        );
+        failures.push(`Route rollback failed: ${errorMessage(error)}`);
       }
     }
     return failures;

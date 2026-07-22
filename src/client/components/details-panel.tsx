@@ -16,7 +16,7 @@ import type { WorktreeSnapshot } from "../../controller/workspace-snapshot";
 import { appsAreRunning } from "../../controller/workspace-snapshot";
 import { codexNewTaskUrl, codexOpenTaskUrl } from "../codex-links";
 import type { WorktreeCommandActions } from "../worktree-command-menu";
-import { AppPort } from "./app-port";
+import { AppEndpointLink } from "./app-endpoint-link";
 import { Badge } from "./ui/badge";
 import { Button, buttonVariants } from "./ui/button";
 import {
@@ -180,11 +180,6 @@ function CodexTasksSection({
   );
 }
 
-function friendlyUrlLabel(url: string): string {
-  const parsed = new URL(url);
-  return `${parsed.hostname}${parsed.port ? `:${parsed.port}` : ""}`;
-}
-
 function terminalContent({
   end,
   error,
@@ -328,18 +323,7 @@ export function DetailsPanel({
                 <CardDescription>{endpointStatus(app)}</CardDescription>
               </CardHeader>
               <CardContent>
-                {app.open && app.listening ? (
-                  <a
-                    className="underline underline-offset-3"
-                    href={app.url ?? undefined}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    {friendlyUrlLabel(app.url ?? "")}
-                  </a>
-                ) : (
-                  <AppPort port={app.port} />
-                )}
+                <AppEndpointLink app={app} />
               </CardContent>
             </Card>
           ))}

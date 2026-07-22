@@ -3,12 +3,68 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { AppGroupLifecycleError } from "../controller/app-group-lifecycle-error";
 import {
   createWorkgroveServer,
   type WorkgroveServerController,
 } from "./workgrove-server";
 
 describe("Workgrove HTTP server", () => {
+  it("preserves stable App-group lifecycle error codes", async () => {
+    const appRoot = mkdtempSync(join(tmpdir(), "workgrove-server-error-"));
+    const controller = {
+      close: () => Promise.resolve(),
+      execute: () =>
+        Promise.reject(
+          new AppGroupLifecycleError(
+            "route-conflict",
+            "web.main.repo.localhost is already routed elsewhere"
+          )
+        ),
+      handleCodexHook: () => ({ accepted: false }),
+      inspect: () => {
+        throw new Error("not used");
+      },
+      inspectCodex: () => Promise.reject(new Error("not used")),
+      logs: () => [],
+    } as unknown as WorkgroveServerController;
+    const server = await createWorkgroveServer({
+      appRoot,
+      controller,
+      development: false,
+      enableCodexHooks: false,
+      port: 0,
+    });
+
+    try {
+      const url = await server.listen();
+      const session = (await (
+        await fetch(new URL("/api/session", url))
+      ).json()) as { token: string };
+      const response = await fetch(new URL("/api/commands/start-apps", url), {
+        body: JSON.stringify({
+          appGroupName: "development",
+          repoPath: "/code/repo",
+          worktreeId: "main",
+        }),
+        headers: {
+          "content-type": "application/json",
+          "x-workgrove-token": session.token,
+        },
+        method: "POST",
+      });
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        code: "route-conflict",
+        error: "web.main.repo.localhost is already routed elsewhere",
+      });
+    } finally {
+      await server.close();
+      rmSync(appRoot, { force: true, recursive: true });
+    }
+  });
+
   it("starts, authorizes commands, and closes through one interface", async () => {
     const appRoot = mkdtempSync(join(tmpdir(), "workgrove-server-test-"));
     let closeCalls = 0;

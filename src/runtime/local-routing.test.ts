@@ -1,6 +1,6 @@
 import { expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
 import { createRequire } from "node:module";
 import { createServer, type Server } from "node:net";
@@ -10,6 +10,53 @@ import { dirname, join } from "node:path";
 import { PortlessRoutingEngine } from "./local-routing";
 
 const require = createRequire(import.meta.url);
+
+it("rejects structurally invalid Portless route state", () => {
+  const temporary = mkdtempSync(join(tmpdir(), "workgrove-portless-state-"));
+  try {
+    mkdirSync(temporary, { recursive: true });
+    writeFileSync(
+      join(temporary, "routes.json"),
+      JSON.stringify([{ hostname: "app.localhost", pid: "wrong", port: 3000 }])
+    );
+    const routing = new PortlessRoutingEngine({ stateDirectory: temporary });
+
+    expect(() =>
+      routing.observe({ hostname: "app.localhost", port: 3000 })
+    ).toThrow("Portless route state is invalid");
+  } finally {
+    rmSync(temporary, { force: true, recursive: true });
+  }
+});
+
+it("accepts Portless routes with supported tunnel metadata", () => {
+  const temporary = mkdtempSync(join(tmpdir(), "workgrove-portless-state-"));
+  try {
+    mkdirSync(temporary, { recursive: true });
+    writeFileSync(
+      join(temporary, "routes.json"),
+      JSON.stringify([
+        {
+          hostname: "app.localhost",
+          ngrokPid: 12_345,
+          ngrokUrl: "https://example.ngrok.app",
+          pid: 0,
+          port: 3000,
+          tailscaleFunnel: true,
+          tailscaleHttpsPort: 443,
+          tailscaleUrl: "https://example.ts.net",
+        },
+      ])
+    );
+    const routing = new PortlessRoutingEngine({ stateDirectory: temporary });
+
+    expect(routing.observe({ hostname: "app.localhost", port: 3000 })).toBe(
+      "unavailable"
+    );
+  } finally {
+    rmSync(temporary, { force: true, recursive: true });
+  }
+});
 
 function packageFile(packageName: string, ...parts: string[]): string {
   return join(

@@ -16,6 +16,7 @@ import type { WorktreeCommandActions } from "./worktree-command-menu";
 const APP_GROUP_COMMANDS = new Set([
   "create-app-group-instance",
   "restart-apps",
+  "retry-apps",
   "select-app-group-instance",
   "start-apps",
   "stop-apps",
@@ -290,15 +291,13 @@ export function useWorktreeCommandActions({
 
   const retryAppGroup = useCallback(
     (worktree: WorktreeSnapshot, group: AppGroupSnapshot) => {
-      requestRepositoryTrust(`Retry ${group.name}`, () => {
-        commands.startApps.mutate({
-          appGroupName: group.id,
-          repoPath,
-          worktreeId: worktree.id,
-        });
+      commands.retryApps.mutate({
+        appGroupName: group.id,
+        repoPath,
+        worktreeId: worktree.id,
       });
     },
-    [commands.startApps, repoPath, requestRepositoryTrust]
+    [commands.retryApps, repoPath]
   );
 
   const createAppGroupInstance = useCallback(

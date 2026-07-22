@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { z } from "zod";
 
 import { processStartMarker } from "../host/process-inspection";
 import { pathInside, pidOwnedByWorktree } from "./ports";
@@ -21,20 +22,21 @@ const GRACEFUL_STOP_ATTEMPTS = 20;
 const FORCE_STOP_ATTEMPTS = 10;
 const STOP_POLL_MS = 100;
 
-interface ProcessRecord {
-  argv: string[];
-  cwd: string;
-  label?: string;
-  ownerId?: string;
-  pid: number;
-  startedAt: string;
-  startMarker: string;
-}
-
-interface ProcessFailure {
-  failedAt: string;
-  message: string;
-}
+const ProcessRecordSchema = z.strictObject({
+  argv: z.array(z.string()).min(1),
+  cwd: z.string().min(1),
+  label: z.string().min(1).optional(),
+  ownerId: z.string().min(1).optional(),
+  pid: z.number().int().positive(),
+  startedAt: z.string().min(1),
+  startMarker: z.string().min(1),
+});
+const ProcessFailureSchema = z.strictObject({
+  failedAt: z.string().min(1),
+  message: z.string().min(1),
+});
+type ProcessRecord = z.infer<typeof ProcessRecordSchema>;
+type ProcessFailure = z.infer<typeof ProcessFailureSchema>;
 
 interface ProcessSignalTarget {
   id: number;
@@ -279,9 +281,9 @@ export class ProcessSupervisor {
       .filter((name) => name.endsWith(".pid"))
       .flatMap((name) => {
         try {
-          const record = JSON.parse(
-            readFileSync(join(this.controlDirectory, name), "utf8")
-          ) as ProcessRecord;
+          const record = ProcessRecordSchema.parse(
+            JSON.parse(readFileSync(join(this.controlDirectory, name), "utf8"))
+          );
           if (
             !this.processTargetIsLive({ id: record.pid, kind: "process" }) ||
             processStartMarker(record.pid) !== record.startMarker ||
@@ -307,9 +309,9 @@ export class ProcessSupervisor {
 
   managedFailure(processId: string): ProcessFailure | null {
     try {
-      return JSON.parse(
-        readFileSync(this.failurePath(processId), "utf8")
-      ) as ProcessFailure;
+      return ProcessFailureSchema.parse(
+        JSON.parse(readFileSync(this.failurePath(processId), "utf8"))
+      );
     } catch {
       return null;
     }
@@ -392,14 +394,7 @@ export class ProcessSupervisor {
       return null;
     }
     try {
-      const value = JSON.parse(readFileSync(file, "utf8")) as ProcessRecord;
-      return Number.isInteger(value.pid) &&
-        value.pid > 0 &&
-        typeof value.cwd === "string" &&
-        typeof value.startMarker === "string" &&
-        value.startMarker.length > 0
-        ? value
-        : null;
+      return ProcessRecordSchema.parse(JSON.parse(readFileSync(file, "utf8")));
     } catch {
       return null;
     }
