@@ -1,10 +1,18 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { z } from "zod";
-import { processIsLive } from "../host/process-inspection";
+import { processIsLive, processStartMarker } from "../host/process-inspection";
+import { inspectListeningPorts, listeningPortPids } from "./ports";
 
 export interface LocalRoute {
   hostname: string;
@@ -37,11 +45,18 @@ const PortlessRouteSchema = z.strictObject({
 });
 const PortlessRoutesSchema = z.array(PortlessRouteSchema);
 type PortlessRoute = z.infer<typeof PortlessRouteSchema>;
+const ProxyOwnerSchema = z.strictObject({
+  pid: z.number().int().positive(),
+  port: z.number().int().min(1).max(65_535),
+  startMarker: z.string().min(1).max(256),
+});
+type ProxyOwner = z.infer<typeof ProxyOwnerSchema>;
 
 const require = createRequire(import.meta.url);
 const DEFAULT_PROXY_PORT = 1355;
 const OBSERVATION_TIMEOUT_MS = 5000;
 const POLL_INTERVAL_MS = 50;
+const PROXY_OWNER_FILE = "workgrove-proxy-owner.json";
 
 function packageFile(packageName: string, ...parts: string[]): string {
   return join(
@@ -54,18 +69,73 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+function numberFile(path: string): number | null {
+  if (!existsSync(path)) {
+    return null;
+  }
+  const value = Number(readFileSync(path, "utf8").trim());
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+function proxyPid(stateDirectory: string): number | null {
+  return numberFile(join(stateDirectory, "proxy.pid"));
+}
+
+function proxyPort(stateDirectory: string): number | null {
+  const port = numberFile(join(stateDirectory, "proxy.port"));
+  return port !== null && port <= 65_535 ? port : null;
+}
+
+function proxyOwner(stateDirectory: string): ProxyOwner | null {
+  try {
+    return ProxyOwnerSchema.parse(
+      JSON.parse(readFileSync(join(stateDirectory, PROXY_OWNER_FILE), "utf8"))
+    );
+  } catch {
+    return null;
+  }
+}
+
+export class PortlessProxyPortConflictError extends Error {
+  constructor(port: number) {
+    super(`Portless proxy port ${port} is already in use`);
+    this.name = "PortlessProxyPortConflictError";
+  }
+}
+
 export class PortlessRoutingEngine implements LocalRoutingEngine {
   private readonly cliPath: string;
+  private readonly exclusiveOwnership: boolean;
   private readonly nodePath: string;
   readonly port: number;
   readonly stateDirectory: string;
 
-  constructor(options: { port?: number; stateDirectory?: string } = {}) {
+  constructor(
+    options: {
+      exclusiveOwnership?: boolean;
+      port?: number;
+      stateDirectory?: string;
+    } = {}
+  ) {
     this.cliPath = packageFile("portless", "dist", "cli.js");
+    this.exclusiveOwnership = options.exclusiveOwnership ?? false;
     this.nodePath = packageFile("node", "bin", "node");
     this.port = options.port ?? DEFAULT_PROXY_PORT;
     this.stateDirectory =
       options.stateDirectory ?? join(homedir(), ".workgrove", "portless");
+  }
+
+  static ownedProxyPort(stateDirectory: string): number | null {
+    const owner = proxyOwner(stateDirectory);
+    const pid = proxyPid(stateDirectory);
+    const port = proxyPort(stateDirectory);
+    return owner &&
+      pid === owner.pid &&
+      port === owner.port &&
+      processIsLive(owner.pid) &&
+      processStartMarker(owner.pid) === owner.startMarker
+      ? owner.port
+      : null;
   }
 
   async activate(route: LocalRoute): Promise<void> {
@@ -89,6 +159,22 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
 
   async prepare(): Promise<void> {
     await this.ensureProxy();
+  }
+
+  stopProxy(): void {
+    this.run(["proxy", "stop", "--port", String(this.port)]);
+  }
+
+  stopOwnedProxy(): void {
+    if (
+      PortlessRoutingEngine.ownedProxyPort(this.stateDirectory) !== this.port
+    ) {
+      throw new Error(
+        `Refusing to stop an unowned Portless proxy on port ${this.port}`
+      );
+    }
+    this.stopProxy();
+    rmSync(join(this.stateDirectory, PROXY_OWNER_FILE), { force: true });
   }
 
   async deactivate(route: LocalRoute): Promise<void> {
@@ -118,8 +204,13 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
     if (current.port !== route.port) {
       return "conflict";
     }
-    const pid = this.proxyPid();
-    return pid !== null && processIsLive(pid) ? "active" : "unavailable";
+    const pid = proxyPid(this.stateDirectory);
+    const owned =
+      !this.exclusiveOwnership ||
+      PortlessRoutingEngine.ownedProxyPort(this.stateDirectory) === this.port;
+    return pid !== null && processIsLive(pid) && owned
+      ? "active"
+      : "unavailable";
   }
 
   url(hostname: string): string {
@@ -127,17 +218,98 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
   }
 
   private async ensureProxy(): Promise<void> {
-    const pid = this.proxyPid();
+    const pid = proxyPid(this.stateDirectory);
     if (pid !== null && processIsLive(pid)) {
+      await this.verifyExistingProxy();
       return;
     }
-    this.run(["proxy", "start", "--port", String(this.port), "--no-tls"]);
+    if (this.exclusiveOwnership && this.portIsOccupied()) {
+      throw new PortlessProxyPortConflictError(this.port);
+    }
+    this.startProxy();
+    if (this.exclusiveOwnership) {
+      this.recordStartedProxy();
+    }
     await this.waitUntil(
       async () =>
-        (await this.proxyResponse("workgrove-probe.localhost")) !==
-        "unavailable",
+        (await this.proxyResponse("workgrove-probe.localhost")) ===
+        "unregistered",
       `Portless proxy did not start on port ${this.port}`
     );
+  }
+
+  private portIsOccupied(): boolean {
+    return listeningPortPids(inspectListeningPorts(), this.port).length > 0;
+  }
+
+  private recordStartedProxy(): void {
+    try {
+      this.recordProxyOwnership();
+    } catch (error) {
+      if (proxyPid(this.stateDirectory) === null && this.portIsOccupied()) {
+        throw new PortlessProxyPortConflictError(this.port);
+      }
+      throw error;
+    }
+  }
+
+  private startProxy(): void {
+    try {
+      this.run(["proxy", "start", "--port", String(this.port), "--no-tls"]);
+    } catch (error) {
+      if (this.exclusiveOwnership && this.portIsOccupied()) {
+        throw new PortlessProxyPortConflictError(this.port);
+      }
+      throw error;
+    }
+  }
+
+  private async verifyExistingProxy(): Promise<void> {
+    const recordedPort = proxyPort(this.stateDirectory);
+    if (recordedPort !== this.port) {
+      throw new Error(
+        `Portless proxy state belongs to port ${recordedPort ?? "unknown"}, not ${this.port}`
+      );
+    }
+    if (
+      this.exclusiveOwnership &&
+      PortlessRoutingEngine.ownedProxyPort(this.stateDirectory) !== this.port
+    ) {
+      throw new Error(
+        `Portless proxy state on port ${this.port} is not owned by this Workgrove profile`
+      );
+    }
+    await this.waitUntil(
+      async () =>
+        (await this.proxyResponse("workgrove-probe.localhost")) ===
+        "unregistered",
+      `Portless proxy on port ${this.port} is not responding`
+    );
+  }
+
+  private recordProxyOwnership(): void {
+    const pid = proxyPid(this.stateDirectory);
+    if (!(pid && processIsLive(pid))) {
+      throw new Error("Portless did not publish a live proxy process");
+    }
+    const owner = ProxyOwnerSchema.parse({
+      pid,
+      port: this.port,
+      startMarker: processStartMarker(pid),
+    });
+    mkdirSync(this.stateDirectory, { recursive: true });
+    const file = join(this.stateDirectory, PROXY_OWNER_FILE);
+    const temporary = `${file}.${process.pid}.tmp`;
+    writeFileSync(temporary, `${JSON.stringify(owner)}\n`, {
+      flag: "wx",
+      mode: 0o600,
+    });
+    try {
+      renameSync(temporary, file);
+    } catch (error) {
+      rmSync(temporary, { force: true });
+      throw error;
+    }
   }
 
   private environment(): NodeJS.ProcessEnv {
@@ -169,15 +341,6 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
     } catch {
       return "unavailable";
     }
-  }
-
-  private proxyPid(): number | null {
-    const path = join(this.stateDirectory, "proxy.pid");
-    if (!existsSync(path)) {
-      return null;
-    }
-    const pid = Number(readFileSync(path, "utf8").trim());
-    return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
   }
 
   private route(hostname: string): PortlessRoute | null {
