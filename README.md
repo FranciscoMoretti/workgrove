@@ -245,7 +245,7 @@ running while Workgrove is developed.
 
 Only one development server may own a checkout's session at a time. Different
 Workgrove checkouts receive different sessions and can run concurrently.
-Stopping the foreground development server releases its ownership record and
+Stopping the foreground development server releases its ownership lease and
 stops only its own Portless proxy. Codex task discovery remains available, but
 the isolated development hook capability does not replace a running production
 daemon's capability.

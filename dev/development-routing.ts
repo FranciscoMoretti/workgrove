@@ -1,102 +1,66 @@
-import { randomUUID } from "node:crypto";
-import {
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { join } from "node:path";
+import { type ChildProcess, fork } from "node:child_process";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { z } from "zod";
-import {
-  processIsLive,
-  processStartMarker,
-} from "../src/host/process-inspection";
-import {
-  type LocalRoute,
-  type LocalRouteState,
-  type LocalRoutingEngine,
-  PortlessRoutingEngine,
+import { RouteStore } from "portless";
+import type {
+  LocalRoute,
+  LocalRouteState,
+  LocalRoutingEngine,
 } from "../src/runtime/local-routing";
-import { PortlessProcess } from "../src/runtime/portless-process";
-import { inspectListeningPorts, listeningPortPids } from "../src/runtime/ports";
 
-const ProxyOwnerSchema = z.strictObject({
-  pid: z.number().int().positive(),
-  port: z.number().int().min(1).max(65_535),
-  startMarker: z.string().min(1).max(256),
-});
-type ProxyOwner = z.infer<typeof ProxyOwnerSchema>;
+const require = createRequire(import.meta.url);
+const OBSERVATION_TIMEOUT_MS = 5000;
+const POLL_INTERVAL_MS = 50;
+const START_TIMEOUT_MS = 5000;
+const STOP_TIMEOUT_MS = 2500;
 
-const PROXY_OWNER_FILE = "workgrove-proxy-owner.json";
-const STARTED_PROXY_OBSERVATION_MS = 5000;
-const STARTED_PROXY_POLL_MS = 25;
-const GRACEFUL_PROXY_STOP_MS = 2500;
-const FORCED_PROXY_STOP_MS = 500;
-const STOPPED_PROXY_POLL_MS = 25;
-const synchronousWaitState = new Int32Array(new SharedArrayBuffer(4));
+type ProxyMessage =
+  | { type: "conflict" }
+  | { message: string; type: "error" }
+  | { type: "ready" };
+
+function proxyMessage(message: unknown): ProxyMessage | null {
+  if (!(typeof message === "object" && message !== null && "type" in message)) {
+    return null;
+  }
+  const candidate = message as { message?: unknown; type?: unknown };
+  if (candidate.type === "ready" || candidate.type === "conflict") {
+    return { type: candidate.type };
+  }
+  if (candidate.type === "error" && typeof candidate.message === "string") {
+    return { message: candidate.message, type: "error" };
+  }
+  return null;
+}
+
+function packageFile(packageName: string, ...parts: string[]): string {
+  return join(
+    dirname(require.resolve(`${packageName}/package.json`)),
+    ...parts
+  );
+}
+
+function routeInStore(store: RouteStore, hostname: string) {
+  return (
+    store.loadRoutes().find((route) => route.hostname === hostname) ?? null
+  );
+}
+
+function routeKey(hostname: string, port: number): string {
+  return `${hostname}\0${port}`;
+}
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-function proxyOwner(stateDirectory: string): ProxyOwner | null {
-  try {
-    return ProxyOwnerSchema.parse(
-      JSON.parse(readFileSync(join(stateDirectory, PROXY_OWNER_FILE), "utf8"))
-    );
-  } catch {
-    return null;
+function waitForExit(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve();
   }
-}
-
-function processMatchesOwner(
-  owner: ProxyOwner,
-  proxy: PortlessProcess
-): boolean {
-  return (
-    proxy.pid() === owner.pid &&
-    proxy.recordedPort() === owner.port &&
-    processIsLive(owner.pid) &&
-    processStartMarker(owner.pid) === owner.startMarker
-  );
-}
-
-function ownerProcessIsLive(owner: ProxyOwner): boolean {
-  return (
-    processIsLive(owner.pid) &&
-    processStartMarker(owner.pid) === owner.startMarker
-  );
-}
-
-function waitForOwnerProcessToStop(
-  owner: ProxyOwner,
-  timeoutMilliseconds: number
-): boolean {
-  const deadline = Date.now() + timeoutMilliseconds;
-  while (ownerProcessIsLive(owner) && Date.now() < deadline) {
-    Atomics.wait(synchronousWaitState, 0, 0, STOPPED_PROXY_POLL_MS);
-  }
-  return !ownerProcessIsLive(owner);
-}
-
-function signalOwnerProcess(
-  owner: ProxyOwner,
-  signal: NodeJS.Signals
-): boolean {
-  if (!ownerProcessIsLive(owner)) {
-    return false;
-  }
-  try {
-    process.kill(owner.pid, signal);
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ESRCH") {
-      return false;
-    }
-    throw error;
-  }
+  return new Promise((resolve) => child.once("close", () => resolve()));
 }
 
 export class DevelopmentProxyPortConflictError extends Error {
@@ -107,192 +71,261 @@ export class DevelopmentProxyPortConflictError extends Error {
 }
 
 export class DevelopmentRouting implements LocalRoutingEngine {
-  private readonly proxy: PortlessProcess;
-  private readonly routing: PortlessRoutingEngine;
+  private closePromise: Promise<void> | undefined;
+  private readonly child: ChildProcess;
+  private readonly routeVerifications = new Map<string, Promise<void>>();
+  private readonly store: RouteStore;
+  private readonly verifiedRoutes = new Set<string>();
   readonly port: number;
   readonly stateDirectory: string;
 
-  constructor(options: { port: number; stateDirectory: string }) {
+  private constructor(options: {
+    child: ChildProcess;
+    port: number;
+    stateDirectory: string;
+  }) {
+    this.child = options.child;
     this.port = options.port;
     this.stateDirectory = options.stateDirectory;
-    this.proxy = new PortlessProcess(options);
-    this.routing = new PortlessRoutingEngine(options);
+    this.store = new RouteStore(options.stateDirectory);
   }
 
-  static ownedProxyPort(stateDirectory: string): number | null {
-    const owner = proxyOwner(stateDirectory);
-    if (!owner) {
-      return null;
+  static async open(options: {
+    port: number;
+    stateDirectory: string;
+  }): Promise<DevelopmentRouting> {
+    const child = fork(
+      fileURLToPath(new URL("./portless-proxy-child.ts", import.meta.url)),
+      [String(options.port), options.stateDirectory],
+      {
+        execPath: packageFile("node", "bin", "node"),
+        stdio: ["ignore", "inherit", "inherit", "ipc"],
+      }
+    );
+    try {
+      await DevelopmentRouting.waitUntilReady(child, options.port);
+      const routing = new DevelopmentRouting({ ...options, child });
+      await routing.refreshVerifiedRoutes();
+      return routing;
+    } catch (error) {
+      child.kill("SIGKILL");
+      await waitForExit(child);
+      throw error;
     }
-    const proxy = new PortlessProcess({
-      port: owner.port,
-      stateDirectory,
-    });
-    return processMatchesOwner(owner, proxy) ? owner.port : null;
   }
 
   async activate(route: LocalRoute): Promise<void> {
     await this.prepare();
-    await this.routing.activate(route);
+    const current = routeInStore(this.store, route.hostname);
+    if (current && current.port !== route.port) {
+      throw new Error(
+        `${route.hostname} is already routed to backing port ${current.port}`
+      );
+    }
+    if (!current) {
+      this.store.addRoute(route.hostname, route.port, 0);
+    }
+    await this.waitUntil(
+      async () => (await this.proxyResponse(route.hostname)) === "routed",
+      `Portless did not activate ${route.hostname}`
+    );
+    this.verifiedRoutes.add(routeKey(route.hostname, route.port));
   }
 
-  async deactivate(route: LocalRoute): Promise<void> {
-    await this.routing.deactivate(route);
+  close(): Promise<void> {
+    this.closePromise ??= this.closeChild();
+    return this.closePromise;
+  }
+
+  deactivate(route: LocalRoute): Promise<void> {
+    const current = routeInStore(this.store, route.hostname);
+    if (!current) {
+      return Promise.resolve();
+    }
+    if (current.port !== route.port) {
+      return Promise.reject(
+        new Error(
+          `Refusing to remove ${route.hostname}; it points to backing port ${current.port}`
+        )
+      );
+    }
+    this.verifiedRoutes.delete(routeKey(route.hostname, route.port));
+    this.store.removeRoute(route.hostname, 0);
+    return this.waitUntil(
+      async () => (await this.proxyResponse(route.hostname)) === "unregistered",
+      `Portless did not deactivate ${route.hostname}`
+    );
   }
 
   observe(route: LocalRoute): LocalRouteState {
-    const observed = this.routing.observe(route);
-    return observed === "active" &&
-      DevelopmentRouting.ownedProxyPort(this.stateDirectory) !== this.port
-      ? "unavailable"
-      : observed;
+    const current = routeInStore(this.store, route.hostname);
+    if (!current) {
+      return "inactive";
+    }
+    if (current.port !== route.port) {
+      return "conflict";
+    }
+    if (!this.isLive()) {
+      return "unavailable";
+    }
+    const key = routeKey(route.hostname, route.port);
+    if (this.verifiedRoutes.has(key)) {
+      return "active";
+    }
+    this.verifyRoute(route.hostname, route.port);
+    return "unavailable";
   }
 
-  async prepare(): Promise<void> {
-    const ownedPort = DevelopmentRouting.ownedProxyPort(this.stateDirectory);
-    if (ownedPort === this.port) {
-      await this.routing.prepare();
-      return;
-    }
-
-    if (this.proxy.isLive()) {
-      throw new Error(
-        `Portless proxy state on port ${this.port} is not owned by this Workgrove development session`
-      );
-    }
-    if (this.portIsOccupied()) {
-      throw new DevelopmentProxyPortConflictError(this.port);
-    }
-
-    let startError: unknown;
-    let startedOwner: ProxyOwner | null = null;
-    try {
-      try {
-        this.proxy.run([
-          "proxy",
-          "start",
-          "--port",
-          String(this.port),
-          "--no-tls",
-        ]);
-      } catch (error) {
-        startError = error;
-      }
-      startedOwner = await this.observeStartedProxy();
-      if (!startedOwner) {
-        if (this.portIsOccupied()) {
-          throw new DevelopmentProxyPortConflictError(this.port);
-        }
-        if (startError) {
-          throw startError;
-        }
-        throw new Error("Portless did not publish a live proxy process");
-      }
-      this.recordProxyOwnership(startedOwner);
-    } catch (error) {
-      try {
-        if (
-          DevelopmentRouting.ownedProxyPort(this.stateDirectory) === this.port
-        ) {
-          this.stopOwnedProxy();
-        } else if (
-          startedOwner &&
-          processMatchesOwner(startedOwner, this.proxy)
-        ) {
-          this.stopVerifiedProxy(startedOwner);
-        }
-      } catch {
-        // Preserve the startup error after best-effort cleanup.
-      }
-      throw error;
-    }
-    await this.routing.prepare();
-  }
-
-  stopOwnedProxy(): void {
-    const owner = proxyOwner(this.stateDirectory);
-    if (!(owner && processMatchesOwner(owner, this.proxy))) {
-      throw new Error(
-        `Refusing to stop an unowned Portless proxy on port ${this.port}`
-      );
-    }
-    this.stopVerifiedProxy(owner);
-    rmSync(join(this.stateDirectory, PROXY_OWNER_FILE), { force: true });
+  prepare(): Promise<void> {
+    return this.isLive()
+      ? Promise.resolve()
+      : Promise.reject(
+          new Error(`Portless proxy on port ${this.port} is not available`)
+        );
   }
 
   url(hostname: string): string {
-    return this.routing.url(hostname);
+    return `http://${hostname}${this.port === 80 ? "" : `:${this.port}`}`;
   }
 
-  private portIsOccupied(): boolean {
-    return listeningPortPids(inspectListeningPorts(), this.port).length > 0;
-  }
-
-  private recordProxyOwnership(owner: ProxyOwner): void {
-    mkdirSync(this.stateDirectory, { recursive: true });
-    const file = join(this.stateDirectory, PROXY_OWNER_FILE);
-    const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
-    writeFileSync(temporary, `${JSON.stringify(owner)}\n`, {
-      flag: "wx",
-      mode: 0o600,
+  private static waitUntilReady(
+    child: ChildProcess,
+    port: number
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      let timeout: ReturnType<typeof setTimeout>;
+      const cleanup = () => {
+        clearTimeout(timeout);
+        child.off("error", onError);
+        child.off("exit", onExit);
+        child.off("message", onMessage);
+      };
+      const onError = (error: Error) => {
+        cleanup();
+        reject(error);
+      };
+      const onExit = () => {
+        cleanup();
+        reject(new Error(`Portless proxy did not start on port ${port}`));
+      };
+      const onMessage = (message: unknown) => {
+        const received = proxyMessage(message);
+        if (received?.type === "ready") {
+          cleanup();
+          resolve();
+        } else if (received?.type === "conflict") {
+          cleanup();
+          reject(new DevelopmentProxyPortConflictError(port));
+        } else if (received?.type === "error") {
+          cleanup();
+          reject(new Error(received.message));
+        }
+      };
+      timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error(`Portless proxy did not start on port ${port}`));
+      }, START_TIMEOUT_MS);
+      child.once("error", onError);
+      child.once("exit", onExit);
+      child.on("message", onMessage);
     });
+  }
+
+  private async closeChild(): Promise<void> {
+    if (!this.isLive()) {
+      await waitForExit(this.child);
+      return;
+    }
     try {
-      renameSync(temporary, file);
-    } catch (error) {
-      rmSync(temporary, { force: true });
-      throw error;
-    }
-  }
-
-  private async observeStartedProxy(): Promise<ProxyOwner | null> {
-    const deadline = Date.now() + STARTED_PROXY_OBSERVATION_MS;
-    do {
-      const owner = this.startedProxyOwner();
-      if (owner) {
-        return owner;
+      if (this.child.connected) {
+        this.child.send({ type: "shutdown" }, (error) => {
+          if (error && this.isLive()) {
+            this.child.kill("SIGTERM");
+          }
+        });
+      } else {
+        this.child.kill("SIGTERM");
       }
-      await delay(STARTED_PROXY_POLL_MS);
-    } while (Date.now() < deadline);
-    return null;
+    } catch {
+      this.child.kill("SIGTERM");
+    }
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const stopped = await Promise.race([
+      waitForExit(this.child).then(() => true),
+      new Promise<false>((resolve) => {
+        timeout = setTimeout(() => resolve(false), STOP_TIMEOUT_MS);
+      }),
+    ]).finally(() => clearTimeout(timeout));
+    if (!stopped && this.isLive()) {
+      this.child.kill("SIGKILL");
+      await waitForExit(this.child);
+    }
   }
 
-  private startedProxyOwner(): ProxyOwner | null {
-    const pid = this.proxy.pid();
-    const startMarker = pid ? processStartMarker(pid) : null;
-    if (
-      !(
-        pid &&
-        processIsLive(pid) &&
-        this.proxy.recordedPort() === this.port &&
-        startMarker
-      )
-    ) {
-      return null;
+  private async proxyResponse(
+    hostname: string
+  ): Promise<"routed" | "unavailable" | "unregistered"> {
+    try {
+      const response = await fetch(`${this.url(hostname)}/`, {
+        signal: AbortSignal.timeout(500),
+      });
+      const body = await response.text();
+      if (
+        response.status === 404 &&
+        body.includes(`No app registered for <strong>${hostname}</strong>`)
+      ) {
+        return "unregistered";
+      }
+      return response.status === 502 ? "unavailable" : "routed";
+    } catch {
+      return "unavailable";
     }
-    return ProxyOwnerSchema.parse({
-      pid,
-      port: this.port,
-      startMarker,
-    });
   }
 
-  private stopVerifiedProxy(owner: ProxyOwner): void {
-    if (!processMatchesOwner(owner, this.proxy)) {
-      throw new Error(
-        `Refusing to stop an unowned Portless proxy on port ${this.port}`
-      );
-    }
-    if (!signalOwnerProcess(owner, "SIGTERM")) {
+  private async refreshVerifiedRoutes(): Promise<void> {
+    const routes = this.store.loadRoutes();
+    await Promise.all(
+      routes.map(async (route) => {
+        if ((await this.proxyResponse(route.hostname)) === "routed") {
+          this.verifiedRoutes.add(routeKey(route.hostname, route.port));
+        }
+      })
+    );
+  }
+
+  private verifyRoute(hostname: string, port: number): void {
+    const key = routeKey(hostname, port);
+    if (this.routeVerifications.has(key)) {
       return;
     }
-    if (waitForOwnerProcessToStop(owner, GRACEFUL_PROXY_STOP_MS)) {
-      return;
+    const verification = this.proxyResponse(hostname)
+      .then((response) => {
+        const current = routeInStore(this.store, hostname);
+        if (response === "routed" && current?.port === port && this.isLive()) {
+          this.verifiedRoutes.add(key);
+        }
+      })
+      .finally(() => {
+        this.routeVerifications.delete(key);
+      });
+    this.routeVerifications.set(key, verification);
+  }
+
+  private isLive(): boolean {
+    return this.child.exitCode === null && this.child.signalCode === null;
+  }
+
+  private async waitUntil(
+    condition: () => Promise<boolean>,
+    message: string
+  ): Promise<void> {
+    const deadline = Date.now() + OBSERVATION_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      if (await condition()) {
+        return;
+      }
+      await delay(POLL_INTERVAL_MS);
     }
-    if (!signalOwnerProcess(owner, "SIGKILL")) {
-      return;
-    }
-    if (!waitForOwnerProcessToStop(owner, FORCED_PROXY_STOP_MS)) {
-      throw new Error(`Portless proxy on port ${this.port} did not stop`);
-    }
+    throw new Error(message);
   }
 }

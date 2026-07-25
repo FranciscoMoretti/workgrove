@@ -19,23 +19,24 @@ try {
     port: session.profile.dashboardPort,
   });
   server = activeServer;
-  process.once("exit", () => {
-    try {
-      session.close();
-    } catch {
-      // Process exit still releases resources already cleaned up by the OS.
-    }
-  });
   console.log(`Workgrove: ${await activeServer.listen()}`);
 
+  let shutdownPromise: Promise<void> | undefined;
+  const shutdown = () => {
+    shutdownPromise ??= (async () => {
+      try {
+        await activeServer.close();
+      } finally {
+        await session.close();
+      }
+    })();
+    return shutdownPromise;
+  };
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.once(signal, () => {
-      activeServer
-        .close()
-        .finally(() => session.close())
-        .catch(() => {
-          process.exitCode = 1;
-        });
+      shutdown().catch(() => {
+        process.exitCode = 1;
+      });
     });
   }
 } catch (error) {
@@ -45,7 +46,7 @@ try {
     // Preserve the startup failure after attempting every owned cleanup.
   }
   try {
-    session.close();
+    await session.close();
   } catch {
     // Preserve the startup failure after attempting every owned cleanup.
   }

@@ -1,8 +1,10 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { z } from "zod";
-import { PortlessProcess } from "./portless-process";
+import { processIsLive } from "../host/process-inspection";
 
 export interface LocalRoute {
   hostname: string;
@@ -36,27 +38,34 @@ const PortlessRouteSchema = z.strictObject({
 const PortlessRoutesSchema = z.array(PortlessRouteSchema);
 type PortlessRoute = z.infer<typeof PortlessRouteSchema>;
 
+const require = createRequire(import.meta.url);
 const DEFAULT_PROXY_PORT = 1355;
 const OBSERVATION_TIMEOUT_MS = 5000;
 const POLL_INTERVAL_MS = 50;
+
+function packageFile(packageName: string, ...parts: string[]): string {
+  return join(
+    dirname(require.resolve(`${packageName}/package.json`)),
+    ...parts
+  );
+}
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 export class PortlessRoutingEngine implements LocalRoutingEngine {
-  private readonly proxy: PortlessProcess;
+  private readonly cliPath: string;
+  private readonly nodePath: string;
   readonly port: number;
   readonly stateDirectory: string;
 
   constructor(options: { port?: number; stateDirectory?: string } = {}) {
+    this.cliPath = packageFile("portless", "dist", "cli.js");
+    this.nodePath = packageFile("node", "bin", "node");
     this.port = options.port ?? DEFAULT_PROXY_PORT;
     this.stateDirectory =
       options.stateDirectory ?? join(homedir(), ".workgrove", "portless");
-    this.proxy = new PortlessProcess({
-      port: this.port,
-      stateDirectory: this.stateDirectory,
-    });
   }
 
   async activate(route: LocalRoute): Promise<void> {
@@ -68,11 +77,7 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
       );
     }
     if (!current) {
-      this.proxy.run([
-        "alias",
-        this.routeName(route.hostname),
-        String(route.port),
-      ]);
+      this.run(["alias", this.routeName(route.hostname), String(route.port)]);
     }
     await this.waitUntil(
       async () =>
@@ -96,7 +101,7 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
         `Refusing to remove ${route.hostname}; it points to backing port ${current.port}`
       );
     }
-    this.proxy.run(["alias", "--remove", this.routeName(route.hostname)]);
+    this.run(["alias", "--remove", this.routeName(route.hostname)]);
     await this.waitUntil(
       async () =>
         this.route(route.hostname) === null &&
@@ -113,7 +118,8 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
     if (current.port !== route.port) {
       return "conflict";
     }
-    return this.proxy.isLive() ? "active" : "unavailable";
+    const pid = this.proxyPid();
+    return pid !== null && processIsLive(pid) ? "active" : "unavailable";
   }
 
   url(hostname: string): string {
@@ -121,35 +127,28 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
   }
 
   private async ensureProxy(): Promise<void> {
-    if (this.proxy.isLive()) {
-      await this.verifyExistingProxy();
+    const pid = this.proxyPid();
+    if (pid !== null && processIsLive(pid)) {
       return;
     }
-    this.proxy.run(["proxy", "start", "--port", String(this.port), "--no-tls"]);
-    await this.waitForProxyProbe(
+    this.run(["proxy", "start", "--port", String(this.port), "--no-tls"]);
+    await this.waitUntil(
+      async () =>
+        (await this.proxyResponse("workgrove-probe.localhost")) !==
+        "unavailable",
       `Portless proxy did not start on port ${this.port}`
     );
   }
 
-  private async verifyExistingProxy(): Promise<void> {
-    const recordedPort = this.proxy.recordedPort();
-    if (recordedPort !== this.port) {
-      throw new Error(
-        `Portless proxy state belongs to port ${recordedPort ?? "unknown"}, not ${this.port}`
-      );
-    }
-    await this.waitForProxyProbe(
-      `Portless proxy on port ${this.port} is not responding`
-    );
-  }
-
-  private async waitForProxyProbe(message: string): Promise<void> {
-    await this.waitUntil(
-      async () =>
-        (await this.proxyResponse("workgrove-probe.localhost")) ===
-        "unregistered",
-      message
-    );
+  private environment(): NodeJS.ProcessEnv {
+    return {
+      ...process.env,
+      PORTLESS_HTTPS: "0",
+      PORTLESS_PORT: String(this.port),
+      PORTLESS_STATE_DIR: this.stateDirectory,
+      PORTLESS_SYNC_HOSTS: "0",
+      PORTLESS_TLD: "localhost",
+    };
   }
 
   private async proxyResponse(
@@ -172,6 +171,15 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
     }
   }
 
+  private proxyPid(): number | null {
+    const path = join(this.stateDirectory, "proxy.pid");
+    if (!existsSync(path)) {
+      return null;
+    }
+    const pid = Number(readFileSync(path, "utf8").trim());
+    return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
+  }
+
   private route(hostname: string): PortlessRoute | null {
     const path = join(this.stateDirectory, "routes.json");
     if (!existsSync(path)) {
@@ -191,6 +199,19 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
     return hostname.endsWith(".localhost")
       ? hostname.slice(0, -".localhost".length)
       : hostname;
+  }
+
+  private run(args: string[]): void {
+    const result = spawnSync(this.nodePath, [this.cliPath, ...args], {
+      encoding: "utf8",
+      env: this.environment(),
+      timeout: 10_000,
+    });
+    if (result.status !== 0) {
+      throw new Error(
+        (result.stderr || result.stdout || "Portless command failed").trim()
+      );
+    }
   }
 
   private async waitUntil(

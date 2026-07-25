@@ -1,20 +1,37 @@
 import { expect, it, spyOn } from "bun:test";
 import {
-  existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { reserveBackingPort } from "../src/runtime/readiness";
-import { DevelopmentRouting } from "./development-routing";
+import type { DevelopmentRouting } from "./development-routing";
 import { openDevelopmentSession } from "./development-session";
+import { acquireExclusiveFileLock } from "./exclusive-file-lock";
+
+function listenOnPort(port: number): Promise<() => Promise<void>> {
+  const server = createServer();
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", () =>
+      resolve(
+        () =>
+          new Promise<void>((closeResolve, closeReject) => {
+            server.close((error) =>
+              error ? closeReject(error) : closeResolve()
+            );
+          })
+      )
+    );
+  });
+}
 
 it("isolates development resources from the production runtime", async () => {
   const temporary = mkdtempSync(join(tmpdir(), "workgrove-development-"));
@@ -58,7 +75,7 @@ it("isolates development resources from the production runtime", async () => {
     expect(opened.profile.portlessPort).toBe(port);
     expect(readFileSync(productionState, "utf8")).toBe("production-state\n");
   } finally {
-    opened?.close();
+    await opened?.close();
     await proxyPort.release();
     rmSync(temporary, { force: true, recursive: true });
   }
@@ -82,28 +99,13 @@ it("allows only one development writer per checkout", async () => {
     await expect(openDevelopmentSession(options)).rejects.toThrow(
       "Workgrove development is already running for this checkout"
     );
-    expect(
-      readdirSync(first.profile.controlDirectory).filter((entry) =>
-        entry.startsWith(".server.lock.")
-      )
-    ).toEqual([]);
-
-    const ownershipFile = join(first.profile.controlDirectory, "server.lock");
-    first.close();
+    await first.close();
     first = undefined;
-    writeFileSync(
-      ownershipFile,
-      `${JSON.stringify({
-        pid: 2_147_483_647,
-        startMarker: "stale",
-        token: "stale",
-      })}\n`
-    );
     reopened = await openDevelopmentSession(options);
     expect(reopened.profile.portlessPort).toBe(port);
   } finally {
-    reopened?.close();
-    first?.close();
+    await reopened?.close();
+    await first?.close();
     await proxyPort.release();
     rmSync(temporary, { force: true, recursive: true });
   }
@@ -131,39 +133,40 @@ it("rejects an empty explicit development proxy port", async () => {
 
 it("releases session ownership when proxy shutdown fails", async () => {
   const temporary = mkdtempSync(join(tmpdir(), "workgrove-development-close-"));
+  const options = {
+    appRoot: realpathSync("."),
+    environment: {},
+    homeDirectory: join(temporary, "home"),
+  };
   let opened: Awaited<ReturnType<typeof openDevelopmentSession>> | undefined;
-  let stopProxy: (() => void) | undefined;
+  let closeProxy: (() => Promise<void>) | undefined;
 
   try {
-    opened = await openDevelopmentSession({
-      appRoot: realpathSync("."),
-      environment: {},
-      homeDirectory: join(temporary, "home"),
-    });
+    opened = await openDevelopmentSession(options);
     const routing = opened.controllerRuntime.routing as DevelopmentRouting;
-    stopProxy = routing.stopOwnedProxy.bind(routing);
-    routing.stopOwnedProxy = () => {
-      throw new Error("simulated shutdown failure");
-    };
+    closeProxy = routing.close.bind(routing);
+    routing.close = () =>
+      Promise.reject(new Error("simulated shutdown failure"));
     const warning = spyOn(console, "warn").mockImplementation(() => undefined);
     try {
-      expect(() => opened?.close()).not.toThrow();
+      await expect(opened.close()).resolves.toBeUndefined();
     } finally {
       warning.mockRestore();
     }
-    expect(
-      existsSync(join(opened.profile.controlDirectory, "server.lock"))
-    ).toBe(false);
-    stopProxy();
-    stopProxy = undefined;
+    const releaseLease = acquireExclusiveFileLock(
+      join(opened.profile.controlDirectory, "server.lock.guard.sqlite")
+    );
+    releaseLease();
+    await closeProxy();
+    closeProxy = undefined;
     opened = undefined;
   } finally {
     try {
-      stopProxy?.();
+      await closeProxy?.();
     } catch {
       // Best-effort cleanup for an assertion failure.
     }
-    opened?.close();
+    await opened?.close();
     rmSync(temporary, { force: true, recursive: true });
   }
 });
@@ -197,56 +200,113 @@ it("opens different development checkouts concurrently", async () => {
     );
     expect(first.profile.portlessPort).not.toBe(second.profile.portlessPort);
   } finally {
-    second?.close();
-    first?.close();
+    await second?.close();
+    await first?.close();
     rmSync(temporary, { force: true, recursive: true });
   }
 });
 
-it("reuses a surviving development proxy after a server crash", async () => {
+it("reuses the development proxy port between sessions", async () => {
   const temporary = mkdtempSync(
     join(tmpdir(), "workgrove-development-recovery-")
   );
   const homeDirectory = join(temporary, "home");
   const appRoot = realpathSync(".");
-  const reservation = await reserveBackingPort();
-  const survivingPort = reservation.port;
   let initial: Awaited<ReturnType<typeof openDevelopmentSession>> | undefined;
   let recovered: Awaited<ReturnType<typeof openDevelopmentSession>> | undefined;
-  let survivingProxy: DevelopmentRouting | undefined;
 
   try {
-    await reservation.release();
     initial = await openDevelopmentSession({
       appRoot,
-      environment: { WORKGROVE_PORTLESS_PORT: String(survivingPort) },
+      environment: {},
       homeDirectory,
     });
-    const stateDirectory = initial.profile.portlessStateDirectory;
-    initial.close();
+    const initialPort = initial.profile.portlessPort;
+    await initial.close();
     initial = undefined;
-
-    survivingProxy = new DevelopmentRouting({
-      port: survivingPort,
-      stateDirectory,
-    });
-    await survivingProxy.prepare();
     recovered = await openDevelopmentSession({
       appRoot,
       environment: {},
       homeDirectory,
     });
 
-    expect(recovered.profile.portlessPort).toBe(survivingPort);
+    expect(recovered.profile.portlessPort).toBe(initialPort);
   } finally {
-    recovered?.close();
-    try {
-      survivingProxy?.stopOwnedProxy();
-    } catch {
-      // The recovered session normally stopped the surviving proxy.
-    }
-    initial?.close();
-    await reservation.release();
+    await recovered?.close();
+    await initial?.close();
+    rmSync(temporary, { force: true, recursive: true });
+  }
+});
+
+it("does not silently change a remembered development proxy port", async () => {
+  const temporary = mkdtempSync(
+    join(tmpdir(), "workgrove-development-stable-port-")
+  );
+  const options = {
+    appRoot: realpathSync("."),
+    environment: {},
+    homeDirectory: join(temporary, "home"),
+  };
+  let closeOccupiedPort: (() => Promise<void>) | undefined;
+  let initial: Awaited<ReturnType<typeof openDevelopmentSession>> | undefined;
+  let reopened: Awaited<ReturnType<typeof openDevelopmentSession>> | undefined;
+
+  try {
+    initial = await openDevelopmentSession(options);
+    const port = initial.profile.portlessPort;
+    await initial.close();
+    initial = undefined;
+    closeOccupiedPort = await listenOnPort(port);
+
+    await expect(openDevelopmentSession(options)).rejects.toThrow(
+      `Portless proxy port ${port} is already in use`
+    );
+    await closeOccupiedPort();
+    closeOccupiedPort = undefined;
+    reopened = await openDevelopmentSession(options);
+    expect(reopened.profile.portlessPort).toBe(port);
+  } finally {
+    await reopened?.close();
+    await initial?.close();
+    await closeOccupiedPort?.();
+    rmSync(temporary, { force: true, recursive: true });
+  }
+});
+
+it("rejects changing the explicit proxy port for existing state", async () => {
+  const temporary = mkdtempSync(
+    join(tmpdir(), "workgrove-development-port-change-")
+  );
+  const firstPort = await reserveBackingPort();
+  const secondPort = await reserveBackingPort(new Set([firstPort.port]));
+  const options = {
+    appRoot: realpathSync("."),
+    homeDirectory: join(temporary, "home"),
+  };
+  let initial: Awaited<ReturnType<typeof openDevelopmentSession>> | undefined;
+
+  try {
+    await firstPort.release();
+    initial = await openDevelopmentSession({
+      ...options,
+      environment: { WORKGROVE_PORTLESS_PORT: String(firstPort.port) },
+    });
+    await initial.close();
+    initial = undefined;
+    await secondPort.release();
+
+    await expect(
+      openDevelopmentSession({
+        ...options,
+        environment: { WORKGROVE_PORTLESS_PORT: String(secondPort.port) },
+      })
+    ).rejects.toThrow(
+      `development state uses Portless proxy port ${firstPort.port}`
+    );
+  } finally {
+    await initial?.close();
+    await secondPort.release();
+    await firstPort.release();
     rmSync(temporary, { force: true, recursive: true });
   }
 });
@@ -276,67 +336,8 @@ it("rejects an occupied explicit development proxy port", async () => {
     });
     expect(opened.profile.portlessPort).not.toBe(reservation.port);
   } finally {
-    opened?.close();
+    await opened?.close();
     await reservation.release();
-    rmSync(temporary, { force: true, recursive: true });
-  }
-});
-
-it("replaces a surviving proxy when an explicit port changes", async () => {
-  const temporary = mkdtempSync(
-    join(tmpdir(), "workgrove-development-override-")
-  );
-  const homeDirectory = join(temporary, "home");
-  const appRoot = realpathSync(".");
-  const firstReservation = await reserveBackingPort();
-  const secondReservation = await reserveBackingPort(
-    new Set([firstReservation.port])
-  );
-  let initial: Awaited<ReturnType<typeof openDevelopmentSession>> | undefined;
-  let replaced: Awaited<ReturnType<typeof openDevelopmentSession>> | undefined;
-  let survivingProxy: DevelopmentRouting | undefined;
-
-  try {
-    await firstReservation.release();
-    initial = await openDevelopmentSession({
-      appRoot,
-      environment: {
-        WORKGROVE_PORTLESS_PORT: String(firstReservation.port),
-      },
-      homeDirectory,
-    });
-    const stateDirectory = initial.profile.portlessStateDirectory;
-    initial.close();
-    initial = undefined;
-
-    survivingProxy = new DevelopmentRouting({
-      port: firstReservation.port,
-      stateDirectory,
-    });
-    await survivingProxy.prepare();
-    await secondReservation.release();
-    replaced = await openDevelopmentSession({
-      appRoot,
-      environment: {
-        WORKGROVE_PORTLESS_PORT: String(secondReservation.port),
-      },
-      homeDirectory,
-    });
-
-    expect(replaced.profile.portlessPort).toBe(secondReservation.port);
-    expect(DevelopmentRouting.ownedProxyPort(stateDirectory)).toBe(
-      secondReservation.port
-    );
-  } finally {
-    replaced?.close();
-    try {
-      survivingProxy?.stopOwnedProxy();
-    } catch {
-      // The replacement session normally stopped the surviving proxy.
-    }
-    initial?.close();
-    await secondReservation.release();
-    await firstReservation.release();
     rmSync(temporary, { force: true, recursive: true });
   }
 });

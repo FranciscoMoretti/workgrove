@@ -1,19 +1,10 @@
-import { createHash, randomUUID } from "node:crypto";
-import {
-  linkSync,
-  mkdirSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { z } from "zod";
 import { CodexHookActivityStore } from "../src/codex/codex-hook-activity";
 import type { WorkspaceControllerRuntimeOptions } from "../src/controller/workspace-controller";
-import { processStartMarker } from "../src/host/process-inspection";
 import { FileWorkgroveStateStore } from "../src/runtime/local-state";
 import { ProcessSupervisor } from "../src/runtime/process-supervisor";
 import { reserveBackingPort } from "../src/runtime/readiness";
@@ -28,13 +19,6 @@ import {
 
 const DEFAULT_PORTLESS_PORT = 1355;
 
-const DevelopmentOwnerSchema = z.strictObject({
-  pid: z.number().int().positive(),
-  startMarker: z.string().min(1).max(256),
-  token: z.string().min(1),
-});
-type DevelopmentOwner = z.infer<typeof DevelopmentOwnerSchema>;
-
 export interface DevelopmentSessionProfile {
   codexControlDirectory: string;
   controlDirectory: string;
@@ -45,7 +29,7 @@ export interface DevelopmentSessionProfile {
 }
 
 export interface DevelopmentSession {
-  close(): void;
+  close(): Promise<void>;
   controllerRuntime: WorkspaceControllerRuntimeOptions;
   profile: DevelopmentSessionProfile;
 }
@@ -80,90 +64,48 @@ function developmentProfileId(appRoot: string): string {
     .slice(0, 16);
 }
 
-function readOwner(file: string): DevelopmentOwner | null {
-  try {
-    return DevelopmentOwnerSchema.parse(JSON.parse(readFileSync(file, "utf8")));
-  } catch {
-    return null;
-  }
-}
-
 function acquireDevelopmentOwnership(controlDirectory: string): () => void {
   mkdirSync(controlDirectory, { mode: 0o700, recursive: true });
-  const file = join(controlDirectory, "server.lock");
-  const temporary = join(
-    controlDirectory,
-    `.server.lock.${process.pid}.${randomUUID()}.tmp`
-  );
-  const startMarker = processStartMarker(process.pid);
-  if (!startMarker) {
-    throw new Error("Could not identify the Workgrove development process");
-  }
-  const owner: DevelopmentOwner = {
-    pid: process.pid,
-    startMarker,
-    token: randomUUID(),
-  };
-  let releaseGuard: () => void;
   try {
-    releaseGuard = acquireExclusiveFileLock(
+    return acquireExclusiveFileLock(
       join(controlDirectory, "server.lock.guard.sqlite")
     );
   } catch (error) {
     if (error instanceof ExclusiveFileLockBusyError) {
-      const current = readOwner(file);
       throw new Error(
-        current
-          ? `Workgrove development is already running for this checkout (pid ${current.pid})`
-          : "Workgrove development is already running for this checkout"
+        "Workgrove development is already running for this checkout"
       );
     }
     throw error;
   }
-  try {
-    writeFileSync(temporary, `${JSON.stringify(owner)}\n`, {
-      flag: "wx",
-      mode: 0o600,
-    });
-    rmSync(file, { force: true });
-    linkSync(temporary, file);
-  } catch (error) {
-    releaseGuard();
-    throw error;
-  } finally {
-    rmSync(temporary, { force: true });
-  }
-  return () => {
-    try {
-      const current = readOwner(file);
-      if (
-        current?.pid === owner.pid &&
-        current.startMarker === owner.startMarker &&
-        current.token === owner.token
-      ) {
-        rmSync(file, { force: true });
-      }
-    } finally {
-      releaseGuard();
-    }
-  };
 }
 
 async function prepareDevelopmentRouting(
   stateDirectory: string,
   port: number
 ): Promise<DevelopmentRouting> {
-  const routing = new DevelopmentRouting({ port, stateDirectory });
+  const routing = await DevelopmentRouting.open({ port, stateDirectory });
   try {
-    await routing.prepare();
+    mkdirSync(stateDirectory, { mode: 0o700, recursive: true });
+    writeFileSync(join(stateDirectory, "development-proxy-port"), `${port}\n`);
     return routing;
   } catch (error) {
-    try {
-      routing.stopOwnedProxy();
-    } catch {
-      // No verified session-owned proxy is stopped after failed preparation.
-    }
+    await routing.close();
     throw error;
+  }
+}
+
+function rememberedDevelopmentProxyPort(stateDirectory: string): number | null {
+  try {
+    const port = Number(
+      readFileSync(
+        join(stateDirectory, "development-proxy-port"),
+        "utf8"
+      ).trim()
+    );
+    return Number.isInteger(port) && port >= 1 && port <= 65_535 ? port : null;
+  } catch {
+    return null;
   }
 }
 
@@ -171,30 +113,22 @@ async function openDevelopmentRouting(
   stateDirectory: string,
   configuredPortValue: string | undefined
 ): Promise<DevelopmentRouting> {
-  const survivingProxyPort = DevelopmentRouting.ownedProxyPort(stateDirectory);
+  const rememberedPort = rememberedDevelopmentProxyPort(stateDirectory);
   if (configuredPortValue !== undefined) {
     const requestedPort = configuredPort(
       configuredPortValue,
       DEFAULT_PORTLESS_PORT,
       "WORKGROVE_PORTLESS_PORT"
     );
-    if (survivingProxyPort !== null && survivingProxyPort !== requestedPort) {
-      new DevelopmentRouting({
-        port: survivingProxyPort,
-        stateDirectory,
-      }).stopOwnedProxy();
+    if (rememberedPort !== null && rememberedPort !== requestedPort) {
+      throw new Error(
+        `This checkout's development state uses Portless proxy port ${rememberedPort}; reset its isolated development state before changing to ${requestedPort}`
+      );
     }
     return prepareDevelopmentRouting(stateDirectory, requestedPort);
   }
-  if (survivingProxyPort !== null) {
-    try {
-      return await prepareDevelopmentRouting(
-        stateDirectory,
-        survivingProxyPort
-      );
-    } catch {
-      // Allocate a new owned proxy after verified recovery fails.
-    }
+  if (rememberedPort !== null) {
+    return prepareDevelopmentRouting(stateDirectory, rememberedPort);
   }
   let lastConflict: DevelopmentProxyPortConflictError | undefined;
   for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -252,26 +186,23 @@ export async function openDevelopmentSession(
       portlessStateDirectory,
       statePath,
     };
-    let closed = false;
+    let closePromise: Promise<void> | undefined;
     return {
       close() {
-        if (closed) {
-          return;
-        }
-        closed = true;
-        try {
+        closePromise ??= (async () => {
           try {
-            routing?.stopOwnedProxy();
+            await routing?.close();
           } catch (error) {
             const message =
               error instanceof Error ? error.message : String(error);
             console.warn(
               `Could not stop the Workgrove development proxy: ${message}`
             );
+          } finally {
+            releaseOwnership();
           }
-        } finally {
-          releaseOwnership();
-        }
+        })();
+        return closePromise;
       },
       controllerRuntime: {
         codexHooks: new CodexHookActivityStore({
@@ -284,7 +215,13 @@ export async function openDevelopmentSession(
       profile,
     };
   } catch (error) {
-    releaseOwnership();
+    try {
+      await routing?.close();
+    } catch {
+      // Preserve the session startup failure after best-effort proxy cleanup.
+    } finally {
+      releaseOwnership();
+    }
     throw error;
   }
 }
