@@ -9,7 +9,7 @@ const server = await createWorkgroveServer({
   ...(process.env.WORKGROVE_CODEX_CONTROL_DIR
     ? { codexControlDirectory: process.env.WORKGROVE_CODEX_CONTROL_DIR }
     : {}),
-  development: process.env.NODE_ENV !== "production",
+  development: false,
   host: "127.0.0.1",
   port: Number(process.env.WORKGROVE_PORT ?? 3999),
 });

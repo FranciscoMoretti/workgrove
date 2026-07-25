@@ -1,0 +1,87 @@
+import { expect, it } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawn } from "bun";
+
+import {
+  acquireExclusiveFileLock,
+  ExclusiveFileLockBusyError,
+} from "./exclusive-file-lock";
+
+async function readChunk(stream: ReadableStream<Uint8Array>): Promise<string> {
+  const reader = stream.getReader();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const result = await Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("Timed out waiting for lock holder")),
+          5000
+        );
+      }),
+    ]);
+    return new TextDecoder().decode(result.value);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    reader.releaseLock();
+  }
+}
+
+it("holds an exclusive lock until its idempotent release", () => {
+  const temporary = mkdtempSync(join(tmpdir(), "workgrove-exclusive-lock-"));
+  const file = join(temporary, "session.sqlite");
+
+  try {
+    const release = acquireExclusiveFileLock(file);
+    expect(() => acquireExclusiveFileLock(file)).toThrow(
+      ExclusiveFileLockBusyError
+    );
+    release();
+    release();
+
+    const releaseAgain = acquireExclusiveFileLock(file);
+    releaseAgain();
+  } finally {
+    rmSync(temporary, { force: true, recursive: true });
+  }
+});
+
+it("releases the lock when its process crashes", async () => {
+  const temporary = mkdtempSync(
+    join(tmpdir(), "workgrove-exclusive-lock-crash-")
+  );
+  const file = join(temporary, "session.sqlite");
+  const child = spawn({
+    cmd: [
+      process.execPath,
+      "-e",
+      `import { Database } from "bun:sqlite";
+const database = new Database(${JSON.stringify(file)}, { create: true });
+database.run("BEGIN IMMEDIATE");
+console.log("locked");
+setInterval(() => undefined, 60_000);`,
+    ],
+    stderr: "pipe",
+    stdout: "pipe",
+  });
+
+  try {
+    expect(await readChunk(child.stdout)).toContain("locked");
+    expect(() => acquireExclusiveFileLock(file)).toThrow(
+      ExclusiveFileLockBusyError
+    );
+    child.kill("SIGKILL");
+    await child.exited;
+
+    const release = acquireExclusiveFileLock(file);
+    release();
+  } finally {
+    child.kill("SIGKILL");
+    await child.exited;
+    rmSync(temporary, { force: true, recursive: true });
+  }
+});
