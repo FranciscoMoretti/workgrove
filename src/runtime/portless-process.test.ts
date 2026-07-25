@@ -12,11 +12,9 @@ it("reports the execution error when Portless cannot be spawned", () => {
 
   try {
     const proxy = new PortlessProcess({
+      nodePath: join(temporary, "missing-node"),
       port: 13_555,
       stateDirectory: temporary,
-    });
-    Object.defineProperty(proxy, "nodePath", {
-      value: join(temporary, "missing-node"),
     });
 
     expect(() => proxy.run(["proxy", "start"])).toThrow(

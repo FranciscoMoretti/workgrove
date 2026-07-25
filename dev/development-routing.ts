@@ -75,7 +75,7 @@ function waitForOwnerProcessToStop(
   timeoutMilliseconds: number
 ): boolean {
   const deadline = Date.now() + timeoutMilliseconds;
-  while (processIsLive(owner.pid) && Date.now() < deadline) {
+  while (ownerProcessIsLive(owner) && Date.now() < deadline) {
     Atomics.wait(synchronousWaitState, 0, 0, STOPPED_PROXY_POLL_MS);
   }
   return !ownerProcessIsLive(owner);
@@ -85,6 +85,9 @@ function signalOwnerProcess(
   owner: ProxyOwner,
   signal: NodeJS.Signals
 ): boolean {
+  if (!ownerProcessIsLive(owner)) {
+    return false;
+  }
   try {
     process.kill(owner.pid, signal);
     return true;

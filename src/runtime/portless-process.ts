@@ -23,12 +23,18 @@ function numberFile(path: string): number | null {
 }
 
 export class PortlessProcess {
-  private readonly cliPath = packageFile("portless", "dist", "cli.js");
-  private readonly nodePath = packageFile("node", "bin", "node");
+  private readonly cliPath: string;
+  private readonly nodePath: string;
   readonly port: number;
   readonly stateDirectory: string;
 
-  constructor(options: { port: number; stateDirectory: string }) {
+  constructor(options: {
+    nodePath?: string;
+    port: number;
+    stateDirectory: string;
+  }) {
+    this.cliPath = packageFile("portless", "dist", "cli.js");
+    this.nodePath = options.nodePath ?? packageFile("node", "bin", "node");
     this.port = options.port;
     this.stateDirectory = options.stateDirectory;
   }
