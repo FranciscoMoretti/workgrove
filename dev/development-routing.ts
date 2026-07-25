@@ -30,9 +30,10 @@ const ProxyOwnerSchema = z.strictObject({
 type ProxyOwner = z.infer<typeof ProxyOwnerSchema>;
 
 const PROXY_OWNER_FILE = "workgrove-proxy-owner.json";
-const STARTED_PROXY_OBSERVATION_MS = 500;
+const STARTED_PROXY_OBSERVATION_MS = 5000;
 const STARTED_PROXY_POLL_MS = 25;
-const STOPPED_PROXY_OBSERVATION_MS = 2000;
+const GRACEFUL_PROXY_STOP_MS = 2500;
+const FORCED_PROXY_STOP_MS = 500;
 const STOPPED_PROXY_POLL_MS = 25;
 const synchronousWaitState = new Int32Array(new SharedArrayBuffer(4));
 
@@ -60,6 +61,39 @@ function processMatchesOwner(
     processIsLive(owner.pid) &&
     processStartMarker(owner.pid) === owner.startMarker
   );
+}
+
+function ownerProcessIsLive(owner: ProxyOwner): boolean {
+  return (
+    processIsLive(owner.pid) &&
+    processStartMarker(owner.pid) === owner.startMarker
+  );
+}
+
+function waitForOwnerProcessToStop(
+  owner: ProxyOwner,
+  timeoutMilliseconds: number
+): boolean {
+  const deadline = Date.now() + timeoutMilliseconds;
+  while (processIsLive(owner.pid) && Date.now() < deadline) {
+    Atomics.wait(synchronousWaitState, 0, 0, STOPPED_PROXY_POLL_MS);
+  }
+  return !ownerProcessIsLive(owner);
+}
+
+function signalOwnerProcess(
+  owner: ProxyOwner,
+  signal: NodeJS.Signals
+): boolean {
+  try {
+    process.kill(owner.pid, signal);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ESRCH") {
+      return false;
+    }
+    throw error;
+  }
 }
 
 export class DevelopmentProxyPortConflictError extends Error {
@@ -245,12 +279,16 @@ export class DevelopmentRouting implements LocalRoutingEngine {
         `Refusing to stop an unowned Portless proxy on port ${this.port}`
       );
     }
-    process.kill(owner.pid, "SIGTERM");
-    const deadline = Date.now() + STOPPED_PROXY_OBSERVATION_MS;
-    while (processIsLive(owner.pid) && Date.now() < deadline) {
-      Atomics.wait(synchronousWaitState, 0, 0, STOPPED_PROXY_POLL_MS);
+    if (!signalOwnerProcess(owner, "SIGTERM")) {
+      return;
     }
-    if (processIsLive(owner.pid)) {
+    if (waitForOwnerProcessToStop(owner, GRACEFUL_PROXY_STOP_MS)) {
+      return;
+    }
+    if (!signalOwnerProcess(owner, "SIGKILL")) {
+      return;
+    }
+    if (!waitForOwnerProcessToStop(owner, FORCED_PROXY_STOP_MS)) {
       throw new Error(`Portless proxy on port ${this.port} did not stop`);
     }
   }

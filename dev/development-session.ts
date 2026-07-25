@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
-  existsSync,
   linkSync,
   mkdirSync,
   readFileSync,
@@ -11,12 +10,10 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { z } from "zod";
 import { CodexHookActivityStore } from "../src/codex/codex-hook-activity";
 import type { WorkspaceControllerRuntimeOptions } from "../src/controller/workspace-controller";
-import {
-  processIsLive,
-  processStartMarker,
-} from "../src/host/process-inspection";
+import { processStartMarker } from "../src/host/process-inspection";
 import { FileWorkgroveStateStore } from "../src/runtime/local-state";
 import { ProcessSupervisor } from "../src/runtime/process-supervisor";
 import { reserveBackingPort } from "../src/runtime/readiness";
@@ -24,15 +21,19 @@ import {
   DevelopmentProxyPortConflictError,
   DevelopmentRouting,
 } from "./development-routing";
-import { acquireExclusiveFileLock } from "./exclusive-file-lock";
+import {
+  acquireExclusiveFileLock,
+  ExclusiveFileLockBusyError,
+} from "./exclusive-file-lock";
 
 const DEFAULT_PORTLESS_PORT = 1355;
 
-interface DevelopmentOwner {
-  pid: number;
-  startMarker: string;
-  token: string;
-}
+const DevelopmentOwnerSchema = z.strictObject({
+  pid: z.number().int().positive(),
+  startMarker: z.string().min(1).max(256),
+  token: z.string().min(1),
+});
+type DevelopmentOwner = z.infer<typeof DevelopmentOwnerSchema>;
 
 export interface DevelopmentSessionProfile {
   codexControlDirectory: string;
@@ -81,27 +82,10 @@ function developmentProfileId(appRoot: string): string {
 
 function readOwner(file: string): DevelopmentOwner | null {
   try {
-    const value = JSON.parse(
-      readFileSync(file, "utf8")
-    ) as Partial<DevelopmentOwner>;
-    return Number.isInteger(value.pid) &&
-      (value.pid ?? 0) > 0 &&
-      typeof value.startMarker === "string" &&
-      value.startMarker.length > 0 &&
-      typeof value.token === "string" &&
-      value.token.length > 0
-      ? (value as DevelopmentOwner)
-      : null;
+    return DevelopmentOwnerSchema.parse(JSON.parse(readFileSync(file, "utf8")));
   } catch {
     return null;
   }
-}
-
-function ownerIsLive(owner: DevelopmentOwner): boolean {
-  return (
-    processIsLive(owner.pid) &&
-    processStartMarker(owner.pid) === owner.startMarker
-  );
 }
 
 function acquireDevelopmentOwnership(controlDirectory: string): () => void {
@@ -120,41 +104,47 @@ function acquireDevelopmentOwnership(controlDirectory: string): () => void {
     startMarker,
     token: randomUUID(),
   };
-  const releaseGuard = acquireExclusiveFileLock(
-    join(controlDirectory, "server.lock.guard")
-  );
+  let releaseGuard: () => void;
+  try {
+    releaseGuard = acquireExclusiveFileLock(
+      join(controlDirectory, "server.lock.guard.sqlite")
+    );
+  } catch (error) {
+    if (error instanceof ExclusiveFileLockBusyError) {
+      const current = readOwner(file);
+      throw new Error(
+        current
+          ? `Workgrove development is already running for this checkout (pid ${current.pid})`
+          : "Workgrove development is already running for this checkout"
+      );
+    }
+    throw error;
+  }
   try {
     writeFileSync(temporary, `${JSON.stringify(owner)}\n`, {
       flag: "wx",
       mode: 0o600,
     });
-    if (existsSync(file)) {
-      const current = readOwner(file);
-      if (!current) {
-        throw new Error(
-          "Workgrove development session ownership is invalid; remove server.lock after verifying no development server is running"
-        );
-      }
-      if (ownerIsLive(current)) {
-        throw new Error(
-          `Workgrove development is already running for this checkout (pid ${current.pid})`
-        );
-      }
-      rmSync(file, { force: true });
-    }
+    rmSync(file, { force: true });
     linkSync(temporary, file);
-  } finally {
+  } catch (error) {
     releaseGuard();
+    throw error;
+  } finally {
     rmSync(temporary, { force: true });
   }
   return () => {
-    const current = readOwner(file);
-    if (
-      current?.pid === owner.pid &&
-      current.startMarker === owner.startMarker &&
-      current.token === owner.token
-    ) {
-      rmSync(file, { force: true });
+    try {
+      const current = readOwner(file);
+      if (
+        current?.pid === owner.pid &&
+        current.startMarker === owner.startMarker &&
+        current.token === owner.token
+      ) {
+        rmSync(file, { force: true });
+      }
+    } finally {
+      releaseGuard();
     }
   };
 }
@@ -182,7 +172,7 @@ async function openDevelopmentRouting(
   configuredPortValue: string | undefined
 ): Promise<DevelopmentRouting> {
   const survivingProxyPort = DevelopmentRouting.ownedProxyPort(stateDirectory);
-  if (configuredPortValue) {
+  if (configuredPortValue !== undefined) {
     const requestedPort = configuredPort(
       configuredPortValue,
       DEFAULT_PORTLESS_PORT,
@@ -270,7 +260,15 @@ export async function openDevelopmentSession(
         }
         closed = true;
         try {
-          routing?.stopOwnedProxy();
+          try {
+            routing?.stopOwnedProxy();
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            console.warn(
+              `Could not stop the Workgrove development proxy: ${message}`
+            );
+          }
         } finally {
           releaseOwnership();
         }

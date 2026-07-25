@@ -60,10 +60,16 @@ export class PortlessProcess {
       },
       timeout: 10_000,
     });
+    if (result.error) {
+      throw new Error(`Could not run Portless: ${result.error.message}`, {
+        cause: result.error,
+      });
+    }
     if (result.status !== 0) {
-      throw new Error(
-        (result.stderr || result.stdout || "Portless command failed").trim()
-      );
+      const fallback = result.signal
+        ? `Portless command failed with signal ${result.signal}`
+        : `Portless command failed with exit status ${result.status ?? "unknown"}`;
+      throw new Error((result.stderr || result.stdout || fallback).trim());
     }
   }
 }

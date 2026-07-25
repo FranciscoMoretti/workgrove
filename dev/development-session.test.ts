@@ -1,5 +1,6 @@
-import { expect, it } from "bun:test";
+import { expect, it, spyOn } from "bun:test";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -104,6 +105,65 @@ it("allows only one development writer per checkout", async () => {
     reopened?.close();
     first?.close();
     await proxyPort.release();
+    rmSync(temporary, { force: true, recursive: true });
+  }
+});
+
+it("rejects an empty explicit development proxy port", async () => {
+  const temporary = mkdtempSync(
+    join(tmpdir(), "workgrove-development-empty-port-")
+  );
+
+  try {
+    await expect(
+      openDevelopmentSession({
+        appRoot: realpathSync("."),
+        environment: { WORKGROVE_PORTLESS_PORT: "" },
+        homeDirectory: join(temporary, "home"),
+      })
+    ).rejects.toThrow(
+      "WORKGROVE_PORTLESS_PORT must be an integer between 1 and 65535"
+    );
+  } finally {
+    rmSync(temporary, { force: true, recursive: true });
+  }
+});
+
+it("releases session ownership when proxy shutdown fails", async () => {
+  const temporary = mkdtempSync(join(tmpdir(), "workgrove-development-close-"));
+  let opened: Awaited<ReturnType<typeof openDevelopmentSession>> | undefined;
+  let stopProxy: (() => void) | undefined;
+
+  try {
+    opened = await openDevelopmentSession({
+      appRoot: realpathSync("."),
+      environment: {},
+      homeDirectory: join(temporary, "home"),
+    });
+    const routing = opened.controllerRuntime.routing as DevelopmentRouting;
+    stopProxy = routing.stopOwnedProxy.bind(routing);
+    routing.stopOwnedProxy = () => {
+      throw new Error("simulated shutdown failure");
+    };
+    const warning = spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      expect(() => opened?.close()).not.toThrow();
+    } finally {
+      warning.mockRestore();
+    }
+    expect(
+      existsSync(join(opened.profile.controlDirectory, "server.lock"))
+    ).toBe(false);
+    stopProxy();
+    stopProxy = undefined;
+    opened = undefined;
+  } finally {
+    try {
+      stopProxy?.();
+    } catch {
+      // Best-effort cleanup for an assertion failure.
+    }
+    opened?.close();
     rmSync(temporary, { force: true, recursive: true });
   }
 });

@@ -126,10 +126,7 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
       return;
     }
     this.proxy.run(["proxy", "start", "--port", String(this.port), "--no-tls"]);
-    await this.waitUntil(
-      async () =>
-        (await this.proxyResponse("workgrove-probe.localhost")) ===
-        "unregistered",
+    await this.waitForProxyProbe(
       `Portless proxy did not start on port ${this.port}`
     );
   }
@@ -141,11 +138,17 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
         `Portless proxy state belongs to port ${recordedPort ?? "unknown"}, not ${this.port}`
       );
     }
+    await this.waitForProxyProbe(
+      `Portless proxy on port ${this.port} is not responding`
+    );
+  }
+
+  private async waitForProxyProbe(message: string): Promise<void> {
     await this.waitUntil(
       async () =>
         (await this.proxyResponse("workgrove-probe.localhost")) ===
         "unregistered",
-      `Portless proxy on port ${this.port} is not responding`
+      message
     );
   }
 

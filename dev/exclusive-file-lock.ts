@@ -1,25 +1,39 @@
-import { spawnSync } from "node:child_process";
-import { readFileSync, rmSync } from "node:fs";
+import { Database } from "bun:sqlite";
+
+export class ExclusiveFileLockBusyError extends Error {
+  constructor() {
+    super("Workgrove development session ownership is busy");
+    this.name = "ExclusiveFileLockBusyError";
+  }
+}
 
 export function acquireExclusiveFileLock(file: string): () => void {
-  if (process.platform !== "darwin") {
-    throw new Error("Workgrove file locking requires macOS");
-  }
-  const result = spawnSync(
-    "/usr/bin/shlock",
-    ["-f", file, "-p", String(process.pid)],
-    { encoding: "utf8" }
-  );
-  if (result.status !== 0) {
-    throw new Error("Workgrove development session ownership is busy");
-  }
-  return () => {
-    try {
-      if (Number(readFileSync(file, "utf8").trim()) === process.pid) {
-        rmSync(file, { force: true });
+  const database = new Database(file, { create: true, strict: true });
+  try {
+    database.run("BEGIN IMMEDIATE");
+  } catch (error) {
+    database.close(true);
+    if ((error as { code?: unknown }).code === "SQLITE_BUSY") {
+      throw new ExclusiveFileLockBusyError();
+    }
+    throw new Error(
+      "Could not acquire Workgrove development session ownership",
+      {
+        cause: error,
       }
-    } catch {
-      // A missing or replaced lock is not owned by this process.
+    );
+  }
+
+  let released = false;
+  return () => {
+    if (released) {
+      return;
+    }
+    released = true;
+    try {
+      database.run("ROLLBACK");
+    } finally {
+      database.close(true);
     }
   };
 }
