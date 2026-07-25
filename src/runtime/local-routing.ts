@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import { processIsLive } from "../host/process-inspection";
+import { observePortlessRoute } from "./portless-observation";
 
 export interface LocalRoute {
   hostname: string;
@@ -82,7 +83,7 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
     await this.waitUntil(
       async () =>
         this.route(route.hostname)?.port === route.port &&
-        (await this.proxyResponse(route.hostname)) === "routed",
+        (await observePortlessRoute(this.url(route.hostname))) === "routed",
       `Portless did not activate ${route.hostname}`
     );
   }
@@ -105,7 +106,8 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
     await this.waitUntil(
       async () =>
         this.route(route.hostname) === null &&
-        (await this.proxyResponse(route.hostname)) === "unregistered",
+        (await observePortlessRoute(this.url(route.hostname))) ===
+          "unregistered",
       `Portless did not deactivate ${route.hostname}`
     );
   }
@@ -134,7 +136,7 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
     this.run(["proxy", "start", "--port", String(this.port), "--no-tls"]);
     await this.waitUntil(
       async () =>
-        (await this.proxyResponse("workgrove-probe.localhost")) !==
+        (await observePortlessRoute(this.url("workgrove-probe.localhost"))) !==
         "unavailable",
       `Portless proxy did not start on port ${this.port}`
     );
@@ -149,26 +151,6 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
       PORTLESS_SYNC_HOSTS: "0",
       PORTLESS_TLD: "localhost",
     };
-  }
-
-  private async proxyResponse(
-    hostname: string
-  ): Promise<"routed" | "unavailable" | "unregistered"> {
-    try {
-      const response = await fetch(`${this.url(hostname)}/`, {
-        signal: AbortSignal.timeout(500),
-      });
-      const body = await response.text();
-      if (
-        response.status === 404 &&
-        body.includes(`No app registered for <strong>${hostname}</strong>`)
-      ) {
-        return "unregistered";
-      }
-      return response.status === 502 ? "unavailable" : "routed";
-    } catch {
-      return "unavailable";
-    }
   }
 
   private proxyPid(): number | null {

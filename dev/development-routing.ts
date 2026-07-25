@@ -9,6 +9,7 @@ import type {
   LocalRouteState,
   LocalRoutingEngine,
 } from "../src/runtime/local-routing";
+import { observePortlessRoute } from "../src/runtime/portless-observation";
 
 const require = createRequire(import.meta.url);
 const OBSERVATION_TIMEOUT_MS = 5000;
@@ -126,7 +127,8 @@ export class DevelopmentRouting implements LocalRoutingEngine {
       this.store.addRoute(route.hostname, route.port, 0);
     }
     await this.waitUntil(
-      async () => (await this.proxyResponse(route.hostname)) === "routed",
+      async () =>
+        (await observePortlessRoute(this.url(route.hostname))) === "routed",
       `Portless did not activate ${route.hostname}`
     );
     this.verifiedRoutes.add(routeKey(route.hostname, route.port));
@@ -152,7 +154,9 @@ export class DevelopmentRouting implements LocalRoutingEngine {
     this.verifiedRoutes.delete(routeKey(route.hostname, route.port));
     this.store.removeRoute(route.hostname, 0);
     return this.waitUntil(
-      async () => (await this.proxyResponse(route.hostname)) === "unregistered",
+      async () =>
+        (await observePortlessRoute(this.url(route.hostname))) ===
+        "unregistered",
       `Portless did not deactivate ${route.hostname}`
     );
   }
@@ -259,31 +263,13 @@ export class DevelopmentRouting implements LocalRoutingEngine {
     }
   }
 
-  private async proxyResponse(
-    hostname: string
-  ): Promise<"routed" | "unavailable" | "unregistered"> {
-    try {
-      const response = await fetch(`${this.url(hostname)}/`, {
-        signal: AbortSignal.timeout(500),
-      });
-      const body = await response.text();
-      if (
-        response.status === 404 &&
-        body.includes(`No app registered for <strong>${hostname}</strong>`)
-      ) {
-        return "unregistered";
-      }
-      return response.status === 502 ? "unavailable" : "routed";
-    } catch {
-      return "unavailable";
-    }
-  }
-
   private async refreshVerifiedRoutes(): Promise<void> {
     const routes = this.store.loadRoutes();
     await Promise.all(
       routes.map(async (route) => {
-        if ((await this.proxyResponse(route.hostname)) === "routed") {
+        if (
+          (await observePortlessRoute(this.url(route.hostname))) === "routed"
+        ) {
           this.verifiedRoutes.add(routeKey(route.hostname, route.port));
         }
       })
@@ -295,7 +281,7 @@ export class DevelopmentRouting implements LocalRoutingEngine {
     if (this.routeVerifications.has(key)) {
       return;
     }
-    const verification = this.proxyResponse(hostname)
+    const verification = observePortlessRoute(this.url(hostname))
       .then((response) => {
         const current = routeInStore(this.store, hostname);
         if (response === "routed" && current?.port === port && this.isLive()) {
