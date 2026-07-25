@@ -169,11 +169,8 @@ export class DevelopmentRouting implements LocalRoutingEngine {
       return "unavailable";
     }
     const key = routeKey(route.hostname, route.port);
-    if (this.verifiedRoutes.has(key)) {
-      return "active";
-    }
     this.verifyRoute(route.hostname, route.port);
-    return "unavailable";
+    return this.verifiedRoutes.has(key) ? "active" : "unavailable";
   }
 
   prepare(): Promise<void> {
@@ -303,7 +300,12 @@ export class DevelopmentRouting implements LocalRoutingEngine {
         const current = routeInStore(this.store, hostname);
         if (response === "routed" && current?.port === port && this.isLive()) {
           this.verifiedRoutes.add(key);
+        } else {
+          this.verifiedRoutes.delete(key);
         }
+      })
+      .catch(() => {
+        // Background verification is best-effort; a later observation retries.
       })
       .finally(() => {
         this.routeVerifications.delete(key);

@@ -329,12 +329,12 @@ it("rejects an occupied explicit development proxy port", async () => {
     await expect(openDevelopmentSession(options)).rejects.toThrow(
       `Portless proxy port ${reservation.port} is already in use`
     );
-    await reservation.release();
     opened = await openDevelopmentSession({
       ...options,
       environment: {},
     });
     expect(opened.profile.portlessPort).not.toBe(reservation.port);
+    await reservation.release();
   } finally {
     await opened?.close();
     await reservation.release();

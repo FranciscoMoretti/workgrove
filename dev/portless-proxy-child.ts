@@ -81,7 +81,11 @@ process.once("SIGTERM", () => {
   exit().catch(() => process.exit(1));
 });
 process.on("message", (message: unknown) => {
-  if ((message as { type?: unknown }).type === "shutdown") {
+  if (
+    typeof message === "object" &&
+    message !== null &&
+    (message as { type?: unknown }).type === "shutdown"
+  ) {
     exit().catch(() => process.exit(1));
   }
 });

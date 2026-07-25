@@ -6,5 +6,19 @@ if (!(Number.isInteger(port) && stateDirectory)) {
   throw new Error("Invalid development routing harness configuration");
 }
 
-await DevelopmentRouting.open({ port, stateDirectory });
+const routing = await DevelopmentRouting.open({ port, stateDirectory });
 process.send?.({ type: "ready" });
+
+async function exit(): Promise<void> {
+  await routing.close();
+  process.exit(0);
+}
+
+process.once("disconnect", () => {
+  exit().catch(() => process.exit(1));
+});
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => {
+    exit().catch(() => process.exit(1));
+  });
+}

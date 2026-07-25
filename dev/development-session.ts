@@ -73,7 +73,8 @@ function acquireDevelopmentOwnership(controlDirectory: string): () => void {
   } catch (error) {
     if (error instanceof ExclusiveFileLockBusyError) {
       throw new Error(
-        "Workgrove development is already running for this checkout"
+        "Workgrove development is already running for this checkout",
+        { cause: error }
       );
     }
     throw error;
@@ -131,8 +132,9 @@ async function openDevelopmentRouting(
     return prepareDevelopmentRouting(stateDirectory, rememberedPort);
   }
   let lastConflict: DevelopmentProxyPortConflictError | undefined;
+  const conflictingPorts = new Set<number>();
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const reservation = await reserveBackingPort();
+    const reservation = await reserveBackingPort(conflictingPorts);
     const port = reservation.port;
     await reservation.release();
     try {
@@ -142,6 +144,7 @@ async function openDevelopmentRouting(
         throw error;
       }
       lastConflict = error;
+      conflictingPorts.add(port);
     }
   }
   throw (

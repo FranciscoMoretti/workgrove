@@ -203,7 +203,11 @@ it("routes through the embedded development proxy", async () => {
     expect(
       routing.observe({ hostname: "app.localhost", port: backend.port })
     ).toBe("inactive");
-    expect((await proxyResponse(port, "app.localhost")).status).toBe(404);
+    const unregistered = await proxyResponse(port, "app.localhost");
+    expect(unregistered.status).toBe(404);
+    expect(unregistered.body).toContain(
+      "No app registered for <strong>app.localhost</strong>"
+    );
   } finally {
     await routing?.close();
     await backend.close();
@@ -233,9 +237,7 @@ it("observes a route before reporting activation", async () => {
       stateDirectory: temporary,
     });
     const activation = routing.activate(route);
-    await new Promise((resolve) => setTimeout(resolve, 25));
-    expect(routing.observe(route)).toBe("unavailable");
-    await new Promise((resolve) => setTimeout(resolve, 75));
+    await waitForRouteState(routing, route, "unavailable");
     backend = await listenBackend(route.port);
     await activation;
     expect(routing.observe(route)).toBe("active");
@@ -246,7 +248,7 @@ it("observes a route before reporting activation", async () => {
     await proxyReservation.release();
     rmSync(temporary, { force: true, recursive: true });
   }
-});
+}, 10_000);
 
 it("restores persistent aliases when the embedded proxy reopens", async () => {
   const temporary = mkdtempSync(join(tmpdir(), "workgrove-routing-reopen-"));
@@ -316,6 +318,11 @@ it("re-observes a persisted route after its backend recovers", async () => {
     expect(reopened.observe(route)).toBe("unavailable");
     backend = await listenBackend(route.port);
     await waitForRouteState(reopened, route, "active");
+    await backend.close();
+    backend = undefined;
+    await waitForRouteState(reopened, route, "unavailable");
+    backend = await listenBackend(route.port);
+    await waitForRouteState(reopened, route, "active");
   } finally {
     await reopened?.close();
     await first?.close();
@@ -323,7 +330,7 @@ it("re-observes a persisted route after its backend recovers", async () => {
     await reservation.release();
     rmSync(temporary, { force: true, recursive: true });
   }
-});
+}, 10_000);
 
 it("rejects occupied ports and releases both loopback listeners", async () => {
   const temporary = mkdtempSync(join(tmpdir(), "workgrove-routing-port-"));
@@ -408,4 +415,4 @@ it("stops the proxy when its Bun parent is killed", async () => {
     await reservation.release();
     rmSync(temporary, { force: true, recursive: true });
   }
-});
+}, 10_000);
