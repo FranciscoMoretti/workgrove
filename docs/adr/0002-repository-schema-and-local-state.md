@@ -140,16 +140,6 @@ For the first implementation, canonical repository and worktree paths are lookup
 
 The first implementation uses a single versioned, atomically replaced JSON state file under `~/.workgrove`, behind a `LocalStateStore` interface. The daemon is its sole writer. Logs and Workgrove's private Portless state remain separate.
 
-The production daemon owns the default runtime profile under `~/.workgrove`.
-Developing Workgrove itself uses a separate profile per canonical source
-checkout under `~/.workgrove/development/`. Each profile has its own state,
-trust records, managed-process records, logs, Codex hook records, Portless state,
-and Portless proxy port. A live ownership record enforces one writer per
-development profile, while opaque path-derived profile IDs allow different
-checkouts to run concurrently without adding project- or folder-name
-conventions to the product. Development dashboard and Portless ports are
-allocated dynamically unless explicitly configured.
-
 The local state may persist only:
 
 - repositories explicitly opened or initialized by the user;

@@ -69,7 +69,6 @@ describe("Workgrove HTTP server", () => {
     const appRoot = mkdtempSync(join(tmpdir(), "workgrove-server-test-"));
     let closeCalls = 0;
     let commandCalls = 0;
-    let runtimeCloseCalls = 0;
     const controller = {
       close: () => {
         closeCalls += 1;
@@ -97,10 +96,6 @@ describe("Workgrove HTTP server", () => {
       controller,
       development: false,
       enableCodexHooks: false,
-      onClose: () => {
-        runtimeCloseCalls += 1;
-        return Promise.resolve();
-      },
       port: 0,
     });
 
@@ -140,7 +135,6 @@ describe("Workgrove HTTP server", () => {
       rmSync(appRoot, { force: true, recursive: true });
     }
     expect(closeCalls).toBe(1);
-    expect(runtimeCloseCalls).toBe(1);
   });
 
   it("formats IPv6 hosts as valid origins", async () => {

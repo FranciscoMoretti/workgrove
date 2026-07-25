@@ -11,19 +11,21 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { CodexHookActivityStore } from "../codex/codex-hook-activity";
-import type { WorkspaceControllerRuntimeOptions } from "../controller/workspace-controller";
-import { acquireExclusiveFileLock } from "../host/exclusive-file-lock";
-import { processIsLive, processStartMarker } from "../host/process-inspection";
+import { CodexHookActivityStore } from "../src/codex/codex-hook-activity";
+import type { WorkspaceControllerRuntimeOptions } from "../src/controller/workspace-controller";
 import {
-  PortlessProxyPortConflictError,
-  PortlessRoutingEngine,
-} from "./local-routing";
-import { FileWorkgroveStateStore } from "./local-state";
-import { ProcessSupervisor } from "./process-supervisor";
-import { reserveBackingPort } from "./readiness";
+  processIsLive,
+  processStartMarker,
+} from "../src/host/process-inspection";
+import { FileWorkgroveStateStore } from "../src/runtime/local-state";
+import { ProcessSupervisor } from "../src/runtime/process-supervisor";
+import { reserveBackingPort } from "../src/runtime/readiness";
+import {
+  DevelopmentProxyPortConflictError,
+  DevelopmentRouting,
+} from "./development-routing";
+import { acquireExclusiveFileLock } from "./exclusive-file-lock";
 
-const DEFAULT_DASHBOARD_PORT = 3999;
 const DEFAULT_PORTLESS_PORT = 1355;
 
 interface DevelopmentOwner {
@@ -32,25 +34,23 @@ interface DevelopmentOwner {
   token: string;
 }
 
-export interface RuntimeProfile {
+export interface DevelopmentSessionProfile {
   codexControlDirectory: string;
   controlDirectory: string;
   dashboardPort: number;
-  development: boolean;
   portlessPort: number;
   portlessStateDirectory: string;
   statePath: string;
 }
 
-export interface OpenRuntimeProfile {
+export interface DevelopmentSession {
   close(): void;
   controllerRuntime: WorkspaceControllerRuntimeOptions;
-  profile: RuntimeProfile;
+  profile: DevelopmentSessionProfile;
 }
 
-interface OpenRuntimeProfileOptions {
+interface OpenDevelopmentSessionOptions {
   appRoot: string;
-  development: boolean;
   environment?: NodeJS.ProcessEnv;
   homeDirectory?: string;
 }
@@ -132,7 +132,7 @@ function acquireDevelopmentOwnership(controlDirectory: string): () => void {
       const current = readOwner(file);
       if (!current) {
         throw new Error(
-          "Workgrove development profile ownership is invalid; remove server.lock after verifying no development server is running"
+          "Workgrove development session ownership is invalid; remove server.lock after verifying no development server is running"
         );
       }
       if (ownerIsLive(current)) {
@@ -162,12 +162,8 @@ function acquireDevelopmentOwnership(controlDirectory: string): () => void {
 async function prepareDevelopmentRouting(
   stateDirectory: string,
   port: number
-): Promise<PortlessRoutingEngine> {
-  const routing = new PortlessRoutingEngine({
-    exclusiveOwnership: true,
-    port,
-    stateDirectory,
-  });
+): Promise<DevelopmentRouting> {
+  const routing = new DevelopmentRouting({ port, stateDirectory });
   try {
     await routing.prepare();
     return routing;
@@ -175,7 +171,7 @@ async function prepareDevelopmentRouting(
     try {
       routing.stopOwnedProxy();
     } catch {
-      // No verified profile-owned proxy is stopped after a failed preparation.
+      // No verified session-owned proxy is stopped after failed preparation.
     }
     throw error;
   }
@@ -184,9 +180,8 @@ async function prepareDevelopmentRouting(
 async function openDevelopmentRouting(
   stateDirectory: string,
   configuredPortValue: string | undefined
-): Promise<PortlessRoutingEngine> {
-  const survivingProxyPort =
-    PortlessRoutingEngine.ownedProxyPort(stateDirectory);
+): Promise<DevelopmentRouting> {
+  const survivingProxyPort = DevelopmentRouting.ownedProxyPort(stateDirectory);
   if (configuredPortValue) {
     const requestedPort = configuredPort(
       configuredPortValue,
@@ -194,8 +189,7 @@ async function openDevelopmentRouting(
       "WORKGROVE_PORTLESS_PORT"
     );
     if (survivingProxyPort !== null && survivingProxyPort !== requestedPort) {
-      new PortlessRoutingEngine({
-        exclusiveOwnership: true,
+      new DevelopmentRouting({
         port: survivingProxyPort,
         stateDirectory,
       }).stopOwnedProxy();
@@ -212,7 +206,7 @@ async function openDevelopmentRouting(
       // Allocate a new owned proxy after verified recovery fails.
     }
   }
-  let lastConflict: PortlessProxyPortConflictError | undefined;
+  let lastConflict: DevelopmentProxyPortConflictError | undefined;
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const reservation = await reserveBackingPort();
     const port = reservation.port;
@@ -220,7 +214,7 @@ async function openDevelopmentRouting(
     try {
       return await prepareDevelopmentRouting(stateDirectory, port);
     } catch (error) {
-      if (!(error instanceof PortlessProxyPortConflictError)) {
+      if (!(error instanceof DevelopmentProxyPortConflictError)) {
         throw error;
       }
       lastConflict = error;
@@ -232,61 +226,38 @@ async function openDevelopmentRouting(
   );
 }
 
-export async function openRuntimeProfile(
-  options: OpenRuntimeProfileOptions
-): Promise<OpenRuntimeProfile> {
+export async function openDevelopmentSession(
+  options: OpenDevelopmentSessionOptions
+): Promise<DevelopmentSession> {
   const environment = options.environment ?? process.env;
   const homeDirectory = options.homeDirectory ?? homedir();
-  const productionDirectory =
-    environment.WORKGROVE_CONTROL_DIR ?? join(homeDirectory, ".workgrove");
-  const controlDirectory = options.development
-    ? join(
-        homeDirectory,
-        ".workgrove",
-        "development",
-        developmentProfileId(options.appRoot)
-      )
-    : productionDirectory;
+  const controlDirectory = join(
+    homeDirectory,
+    ".workgrove",
+    "development",
+    developmentProfileId(options.appRoot)
+  );
   const statePath = join(controlDirectory, "state.json");
   const portlessStateDirectory = join(controlDirectory, "portless");
-  const codexControlDirectory = options.development
-    ? join(controlDirectory, "codex")
-    : (environment.WORKGROVE_CODEX_CONTROL_DIR ??
-      join(controlDirectory, "codex"));
+  const codexControlDirectory = join(controlDirectory, "codex");
   const dashboardPort = configuredPort(
     environment.WORKGROVE_PORT,
-    options.development ? 0 : DEFAULT_DASHBOARD_PORT,
+    0,
     "WORKGROVE_PORT",
     true
   );
-  const releaseOwnership = options.development
-    ? acquireDevelopmentOwnership(controlDirectory)
-    : () => undefined;
-  let routing: PortlessRoutingEngine | undefined;
+  const releaseOwnership = acquireDevelopmentOwnership(controlDirectory);
+  let routing: DevelopmentRouting | undefined;
 
   try {
-    if (options.development) {
-      routing = await openDevelopmentRouting(
-        portlessStateDirectory,
-        environment.WORKGROVE_PORTLESS_PORT
-      );
-    } else {
-      routing = new PortlessRoutingEngine({
-        port: environment.WORKGROVE_PORTLESS_PORT
-          ? configuredPort(
-              environment.WORKGROVE_PORTLESS_PORT,
-              DEFAULT_PORTLESS_PORT,
-              "WORKGROVE_PORTLESS_PORT"
-            )
-          : DEFAULT_PORTLESS_PORT,
-        stateDirectory: portlessStateDirectory,
-      });
-    }
-    const profile: RuntimeProfile = {
+    routing = await openDevelopmentRouting(
+      portlessStateDirectory,
+      environment.WORKGROVE_PORTLESS_PORT
+    );
+    const profile: DevelopmentSessionProfile = {
       codexControlDirectory,
       controlDirectory,
       dashboardPort,
-      development: options.development,
       portlessPort: routing.port,
       portlessStateDirectory,
       statePath,
@@ -299,9 +270,7 @@ export async function openRuntimeProfile(
         }
         closed = true;
         try {
-          if (profile.development) {
-            routing?.stopOwnedProxy();
-          }
+          routing?.stopOwnedProxy();
         } finally {
           releaseOwnership();
         }

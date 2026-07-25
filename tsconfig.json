@@ -17,5 +17,5 @@
     "target": "ESNext",
     "types": ["bun", "node", "vite/client"]
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"]
+  "include": ["dev/**/*.ts", "src/**/*.ts", "src/**/*.tsx"]
 }

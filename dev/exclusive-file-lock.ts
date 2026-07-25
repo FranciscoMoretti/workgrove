@@ -11,7 +11,7 @@ export function acquireExclusiveFileLock(file: string): () => void {
     { encoding: "utf8" }
   );
   if (result.status !== 0) {
-    throw new Error("Workgrove development profile ownership is busy");
+    throw new Error("Workgrove development session ownership is busy");
   }
   return () => {
     try {

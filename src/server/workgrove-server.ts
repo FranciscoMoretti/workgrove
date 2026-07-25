@@ -49,7 +49,6 @@ export interface WorkgroveServerOptions {
   development?: boolean;
   enableCodexHooks?: boolean;
   host?: string;
-  onClose?: () => Promise<void>;
   port?: number;
 }
 
@@ -324,7 +323,6 @@ export async function createWorkgroveServer(
       shutdownPromise ??= Promise.all([
         closeHttpServer(),
         controller.close(),
-        options.onClose?.() ?? Promise.resolve(),
         vite?.close() ?? Promise.resolve(),
       ])
         .then(() => undefined)

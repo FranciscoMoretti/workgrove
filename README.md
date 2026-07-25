@@ -236,15 +236,15 @@ bun run test:integration
 bun run build
 ```
 
-`bun run dev` uses an isolated development profile for the current Workgrove
+`bun run dev` uses an isolated development session for the current Workgrove
 checkout. It chooses collision-free dashboard and Portless ports, prints the
 dashboard URL, and keeps its state, trust decisions, managed-process records,
 logs, routes, and Codex hook capability separate from the production daemon
 under `~/.workgrove/development/`. An installed or source-run daemon may remain
 running while Workgrove is developed.
 
-Only one development server may own a checkout's profile at a time. Different
-Workgrove checkouts receive different profiles and can run concurrently.
+Only one development server may own a checkout's session at a time. Different
+Workgrove checkouts receive different sessions and can run concurrently.
 Stopping the foreground development server releases its ownership record and
 stops only its own Portless proxy. Codex task discovery remains available, but
 the isolated development hook capability does not replace a running production

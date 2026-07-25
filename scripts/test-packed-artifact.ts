@@ -102,6 +102,10 @@ try {
       `Packed artifact is missing ${requiredPath}`
     );
   }
+  assert(
+    !packedFiles.split("\n").some((path) => path.startsWith("package/dev/")),
+    "Packed artifact unexpectedly includes contributor development tooling"
+  );
 
   writeFileSync(
     join(installDirectory, "package.json"),
