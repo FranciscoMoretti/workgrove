@@ -1,40 +1,32 @@
-import { BotIcon, GitBranchIcon, PlayIcon, SquareIcon } from "lucide-react";
+import {
+  BotIcon,
+  ChevronRightIcon,
+  GitBranchIcon,
+  PlayIcon,
+  Settings2Icon,
+  SquareIcon,
+} from "lucide-react";
 
 import type { CodexIntegrationSnapshot } from "../../codex/codex-integration";
-
 import type {
   AppGroupSnapshot,
   WorktreeSnapshot,
 } from "../../controller/workspace-snapshot";
-import { appGroupIsRunning } from "../../controller/workspace-snapshot";
+import { appsAreRunning } from "../../controller/workspace-snapshot";
 import type { WorktreeCommandActions } from "../worktree-command-menu";
 import { AppEndpointLink } from "./app-endpoint-link";
 import { AppGroupActionsMenu } from "./app-group-actions-menu";
-import { AppGroupInstanceControl } from "./app-group-instance-control";
+import {
+  appGroupDisplayStatus,
+  worktreeDisplayStatus,
+} from "./app-group-status";
+import { StatusSummary } from "./status-summary";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
 import { ScrollArea } from "./ui/scroll-area";
 import { Spinner } from "./ui/spinner";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "./ui/table";
 import { WorktreeActionsMenu } from "./worktree-actions-menu";
-
-function status(group: AppGroupSnapshot): string {
-  if (group.health === "running") {
-    return "Running";
-  }
-  if (group.health === "partially-running") {
-    return "Partially running";
-  }
-  return group.processRunning ? "Process running" : "Not running";
-}
 
 function actionIcon(pending: boolean, running: boolean) {
   if (pending) {
@@ -51,16 +43,24 @@ function CodexTaskSummary({
   tasks: CodexIntegrationSnapshot["worktrees"][string]["tasks"] | undefined;
 }) {
   if (!tasks) {
-    let label = "—";
+    let label = "No tasks";
     if (availability === "unavailable") {
       label = "Unavailable";
     } else if (availability === "loading") {
       label = "Loading…";
     }
-    return <span className="text-muted-foreground text-xs">{label}</span>;
+    return (
+      <span className="worktree-empty-value text-muted-foreground">
+        {label}
+      </span>
+    );
   }
   if (tasks.length === 0) {
-    return <span className="text-muted-foreground text-xs">No tasks</span>;
+    return (
+      <span className="worktree-empty-value text-muted-foreground">
+        No tasks
+      </span>
+    );
   }
   const working = tasks.filter(
     (task) => task.activity?.state === "working"
@@ -69,24 +69,149 @@ function CodexTaskSummary({
     (task) => task.activity?.state === "waiting-for-approval"
   ).length;
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-      <Badge variant="outline">
+    <div className="codex-summary">
+      <span className="codex-summary-count">
         <BotIcon />
         {tasks.length}
-      </Badge>
+      </span>
       {working > 0 ? (
-        <span className="flex items-center gap-1 text-status-running-foreground text-xs">
-          <span className="size-1.5 rounded-full bg-current" />
+        <span className="codex-summary-state" data-state="working">
+          <span aria-hidden="true" />
           {working} live
         </span>
       ) : null}
       {waiting > 0 ? (
-        <span className="flex items-center gap-1 text-status-partial-foreground text-xs">
-          <span className="size-1.5 rounded-full bg-current" />
+        <span className="codex-summary-state" data-state="waiting">
+          <span aria-hidden="true" />
           {waiting} waiting
         </span>
       ) : null}
     </div>
+  );
+}
+
+function AppGroupSummary({
+  blocked,
+  group,
+  onInspect,
+  onRestart,
+  onRetry,
+  onToggle,
+  worktree,
+}: {
+  blocked: boolean;
+  group: AppGroupSnapshot;
+  onInspect: () => void;
+  onRestart: () => void;
+  onRetry: () => void;
+  onToggle: () => void;
+  worktree: WorktreeSnapshot;
+}) {
+  return (
+    <div
+      className="app-group-summary"
+      data-app-group={group.name}
+      data-status={appGroupDisplayStatus(group)}
+    >
+      <div className="app-group-summary-heading">
+        <div className="min-w-0">
+          <Button
+            aria-label={`Inspect ${group.name} details`}
+            className="app-group-heading-link"
+            onClick={onInspect}
+            size="sm"
+            variant="ghost"
+          >
+            <strong className="truncate">{group.name}</strong>
+            <StatusSummary status={appGroupDisplayStatus(group)} />
+            <ChevronRightIcon data-icon="inline-end" />
+          </Button>
+          {group.instance.mode === "selectable" ? (
+            <span className="app-group-instance-label">
+              Instance: {group.instance.name}
+            </span>
+          ) : null}
+        </div>
+        <div className="app-group-summary-actions">
+          <AppGroupActionsMenu
+            group={group}
+            onRestart={onRestart}
+            onRetry={onRetry}
+            onToggle={onToggle}
+            pending={blocked}
+            worktree={worktree}
+          />
+        </div>
+      </div>
+      <div className="app-endpoint-list">
+        {group.apps.length > 0 ? (
+          group.apps.map((app) => (
+            <span className="app-endpoint-summary" key={app.id}>
+              <span
+                aria-hidden="true"
+                className="app-endpoint-dot"
+                data-listening={app.listening || undefined}
+                data-ownership={app.ownership}
+                data-readiness={app.readiness}
+                data-route-state={app.routeState}
+              />
+              <span>{app.label}</span>
+              <AppEndpointLink app={app} />
+            </span>
+          ))
+        ) : (
+          <span className="text-muted-foreground">No Apps configured</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WorktreePrimaryAction({
+  actions,
+  blocked,
+  pending,
+  worktree,
+}: {
+  actions: WorktreeCommandActions;
+  blocked: boolean;
+  pending: boolean;
+  worktree: WorktreeSnapshot;
+}) {
+  if (worktree.setupState === "running") {
+    return (
+      <Button disabled size="sm" variant="outline">
+        <Spinner />
+        Setting up
+      </Button>
+    );
+  }
+  if (worktree.setupState === "failed") {
+    return (
+      <Button
+        disabled={blocked}
+        onClick={() => actions.onSetup(worktree)}
+        size="sm"
+        variant="outline"
+      >
+        {pending ? <Spinner /> : <Settings2Icon />}
+        Retry setup
+      </Button>
+    );
+  }
+  const running = appsAreRunning(worktree);
+  return (
+    <Button
+      disabled={blocked}
+      onClick={() =>
+        running ? actions.onStop(worktree) : actions.onStart(worktree)
+      }
+      size="sm"
+      variant={running ? "secondary" : "default"}
+    >
+      {actionIcon(pending, running)}
+      {running ? "Stop apps" : "Start apps"}
+    </Button>
   );
 }
 
@@ -98,11 +223,11 @@ export function WorktreeTable({
   commandActions,
   onDelete,
   onInspect,
-  onCreateAppGroupInstance,
+  onInspectAppGroup,
   onRestartAppGroup,
   onRetryAppGroup,
-  onSelectAppGroupInstance,
   onToggleAppGroup,
+  primaryAppGroupId,
   selectedId,
   worktreeActionPending,
   worktrees,
@@ -114,11 +239,7 @@ export function WorktreeTable({
   commandActions: WorktreeCommandActions;
   onDelete: (worktree: WorktreeSnapshot) => void;
   onInspect: (worktreeId: string) => void;
-  onCreateAppGroupInstance: (
-    worktree: WorktreeSnapshot,
-    group: AppGroupSnapshot,
-    name: string
-  ) => Promise<void>;
+  onInspectAppGroup: (worktreeId: string, appGroupId: string) => void;
   onRestartAppGroup: (
     worktree: WorktreeSnapshot,
     group: AppGroupSnapshot
@@ -127,208 +248,122 @@ export function WorktreeTable({
     worktree: WorktreeSnapshot,
     group: AppGroupSnapshot
   ) => void;
-  onSelectAppGroupInstance: (
-    worktree: WorktreeSnapshot,
-    group: AppGroupSnapshot,
-    instanceId: string
-  ) => void;
   onToggleAppGroup: (
     worktree: WorktreeSnapshot,
     group: AppGroupSnapshot
   ) => void;
+  primaryAppGroupId: string;
   selectedId: string | null;
   worktreeActionPending: (worktreeId: string) => boolean;
   worktrees: WorktreeSnapshot[];
 }) {
   return (
-    <ScrollArea
-      className="worktree-table h-full min-w-0 border bg-card"
-      scrollbars={["vertical", "horizontal"]}
-    >
-      <Table
-        className="min-w-[1020px]"
-        containerClassName="w-max min-w-full overflow-visible"
-      >
-        <TableHeader className="sticky top-0 z-10 bg-muted">
-          <TableRow>
-            <TableHead className="w-[24%]">Worktree</TableHead>
-            <TableHead className="w-[16%]">Branch</TableHead>
-            <TableHead>App groups</TableHead>
-            <TableHead className="w-[14%]">Codex</TableHead>
-            <TableHead>
-              <span className="sr-only">Actions</span>
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {worktrees.map((worktree) => {
-            const worktreePending = worktreeActionPending(worktree.id);
-            return (
-              <TableRow
-                className="cursor-default"
-                data-state={selectedId === worktree.id ? "selected" : undefined}
-                key={worktree.id}
-                onClick={(event) => {
-                  if (
-                    !(event.target as Element).closest(
-                      "button, a, [role=option]"
-                    )
-                  ) {
-                    onInspect(worktree.id);
-                  }
-                }}
+    <ScrollArea className="worktree-console h-full min-w-0">
+      <div aria-hidden="true" className="worktree-console-header">
+        <span>Worktree</span>
+        <span>App groups and Apps</span>
+        <span>Codex</span>
+        <span>Action</span>
+      </div>
+      <div className="worktree-table">
+        {worktrees.map((worktree) => {
+          const displayStatus = worktreeDisplayStatus(worktree);
+          const worktreePending = worktreeActionPending(worktree.id);
+          const primaryGroup = worktree.appGroups.find(
+            (group) => group.id === primaryAppGroupId
+          );
+          const primaryGroupBlocked = primaryGroup
+            ? appGroupActionBlocked(worktree.id, primaryGroup.id)
+            : false;
+          const primaryGroupPending = primaryGroup
+            ? appGroupActionPending(worktree.id, primaryGroup.id)
+            : false;
+          const primaryActionBlocked = worktreePending || primaryGroupBlocked;
+          const primaryActionPending = worktreePending || primaryGroupPending;
+          return (
+            <article
+              className="worktree-row"
+              data-state={selectedId === worktree.id ? "selected" : undefined}
+              data-status={displayStatus}
+              key={worktree.id}
+            >
+              <Button
+                aria-label={`Inspect ${worktree.name}`}
+                aria-pressed={selectedId === worktree.id}
+                className="worktree-identity"
+                onClick={() => onInspect(worktree.id)}
+                variant="ghost"
               >
-                <TableCell>
-                  <div className="grid gap-1">
-                    <div className="flex items-center gap-2">
-                      <strong>{worktree.name}</strong>
-                      {worktree.isMain ? (
-                        <Badge variant="secondary">Main</Badge>
-                      ) : null}
-                    </div>
-                    <span className="truncate font-mono text-muted-foreground">
-                      {worktree.path}
-                    </span>
-                    {worktree.setupState === "failed" ? (
-                      <Badge variant="destructive">Setup failed</Badge>
+                <span aria-hidden="true" className="worktree-branch-rail">
+                  <span />
+                </span>
+                <span className="worktree-identity-copy">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <strong className="truncate">{worktree.name}</strong>
+                    {worktree.isMain ? (
+                      <Badge variant="secondary">Main</Badge>
                     ) : null}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    <GitBranchIcon className="text-muted-foreground" />
-                    <span className="truncate font-mono text-muted-foreground">
-                      {worktree.branch}
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell className="whitespace-normal">
-                  <div
-                    className="grid grid-cols-[repeat(auto-fit,minmax(24rem,1fr))] gap-x-4 gap-y-2"
-                    data-slot="app-group-grid"
-                  >
-                    {worktree.appGroups.map((group) => {
-                      const blocked = appGroupActionBlocked(
-                        worktree.id,
-                        group.id
-                      );
-                      const pending = appGroupActionPending(
-                        worktree.id,
-                        group.id
-                      );
-                      const running = appGroupIsRunning(group);
-                      return (
-                        <div
-                          className="grid min-w-0 grid-cols-[minmax(7rem,auto)_auto_minmax(0,1fr)_auto] items-center gap-2 border-l pl-4"
-                          data-app-group={group.name}
-                          key={group.id}
-                        >
-                          <div className="grid min-w-0 gap-1">
-                            <span
-                              className="min-w-0 truncate font-medium"
-                              title={group.name}
-                            >
-                              {group.name}
-                            </span>
-                            <AppGroupInstanceControl
-                              disabled={blocked}
-                              group={group}
-                              onCreate={(name) =>
-                                onCreateAppGroupInstance(worktree, group, name)
-                              }
-                              onSelect={(instanceId) =>
-                                onSelectAppGroupInstance(
-                                  worktree,
-                                  group,
-                                  instanceId
-                                )
-                              }
-                            />
-                          </div>
-                          <Button
-                            aria-label={`${running ? "Stop" : "Start"} ${group.name} for ${worktree.name}`}
-                            className="min-w-24 justify-start"
-                            data-health={group.health}
-                            disabled={blocked}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onToggleAppGroup(worktree, group);
-                            }}
-                            title={status(group)}
-                            variant="outline"
-                          >
-                            {actionIcon(pending, running)}
-                            {running ? "Stop" : "Start"}
-                          </Button>
-                          <div className="flex min-w-0 flex-wrap gap-x-3 gap-y-1">
-                            {group.apps.map((app) => (
-                              <span
-                                className="flex items-center gap-1"
-                                key={app.id}
-                              >
-                                <span
-                                  className={
-                                    app.listening
-                                      ? "size-1.5 rounded-full bg-foreground"
-                                      : "size-1.5 rounded-full bg-muted-foreground/60"
-                                  }
-                                />
-                                {app.label} <AppEndpointLink app={app} />
-                              </span>
-                            ))}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <AppGroupActionsMenu
-                              group={group}
-                              onRestart={() =>
-                                onRestartAppGroup(worktree, group)
-                              }
-                              onRetry={() => onRetryAppGroup(worktree, group)}
-                              onToggle={() => onToggleAppGroup(worktree, group)}
-                              pending={blocked}
-                              worktree={worktree}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </TableCell>
-                <TableCell className="whitespace-normal">
-                  <CodexTaskSummary
-                    availability={codexAvailability}
-                    tasks={codexWorktrees?.[worktree.id]?.tasks}
-                  />
-                </TableCell>
-                <TableCell onClick={(event) => event.stopPropagation()}>
-                  <WorktreeActionsMenu
-                    commandActions={commandActions}
-                    includeLifecycle={false}
-                    onDelete={() => onDelete(worktree)}
-                    onInspect={() => onInspect(worktree.id)}
-                    pending={worktreePending}
+                  </span>
+                  <span className="worktree-branch">
+                    <GitBranchIcon />
+                    <span className="truncate">{worktree.branch}</span>
+                  </span>
+                  <StatusSummary status={displayStatus} />
+                </span>
+              </Button>
+              <div className="app-group-grid" data-slot="app-group-grid">
+                {worktree.appGroups.map((group) => (
+                  <AppGroupSummary
+                    blocked={appGroupActionBlocked(worktree.id, group.id)}
+                    group={group}
+                    key={group.id}
+                    onInspect={() => onInspectAppGroup(worktree.id, group.id)}
+                    onRestart={() => onRestartAppGroup(worktree, group)}
+                    onRetry={() => onRetryAppGroup(worktree, group)}
+                    onToggle={() => onToggleAppGroup(worktree, group)}
                     worktree={worktree}
                   />
-                </TableCell>
-              </TableRow>
-            );
-          })}
-          {worktrees.length === 0 ? (
-            <TableRow>
-              <TableCell className="h-48" colSpan={5}>
-                <Empty>
-                  <EmptyHeader>
-                    <EmptyTitle>No Git worktrees found</EmptyTitle>
-                    <EmptyDescription>
-                      Add a worktree to this repository to manage it here.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              </TableCell>
-            </TableRow>
-          ) : null}
-        </TableBody>
-      </Table>
+                ))}
+              </div>
+              <div className="worktree-codex">
+                <CodexTaskSummary
+                  availability={codexAvailability}
+                  tasks={codexWorktrees?.[worktree.id]?.tasks}
+                />
+              </div>
+              <div className="worktree-row-actions">
+                <WorktreePrimaryAction
+                  actions={commandActions}
+                  blocked={primaryActionBlocked}
+                  pending={primaryActionPending}
+                  worktree={worktree}
+                />
+                <WorktreeActionsMenu
+                  commandActions={commandActions}
+                  includeLifecycle={false}
+                  onDelete={() => onDelete(worktree)}
+                  onInspect={() => onInspect(worktree.id)}
+                  pending={primaryActionBlocked}
+                  worktree={worktree}
+                />
+              </div>
+            </article>
+          );
+        })}
+        {worktrees.length === 0 ? (
+          <div className="worktree-empty">
+            <Empty>
+              <EmptyHeader>
+                <EmptyTitle>No Git worktrees found</EmptyTitle>
+                <EmptyDescription>
+                  Create a worktree to give another branch its own runnable
+                  environment.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          </div>
+        ) : null}
+      </div>
     </ScrollArea>
   );
 }

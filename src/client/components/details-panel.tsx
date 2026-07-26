@@ -12,11 +12,17 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import type { CodexTaskSnapshot } from "../../codex/codex-integration";
-import type { WorktreeSnapshot } from "../../controller/workspace-snapshot";
+import type {
+  AppGroupSnapshot,
+  WorktreeSnapshot,
+} from "../../controller/workspace-snapshot";
 import { appsAreRunning } from "../../controller/workspace-snapshot";
 import { codexNewTaskUrl, codexOpenTaskUrl } from "../codex-links";
 import type { WorktreeCommandActions } from "../worktree-command-menu";
 import { AppEndpointLink } from "./app-endpoint-link";
+import { AppGroupInstanceControl } from "./app-group-instance-control";
+import { worktreeDisplayStatus } from "./app-group-status";
+import { StatusSummary } from "./status-summary";
 import { Badge } from "./ui/badge";
 import { Button, buttonVariants } from "./ui/button";
 import {
@@ -31,11 +37,14 @@ import { Spinner } from "./ui/spinner";
 import { WorktreeActionsMenu } from "./worktree-actions-menu";
 
 function indicatorClass(app: WorktreeSnapshot["apps"][number]): string {
-  if (app.listening) {
-    return "size-1.5 rounded-full bg-foreground";
+  if (app.ownership === "foreign") {
+    return "size-1.5 rounded-full bg-destructive";
   }
-  return app.ownership === "foreign"
-    ? "size-1.5 rounded-full bg-destructive"
+  if (app.readiness === "ready") {
+    return "size-1.5 rounded-full bg-status-running-foreground";
+  }
+  return app.listening
+    ? "size-1.5 rounded-full bg-status-partial-foreground"
     : "size-1.5 rounded-full bg-muted-foreground/60";
 }
 
@@ -43,7 +52,22 @@ function endpointStatus(app: WorktreeSnapshot["apps"][number]): string {
   if (app.ownership === "foreign") {
     return "Occupied by another process";
   }
-  return app.listening ? "Listening" : "Not running";
+  if (!app.listening) {
+    return "Stopped";
+  }
+  if (app.readiness !== "ready") {
+    return app.readiness === "waiting" ? "Waiting for readiness" : "Not ready";
+  }
+  if (app.protocol === "tcp" || app.routeState === "active") {
+    return "Ready";
+  }
+  if (app.routeState === "conflict") {
+    return "Ready · Route conflict";
+  }
+  if (app.routeState === "unavailable") {
+    return "Ready · Route unavailable";
+  }
+  return "Ready · Route inactive";
 }
 
 function lifecycleActionIcon(pending: boolean, running: boolean) {
@@ -161,6 +185,7 @@ function CodexTasksSection({
   }
   return (
     <section className="codex-tasks-section">
+      <div className="section-kicker">Collaboration</div>
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <h3 className="flex items-center gap-1.5">
@@ -205,7 +230,7 @@ function terminalContent({
     return (
       <div className="terminal-state error">
         <strong>Logs temporarily unavailable</strong>
-        <span>Workgrove will keep trying to reconnect.</span>
+        <span>Branchbase will keep trying to reconnect.</span>
         <Button
           className="terminal-retry"
           onClick={onRetry}
@@ -236,6 +261,7 @@ function terminalContent({
 export function DetailsPanel({
   actionBlocked,
   actionPending,
+  appGroup,
   clearPending,
   codexDiscoveryUnavailable = false,
   codexLoading = false,
@@ -246,15 +272,18 @@ export function DetailsPanel({
   logs,
   onClearLogs,
   onClose,
+  onCreateAppGroupInstance,
   onDelete,
   onInspect,
   onRetryLogs,
+  onSelectAppGroupInstance,
   onToggleApps,
   worktreeActionPending,
   worktree,
 }: {
   actionBlocked: boolean;
   actionPending: boolean;
+  appGroup: AppGroupSnapshot;
   clearPending: boolean;
   codexDiscoveryUnavailable?: boolean;
   codexLoading?: boolean;
@@ -265,9 +294,11 @@ export function DetailsPanel({
   logs: string[];
   onClearLogs: () => void;
   onClose: () => void;
+  onCreateAppGroupInstance: (name: string) => Promise<void>;
   onDelete: () => void;
   onInspect: () => void;
   onRetryLogs: () => void;
+  onSelectAppGroupInstance: (instanceId: string) => void;
   onToggleApps: () => void;
   worktreeActionPending: boolean;
   worktree: WorktreeSnapshot;
@@ -275,6 +306,7 @@ export function DetailsPanel({
   const end = useRef<HTMLSpanElement>(null);
   const [copied, setCopied] = useState(false);
   const running = appsAreRunning(worktree);
+  const displayStatus = worktreeDisplayStatus(worktree);
   const logCount = logs.length;
   const latestLog = logs.at(-1);
   useEffect(() => {
@@ -288,17 +320,25 @@ export function DetailsPanel({
     window.setTimeout(() => setCopied(false), 1500);
   }
   return (
-    <aside className="details-panel flex h-full min-w-0 flex-col overflow-hidden bg-background">
+    <aside
+      className="details-panel flex h-full min-w-0 flex-col overflow-hidden bg-background"
+      data-status={displayStatus}
+    >
       <header>
         <div className="min-w-0">
-          <h2>{worktree.name}</h2>
-          <p>{worktree.path}</p>
+          <span className="detail-eyebrow">Selected worktree</span>
+          <div className="flex min-w-0 items-center gap-3">
+            <h2>{worktree.name}</h2>
+            <StatusSummary status={displayStatus} />
+          </div>
           <div className="detail-metadata flex flex-wrap gap-1.5">
             <Badge variant="outline">
               <GitBranchIcon />
               {worktree.branch}
             </Badge>
-            <Badge variant="outline">Dynamic endpoints</Badge>
+            <span className="detail-path" title={worktree.path}>
+              {worktree.path}
+            </span>
           </div>
         </div>
         <Button
@@ -311,10 +351,28 @@ export function DetailsPanel({
         </Button>
       </header>
       <section className="apps-section">
-        <h3>Apps</h3>
+        <div className="section-kicker">App group</div>
+        <div className="app-group-detail-heading">
+          <h3>{appGroup.name}</h3>
+          {appGroup.instance.mode === "selectable" ? (
+            <div className="app-group-instance-control">
+              <AppGroupInstanceControl
+                disabled={actionBlocked}
+                group={appGroup}
+                onCreate={onCreateAppGroupInstance}
+                onSelect={onSelectAppGroupInstance}
+              />
+            </div>
+          ) : null}
+        </div>
         <div className="apps-grid grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-2">
           {worktree.apps.map((app) => (
-            <Card key={app.id} size="sm">
+            <Card
+              className="app-card"
+              data-app-state={endpointStatus(app).toLowerCase()}
+              key={app.id}
+              size="sm"
+            >
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <span className={indicatorClass(app)} />
@@ -341,6 +399,7 @@ export function DetailsPanel({
         <WorktreeActionsMenu
           bordered
           commandActions={commandActions}
+          includeLifecycle={false}
           onDelete={onDelete}
           onInspect={onInspect}
           pending={worktreeActionPending}
@@ -354,6 +413,7 @@ export function DetailsPanel({
         worktreePath={worktree.path}
       />
       <section className="terminal-section">
+        <div className="section-kicker">Output</div>
         <div className="section-title">
           <h3>Managed logs</h3>
           <div className="terminal-actions">

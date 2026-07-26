@@ -13,6 +13,12 @@ const PRODUCT_GROUP_WITH_ENDPOINT =
   /data-app-group="Product Apps"[^>]*>[\s\S]*?chat\.project\.repo\.localhost:1355/;
 const INFRASTRUCTURE_GROUP_WITH_ENDPOINT =
   /data-app-group="Infrastructure"[^>]*>[\s\S]*?5432/;
+const PRODUCT_ACTION_TAG =
+  /<button[^>]*aria-label="Actions for Product Apps in project"[^>]*>/;
+const PRODUCT_GROUP_RUNNING =
+  /data-app-group="Product Apps" data-status="running"/;
+const WEBSITE_ACTION_TAG =
+  /<button[^>]*aria-label="Actions for Website in project"[^>]*>/;
 
 const worktree: WorktreeSnapshot = {
   appLabel: "App",
@@ -108,13 +114,13 @@ describe("worktree table", () => {
           onStart: () => undefined,
           onStop: () => undefined,
         },
-        onCreateAppGroupInstance: async () => undefined,
         onDelete: () => undefined,
         onInspect: () => undefined,
+        onInspectAppGroup: () => undefined,
         onRestartAppGroup: () => undefined,
         onRetryAppGroup: () => undefined,
-        onSelectAppGroupInstance: () => undefined,
         onToggleAppGroup: () => undefined,
+        primaryAppGroupId: "product",
         selectedId: null,
         worktreeActionPending: () => false,
         worktrees: [withGroups],
@@ -127,6 +133,10 @@ describe("worktree table", () => {
     expect(markup).toContain('data-app-group="Infrastructure"');
     expect(markup).toMatch(PRODUCT_GROUP_WITH_ENDPOINT);
     expect(markup).toMatch(INFRASTRUCTURE_GROUP_WITH_ENDPOINT);
+    expect(markup).toContain("Instance: Default");
+    expect(markup).toContain('aria-label="Inspect Infrastructure details"');
+    expect(markup).toContain('aria-label="Inspect Product Apps details"');
+    expect(markup).not.toContain("Selected Infrastructure instance");
   });
 
   it("renders every app port in the monospace font", () => {
@@ -159,13 +169,13 @@ describe("worktree table", () => {
           onStart: () => undefined,
           onStop: () => undefined,
         },
-        onCreateAppGroupInstance: async () => undefined,
         onDelete: () => undefined,
         onInspect: () => undefined,
+        onInspectAppGroup: () => undefined,
         onRestartAppGroup: () => undefined,
         onRetryAppGroup: () => undefined,
-        onSelectAppGroupInstance: () => undefined,
         onToggleAppGroup: () => undefined,
+        primaryAppGroupId: "product",
         selectedId: null,
         worktreeActionPending: () => false,
         worktrees: [withGroup],
@@ -174,10 +184,10 @@ describe("worktree table", () => {
 
     expect(markup).toMatch(LINKED_FRIENDLY_URL);
     expect(markup).toMatch(MONO_STOPPED_PORT);
-    expect(markup).not.toContain("lucide-chevron-right");
+    expect(markup).toContain('aria-label="Inspect Product Apps details"');
   });
 
-  it("exposes running health to the status color styles", () => {
+  it("exposes running state through text-backed status", () => {
     const running = {
       ...worktree,
       appGroups: [
@@ -207,20 +217,21 @@ describe("worktree table", () => {
           onStart: () => undefined,
           onStop: () => undefined,
         },
-        onCreateAppGroupInstance: async () => undefined,
         onDelete: () => undefined,
         onInspect: () => undefined,
+        onInspectAppGroup: () => undefined,
         onRestartAppGroup: () => undefined,
         onRetryAppGroup: () => undefined,
-        onSelectAppGroupInstance: () => undefined,
         onToggleAppGroup: () => undefined,
+        primaryAppGroupId: "product",
         selectedId: null,
         worktreeActionPending: () => false,
         worktrees: [running],
       })
     );
 
-    expect(markup).toContain('data-health="running"');
+    expect(markup).toMatch(PRODUCT_GROUP_RUNNING);
+    expect(markup).toContain(">Running<");
   });
 
   it("shows pending state only for the affected app group", () => {
@@ -269,25 +280,81 @@ describe("worktree table", () => {
           onStart: () => undefined,
           onStop: () => undefined,
         },
-        onCreateAppGroupInstance: async () => undefined,
         onDelete: () => undefined,
         onInspect: () => undefined,
+        onInspectAppGroup: () => undefined,
         onRestartAppGroup: () => undefined,
         onRetryAppGroup: () => undefined,
-        onSelectAppGroupInstance: () => undefined,
         onToggleAppGroup: () => undefined,
+        primaryAppGroupId: "product",
         selectedId: null,
         worktreeActionPending: () => true,
         worktrees: [withGroups],
       })
     );
-    const productStart = markup.indexOf('data-app-group="Product Apps"');
-    const websiteStart = markup.indexOf('data-app-group="Website"');
-    const productMarkup = markup.slice(productStart, websiteStart);
-    const websiteMarkup = markup.slice(websiteStart);
+    const productAction = markup.match(PRODUCT_ACTION_TAG)?.[0];
+    const websiteAction = markup.match(WEBSITE_ACTION_TAG)?.[0];
 
-    expect(productMarkup).toContain('aria-label="Loading"');
-    expect(websiteMarkup).not.toContain('aria-label="Loading"');
+    expect(productAction).toContain('data-disabled=""');
+    expect(websiteAction).not.toContain('data-disabled=""');
+  });
+
+  it("surfaces routing errors and one safe worktree-level recovery action", () => {
+    const routeFailure = {
+      ...worktree,
+      appGroups: [
+        {
+          apps: [
+            {
+              ...worktree.apps[0],
+              open: false,
+              routeState: "unavailable" as const,
+              url: null,
+            },
+          ],
+          health: "running" as const,
+          id: "product",
+          instance: {
+            id: "product-main",
+            mode: "per-worktree" as const,
+            name: "main",
+          },
+          instances: [{ id: "product-main", name: "main", running: true }],
+          name: "App",
+          processRunning: true,
+          stop: "process" as const,
+        },
+      ],
+      health: "running" as const,
+      setupState: "failed" as const,
+    };
+    const markup = renderToStaticMarkup(
+      createElement(WorktreeTable, {
+        appGroupActionBlocked: () => false,
+        appGroupActionPending: () => false,
+        commandActions: {
+          onRestart: () => undefined,
+          onSetup: () => undefined,
+          onStart: () => undefined,
+          onStop: () => undefined,
+        },
+        onDelete: () => undefined,
+        onInspect: () => undefined,
+        onInspectAppGroup: () => undefined,
+        onRestartAppGroup: () => undefined,
+        onRetryAppGroup: () => undefined,
+        onToggleAppGroup: () => undefined,
+        primaryAppGroupId: "product",
+        selectedId: null,
+        worktreeActionPending: () => false,
+        worktrees: [routeFailure],
+      })
+    );
+
+    expect(markup).toContain(">Setup failed<");
+    expect(markup).toContain(">Routing error<");
+    expect(markup).toContain(">Retry setup<");
+    expect(markup).not.toContain(">Start App<");
   });
 
   it("keeps task discovery failure compact in the table", () => {
@@ -302,13 +369,13 @@ describe("worktree table", () => {
           onStart: () => undefined,
           onStop: () => undefined,
         },
-        onCreateAppGroupInstance: async () => undefined,
         onDelete: () => undefined,
         onInspect: () => undefined,
+        onInspectAppGroup: () => undefined,
         onRestartAppGroup: () => undefined,
         onRetryAppGroup: () => undefined,
-        onSelectAppGroupInstance: () => undefined,
         onToggleAppGroup: () => undefined,
+        primaryAppGroupId: "product",
         selectedId: null,
         worktreeActionPending: () => false,
         worktrees: [worktree],
@@ -361,13 +428,13 @@ describe("worktree table", () => {
           onStart: () => undefined,
           onStop: () => undefined,
         },
-        onCreateAppGroupInstance: async () => undefined,
         onDelete: () => undefined,
         onInspect: () => undefined,
+        onInspectAppGroup: () => undefined,
         onRestartAppGroup: () => undefined,
         onRetryAppGroup: () => undefined,
-        onSelectAppGroupInstance: () => undefined,
         onToggleAppGroup: () => undefined,
+        primaryAppGroupId: "product",
         selectedId: null,
         worktreeActionPending: () => false,
         worktrees: [worktree],

@@ -139,7 +139,7 @@ export function RepositoryConfigPage({
             </p>
           </div>
           <Textarea
-            aria-label="Workgrove configuration JSON"
+            aria-label="Branchbase configuration JSON"
             className="min-h-[32rem] font-mono text-sm"
             onChange={(event) => setSource(event.target.value)}
             spellCheck={false}

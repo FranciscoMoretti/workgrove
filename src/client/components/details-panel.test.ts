@@ -33,6 +33,10 @@ const worktree: WorktreeSnapshot = {
   processRunning: false,
   setupState: "idle",
 };
+const primaryAppGroup = worktree.appGroups[0];
+if (!primaryAppGroup) {
+  throw new Error("DetailsPanel test fixture requires an App group");
+}
 
 function renderDetails(
   value: WorktreeSnapshot,
@@ -46,6 +50,7 @@ function renderDetails(
     createElement(DetailsPanel, {
       actionBlocked: false,
       actionPending: false,
+      appGroup: value.appGroups[0] ?? primaryAppGroup,
       clearPending: false,
       ...codex,
       commandActions: {
@@ -59,9 +64,11 @@ function renderDetails(
       logs: [],
       onClearLogs: () => undefined,
       onClose: () => undefined,
+      onCreateAppGroupInstance: async () => undefined,
       onDelete: () => undefined,
       onInspect: () => undefined,
       onRetryLogs: () => undefined,
+      onSelectAppGroupInstance: () => undefined,
       onToggleApps: () => undefined,
       worktreeActionPending: false,
       worktree: value,
@@ -75,6 +82,7 @@ describe("details panel", () => {
       createElement(DetailsPanel, {
         actionBlocked: false,
         actionPending: false,
+        appGroup: primaryAppGroup,
         clearPending: false,
         commandActions: {
           onRestart: () => undefined,
@@ -87,9 +95,11 @@ describe("details panel", () => {
         logs: [],
         onClearLogs: () => undefined,
         onClose: () => undefined,
+        onCreateAppGroupInstance: async () => undefined,
         onDelete: () => undefined,
         onInspect: () => undefined,
         onRetryLogs: () => undefined,
+        onSelectAppGroupInstance: () => undefined,
         onToggleApps: () => undefined,
         worktreeActionPending: false,
         worktree,
@@ -135,6 +145,67 @@ describe("details panel", () => {
 
     expect(markup).toMatch(LINKED_FRIENDLY_URL);
     expect(markup).toMatch(STOPPED_CODE_PORT);
+  });
+
+  it("keeps App readiness distinct from Friendly URL route state", () => {
+    const markup = renderDetails({
+      ...worktree,
+      apps: [
+        {
+          id: "database",
+          label: "Database",
+          directUrl: "tcp://127.0.0.1:5432",
+          listening: true,
+          open: false,
+          ownership: "owned",
+          port: 5432,
+          protocol: "tcp",
+          readiness: "ready",
+          routeState: "inactive",
+          url: null,
+        },
+        {
+          id: "site",
+          label: "Site",
+          directUrl: "http://127.0.0.1:3002",
+          listening: true,
+          open: false,
+          ownership: "owned",
+          port: 3002,
+          protocol: "http",
+          readiness: "ready",
+          routeState: "unavailable",
+          url: null,
+        },
+      ],
+    });
+
+    expect(markup).toContain("Database");
+    expect(markup).toContain(">Ready<");
+    expect(markup).toContain("Ready · Route unavailable");
+  });
+
+  it("moves selectable App-group controls into the inspector", () => {
+    const selectable = {
+      ...primaryAppGroup,
+      instance: {
+        id: "apps-shared",
+        mode: "selectable" as const,
+        name: "Shared",
+      },
+      instances: [
+        { id: "apps-main", name: "Main", running: false },
+        { id: "apps-shared", name: "Shared", running: true },
+      ],
+    };
+    const markup = renderDetails({
+      ...worktree,
+      appGroups: [selectable],
+    });
+
+    expect(markup).toContain('aria-label="Selected Apps instance"');
+    expect(markup).toContain("Shared");
+    expect(markup).toContain('aria-label="Create Apps instance"');
   });
 
   it("uses the shared scroll area for managed logs", () => {

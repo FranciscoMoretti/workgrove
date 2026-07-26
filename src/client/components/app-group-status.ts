@@ -1,0 +1,67 @@
+import type {
+  AppGroupSnapshot,
+  WorktreeSnapshot,
+} from "../../controller/workspace-snapshot";
+
+export type AppGroupDisplayStatus =
+  | "partial"
+  | "routing-error"
+  | "running"
+  | "stopped";
+export type WorktreeDisplayStatus =
+  | AppGroupDisplayStatus
+  | "setup-failed"
+  | "setting-up";
+
+export function appGroupDisplayStatus(
+  group: Pick<AppGroupSnapshot, "apps" | "health" | "processRunning">
+): AppGroupDisplayStatus {
+  if (
+    group.apps.some(
+      (app) =>
+        app.protocol === "http" &&
+        app.readiness === "ready" &&
+        (app.routeState === "conflict" || app.routeState === "unavailable")
+    )
+  ) {
+    return "routing-error";
+  }
+  if (group.health === "running") {
+    return "running";
+  }
+  if (group.health === "partially-running" || group.processRunning) {
+    return "partial";
+  }
+  return "stopped";
+}
+
+export function worktreeDisplayStatus(
+  worktree: Pick<
+    WorktreeSnapshot,
+    "health" | "processRunning" | "setupState"
+  > & {
+    appGroups: Pick<AppGroupSnapshot, "apps" | "health" | "processRunning">[];
+  }
+): WorktreeDisplayStatus {
+  if (worktree.setupState === "failed") {
+    return "setup-failed";
+  }
+  if (worktree.setupState === "running") {
+    return "setting-up";
+  }
+  const groupStatuses = worktree.appGroups.map(appGroupDisplayStatus);
+  if (groupStatuses.includes("routing-error")) {
+    return "routing-error";
+  }
+  if (
+    worktree.health === "partially-running" ||
+    groupStatuses.includes("partial") ||
+    (worktree.processRunning && worktree.health !== "running")
+  ) {
+    return "partial";
+  }
+  if (worktree.health === "running" || groupStatuses.includes("running")) {
+    return "running";
+  }
+  return "stopped";
+}

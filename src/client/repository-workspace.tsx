@@ -1,10 +1,11 @@
 import { AlertCircleIcon } from "lucide-react";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 
 import type {
   WorkspaceSnapshot,
   WorktreeSnapshot,
 } from "../controller/workspace-snapshot";
+import { worktreeHasRunningAppGroups } from "../controller/workspace-snapshot";
 import type { RepositoryPage } from "../repository-context";
 import { RecoveryBoundary } from "./components/recovery-boundary";
 import { Toolbar } from "./components/toolbar";
@@ -53,6 +54,25 @@ const RepositoryTrustDialog = lazy(() =>
 );
 
 const DETAILS_PANEL_IDS = ["worktrees", "details"];
+const NARROW_WORKSPACE_QUERY = "(max-width: 760px)";
+
+function useNarrowWorkspace(): boolean {
+  const [narrow, setNarrow] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.matchMedia(NARROW_WORKSPACE_QUERY).matches
+  );
+
+  useEffect(() => {
+    const media = window.matchMedia(NARROW_WORKSPACE_QUERY);
+    const update = () => setNarrow(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
+  return narrow;
+}
 
 function codexAvailability({
   isError,
@@ -149,21 +169,27 @@ export function RepositoryWorkspace({
   refetchWorkspace: () => Promise<unknown>;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedAppGroupId, setSelectedAppGroupId] = useState<string | null>(
+    null
+  );
   const [createOpen, setCreateOpen] = useState(false);
   const [repositoryOpen, setRepositoryOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<WorktreeSnapshot | null>(
     null
   );
+  const narrowWorkspace = useNarrowWorkspace();
   const codex = useCodexIntegration(repoPath);
   const quickRepository = useRepositoryOpen(onOpenRepository);
   const selected =
     data.worktrees.find((worktree) => worktree.id === selectedId) ?? null;
-  const selectedAppGroupName = data.primaryAppGroup;
-  const selectedForDetails = worktreeForAppGroup(
-    selected,
-    selectedAppGroupName
-  );
-  const logs = useLogs(repoPath, selectedId, selectedAppGroupName);
+  const effectiveAppGroupId = selectedAppGroupId ?? data.primaryAppGroup;
+  const selectedAppGroup =
+    selected?.appGroups.find((group) => group.id === effectiveAppGroupId) ??
+    null;
+  const selectedForDetails = selectedAppGroup
+    ? worktreeForAppGroup(selected, effectiveAppGroupId)
+    : null;
+  const logs = useLogs(repoPath, selectedId, effectiveAppGroupId);
   const repositoryTrust = useRepositoryTrust({
     repoPath,
     required: data.trustRequired,
@@ -179,7 +205,6 @@ export function RepositoryWorkspace({
     retryAppGroup,
     selectAppGroupInstance,
     toggleAppGroup,
-    toggleApps,
     worktreeActionPending,
   } = useWorktreeCommandActions({
     primaryAppGroup: data.primaryAppGroup,
@@ -189,12 +214,27 @@ export function RepositoryWorkspace({
   });
   const detailsActionState = selectedAppGroupActionState(
     selectedForDetails,
-    selectedAppGroupName,
+    effectiveAppGroupId,
     appGroupActionBlocked,
     appGroupActionPending,
     worktreeActionPending
   );
   const codexWorktrees = codex.data?.worktrees;
+  const activeWorktreeCount = data.worktrees.filter(
+    worktreeHasRunningAppGroups
+  ).length;
+  function inspectWorktree(worktreeId: string) {
+    setSelectedAppGroupId(null);
+    setSelectedId(worktreeId);
+  }
+  function inspectAppGroup(worktreeId: string, appGroupId: string) {
+    setSelectedAppGroupId(appGroupId);
+    setSelectedId(worktreeId);
+  }
+  function closeDetails() {
+    setSelectedAppGroupId(null);
+    setSelectedId(null);
+  }
 
   if (repositoryPage === "settings") {
     return (
@@ -228,22 +268,23 @@ export function RepositoryWorkspace({
       codexAvailability={codexAvailability(codex)}
       codexWorktrees={codexWorktrees}
       commandActions={commandActions}
-      onCreateAppGroupInstance={createAppGroupInstance}
       onDelete={setDeleteTarget}
-      onInspect={setSelectedId}
+      onInspect={inspectWorktree}
+      onInspectAppGroup={inspectAppGroup}
       onRestartAppGroup={restartAppGroup}
       onRetryAppGroup={retryAppGroup}
-      onSelectAppGroupInstance={selectAppGroupInstance}
       onToggleAppGroup={toggleAppGroup}
+      primaryAppGroupId={data.primaryAppGroup}
       selectedId={selectedId}
       worktreeActionPending={worktreeActionPending}
       worktrees={data.worktrees}
     />
   );
   const mainPanel = (
-    <div className="workspace-shell flex h-screen min-w-0 flex-col bg-muted/30">
+    <div className="workspace-shell brand-canvas flex h-screen min-w-0 flex-col">
       <Toolbar
         activeRepoPath={repoPath}
+        activeWorktreeCount={activeWorktreeCount}
         isFetching={isFetching}
         mainWorktreePath={data.mainWorktreePath}
         onConfigure={onOpenSettings}
@@ -265,6 +306,7 @@ export function RepositoryWorkspace({
         recentRepositories={recents}
         repoName={data.repoName}
         updatedAt={dataUpdatedAt}
+        worktreeCount={data.worktrees.length}
       />
       {commands.error || quickRepository.error ? (
         <Alert className="mx-5 mb-3 w-auto shrink-0" variant="destructive">
@@ -280,69 +322,92 @@ export function RepositoryWorkspace({
       </section>
     </div>
   );
+  const detailsPanel =
+    selectedForDetails && selectedAppGroup ? (
+      <RecoveryBoundary
+        description="The worktree details panel failed, but the workspace table is still available."
+        dismissLabel="Close details"
+        key={selectedForDetails.id}
+        onDismiss={closeDetails}
+        title="Details unavailable"
+      >
+        <Suspense fallback={<LoadingWorkspace />}>
+          <DetailsPanel
+            actionBlocked={detailsActionState.blocked}
+            actionPending={detailsActionState.pending}
+            appGroup={selectedAppGroup}
+            clearPending={commands.clearLogs.isPending}
+            codexDiscoveryUnavailable={codex.isError}
+            codexLoading={codex.isLoading}
+            codexTasks={codexWorktrees?.[selectedForDetails.id]?.tasks ?? []}
+            commandActions={commandActions}
+            error={logs.error}
+            loading={logs.isLoading}
+            logs={logs.data ?? []}
+            onClearLogs={() =>
+              commands.clearLogs.mutate({
+                appGroupName: effectiveAppGroupId,
+                repoPath,
+                worktreeId: selectedForDetails.id,
+              })
+            }
+            onClose={closeDetails}
+            onCreateAppGroupInstance={(name) =>
+              createAppGroupInstance(selectedForDetails, selectedAppGroup, name)
+            }
+            onDelete={() => setDeleteTarget(selectedForDetails)}
+            onInspect={() =>
+              inspectAppGroup(selectedForDetails.id, selectedAppGroup.id)
+            }
+            onRetryLogs={() => logs.refetch().then(() => undefined)}
+            onSelectAppGroupInstance={(instanceId) =>
+              selectAppGroupInstance(
+                selectedForDetails,
+                selectedAppGroup,
+                instanceId
+              )
+            }
+            onToggleApps={() =>
+              toggleAppGroup(selectedForDetails, selectedAppGroup)
+            }
+            worktree={selectedForDetails}
+            worktreeActionPending={detailsActionState.worktreePending}
+          />
+        </Suspense>
+      </RecoveryBoundary>
+    ) : null;
+  let workspaceContent = mainPanel;
+  if (selectedForDetails && narrowWorkspace) {
+    workspaceContent = (
+      <div className="mobile-details-shell h-full">{detailsPanel}</div>
+    );
+  } else if (selectedForDetails) {
+    workspaceContent = (
+      <ResizablePanelGroup
+        autoSaveId="workgrove:details-layout:v2"
+        className="h-full"
+        direction="horizontal"
+        panelIds={DETAILS_PANEL_IDS}
+      >
+        <ResizablePanel defaultSize="50%" id="worktrees" minSize="30%">
+          {mainPanel}
+        </ResizablePanel>
+        <ResizableHandle withHandle />
+        <ResizablePanel
+          defaultSize="50%"
+          id="details"
+          maxSize="70%"
+          minSize="30%"
+        >
+          {detailsPanel}
+        </ResizablePanel>
+      </ResizablePanelGroup>
+    );
+  }
 
   return (
     <main className="h-screen overflow-hidden">
-      {selectedForDetails ? (
-        <ResizablePanelGroup
-          autoSaveId="workgrove:details-layout:v2"
-          className="h-full"
-          direction="horizontal"
-          panelIds={DETAILS_PANEL_IDS}
-        >
-          <ResizablePanel defaultSize="50%" id="worktrees" minSize="30%">
-            {mainPanel}
-          </ResizablePanel>
-          <ResizableHandle withHandle />
-          <ResizablePanel
-            defaultSize="50%"
-            id="details"
-            maxSize="70%"
-            minSize="30%"
-          >
-            <RecoveryBoundary
-              description="The worktree details panel failed, but the workspace table is still available."
-              dismissLabel="Close details"
-              key={selectedForDetails.id}
-              onDismiss={() => setSelectedId(null)}
-              title="Details unavailable"
-            >
-              <Suspense fallback={<LoadingWorkspace />}>
-                <DetailsPanel
-                  actionBlocked={detailsActionState.blocked}
-                  actionPending={detailsActionState.pending}
-                  clearPending={commands.clearLogs.isPending}
-                  codexDiscoveryUnavailable={codex.isError}
-                  codexLoading={codex.isLoading}
-                  codexTasks={
-                    codexWorktrees?.[selectedForDetails.id]?.tasks ?? []
-                  }
-                  commandActions={commandActions}
-                  error={logs.error}
-                  loading={logs.isLoading}
-                  logs={logs.data ?? []}
-                  onClearLogs={() =>
-                    commands.clearLogs.mutate({
-                      appGroupName: selectedAppGroupName,
-                      repoPath,
-                      worktreeId: selectedForDetails.id,
-                    })
-                  }
-                  onClose={() => setSelectedId(null)}
-                  onDelete={() => setDeleteTarget(selectedForDetails)}
-                  onInspect={() => setSelectedId(selectedForDetails.id)}
-                  onRetryLogs={() => logs.refetch().then(() => undefined)}
-                  onToggleApps={() => toggleApps(selectedForDetails)}
-                  worktree={selectedForDetails}
-                  worktreeActionPending={detailsActionState.worktreePending}
-                />
-              </Suspense>
-            </RecoveryBoundary>
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      ) : (
-        mainPanel
-      )}
+      {workspaceContent}
       {createOpen ? (
         <Suspense fallback={null}>
           <CreateWorktreeDialog
@@ -360,7 +425,7 @@ export function RepositoryWorkspace({
             onClose={() => setRepositoryOpen(false)}
             onConfirm={(path, snapshot) => {
               onOpenRepository(path, snapshot);
-              setSelectedId(null);
+              closeDetails();
             }}
           />
         </Suspense>

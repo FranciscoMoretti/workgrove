@@ -4,11 +4,11 @@ import {
   FolderPlusIcon,
   RefreshCwIcon,
   Settings2Icon,
-  TreesIcon,
 } from "lucide-react";
 import type { CSSProperties } from "react";
 
 import { REFRESH_INTERVAL } from "../queries";
+import { BrandMark, BrandWordmark } from "./brand-mark";
 import { ThemeToggle } from "./theme-toggle";
 import { Button } from "./ui/button";
 import {
@@ -28,6 +28,7 @@ function repositoryName(path: string): string {
 }
 
 export function Toolbar({
+  activeWorktreeCount,
   activeRepoPath,
   isFetching,
   mainWorktreePath,
@@ -39,7 +40,9 @@ export function Toolbar({
   recentRepositories,
   repoName,
   updatedAt,
+  worktreeCount,
 }: {
+  activeWorktreeCount: number;
   activeRepoPath: string;
   isFetching: boolean;
   mainWorktreePath: string;
@@ -51,6 +54,7 @@ export function Toolbar({
   recentRepositories: string[];
   repoName: string;
   updatedAt: number;
+  worktreeCount: number;
 }) {
   const style = {
     "--refresh-duration": `${REFRESH_INTERVAL}ms`,
@@ -60,15 +64,17 @@ export function Toolbar({
     ...recentRepositories.filter((path) => path !== activeRepoPath),
   ];
   return (
-    <header className="app-toolbar flex min-h-20 shrink-0 items-center justify-between gap-6 bg-background px-5 py-4 max-md:flex-col max-md:items-stretch">
-      <div className="toolbar-identity flex min-w-0 items-center gap-3">
-        <span className="grid size-11 shrink-0 place-items-center bg-primary text-primary-foreground">
-          <TreesIcon />
+    <header className="app-toolbar flex min-h-24 shrink-0 items-center justify-between gap-6 px-5 py-4 max-md:flex-col max-md:items-stretch">
+      <div className="toolbar-identity flex min-w-0 items-center gap-4">
+        <span className="brand-lockup-mark grid size-11 shrink-0 place-items-center">
+          <BrandMark className="size-7" />
         </span>
-        <div className="flex min-w-0 flex-col items-start gap-0.5">
-          <h1 className="font-heading font-medium text-xl tracking-tight">
-            Workgrove
-          </h1>
+        <div className="flex min-w-0 flex-col items-start gap-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <BrandWordmark />
+            <span className="brand-slash text-muted-foreground">/</span>
+            <strong className="truncate text-sm">{repoName}</strong>
+          </div>
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
@@ -78,10 +84,9 @@ export function Toolbar({
                 />
               }
             >
-              <strong>{repoName}</strong>
-              <span className="truncate text-muted-foreground">
-                · {mainWorktreePath}
-              </span>
+              <span>{worktreeCount} worktrees</span>
+              <span aria-hidden="true">·</span>
+              <span>{activeWorktreeCount} active</span>
               <ChevronDownIcon data-icon="inline-end" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-90">
@@ -102,6 +107,10 @@ export function Toolbar({
                 ))}
               </DropdownMenuRadioGroup>
               <DropdownMenuSeparator />
+              <DropdownMenuLabel className="truncate font-mono font-normal text-muted-foreground">
+                {mainWorktreePath}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuItem onClick={onConfigure}>
                   <Settings2Icon />
@@ -116,8 +125,8 @@ export function Toolbar({
           </DropdownMenu>
         </div>
       </div>
-      <div className="toolbar-actions flex shrink-0 items-center gap-2">
-        <Button onClick={onCreate} variant="secondary">
+      <div className="toolbar-actions flex shrink-0 items-center gap-1.5">
+        <Button onClick={onCreate}>
           <FolderPlusIcon data-icon="inline-start" />
           New worktree
         </Button>
@@ -126,7 +135,7 @@ export function Toolbar({
           className="relative w-26 overflow-hidden"
           disabled={isFetching}
           onClick={onRefresh}
-          variant="secondary"
+          variant="ghost"
         >
           <span
             className="refresh-progress bg-foreground/10"
@@ -141,9 +150,14 @@ export function Toolbar({
             {isFetching ? "Refreshing" : "Refresh"}
           </span>
         </Button>
-        <Button onClick={onConfigure} variant="secondary">
-          <Settings2Icon data-icon="inline-start" />
-          Settings
+        <Button
+          aria-label="Repository settings"
+          onClick={onConfigure}
+          size="icon"
+          title="Repository settings"
+          variant="ghost"
+        >
+          <Settings2Icon />
         </Button>
         <ThemeToggle />
       </div>
