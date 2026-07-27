@@ -1,10 +1,7 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
+import { z } from "zod";
 
-import {
-  parseCurrentWorkgroveLocalState,
-  type WorkgroveLocalState,
-} from "../runtime/local-state";
 import {
   inspectListeningPorts,
   listeningPortPids,
@@ -15,8 +12,32 @@ import {
   ProcessSupervisor,
 } from "../runtime/process-supervisor";
 
-type RecordedInstance =
-  WorkgroveLocalState["repositories"][string]["instances"][string];
+const NonEmptyStringSchema = z.string().min(1);
+const PortSchema = z.number().int().min(1).max(65_535);
+const RecordedRunEndpointSchema = z.object({
+  listenerClaimed: z.boolean().optional(),
+  port: PortSchema,
+});
+const RecordedInstanceSchema = z.object({
+  groupId: NonEmptyStringSchema,
+  id: NonEmptyStringSchema,
+  run: z
+    .object({
+      apps: z.record(z.string(), RecordedRunEndpointSchema),
+      worktreePath: NonEmptyStringSchema,
+    })
+    .nullable(),
+});
+const RecordedStateSchema = z.object({
+  repositories: z.record(
+    z.string(),
+    z.object({
+      instances: z.record(z.string(), RecordedInstanceSchema),
+    })
+  ),
+});
+
+type RecordedInstance = z.infer<typeof RecordedInstanceSchema>;
 
 export interface VerifiedWorktreeRun {
   groupId: string;
@@ -72,7 +93,7 @@ export function findVerifiedWorktreeRun(
   if (!existsSync(statePath)) {
     return null;
   }
-  const state = parseCurrentWorkgroveLocalState(
+  const state = RecordedStateSchema.parse(
     JSON.parse(readFileSync(statePath, "utf8"))
   );
   const worktreePath = realpathSync(worktreePathValue);

@@ -4,6 +4,7 @@ import { once } from "node:events";
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -74,6 +75,38 @@ function recordProductionRun(
   return { instanceId: instance.id };
 }
 
+function makeProductionStateHistorical(
+  productionControlDirectory: string,
+  worktreePath: string,
+  instanceId: string
+): void {
+  const statePath = join(productionControlDirectory, "state.json");
+  const state = JSON.parse(readFileSync(statePath, "utf8")) as {
+    repositories: Record<
+      string,
+      {
+        instances: Record<
+          string,
+          {
+            run: {
+              apps: Record<string, { observedPids?: number[] }>;
+              instanceIdsByGroup?: Record<string, string>;
+            } | null;
+          }
+        >;
+      }
+    >;
+  };
+  const run = state.repositories[worktreePath]?.instances[instanceId]?.run;
+  const endpoint = run?.apps.chat;
+  if (!(run && endpoint)) {
+    throw new Error("Expected the recorded Chat run");
+  }
+  run.instanceIdsByGroup = undefined;
+  endpoint.observedPids = [];
+  writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+}
+
 async function stopChild(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) {
     return;
@@ -139,7 +172,7 @@ it("rejects a worktree with a verified production run", async () => {
   }
 }, 10_000);
 
-it("rejects an orphaned listener that still belongs to the worktree", async () => {
+it("rejects a historical orphaned listener that still belongs to the worktree", async () => {
   const temporary = mkdtempSync(
     join(tmpdir(), "workgrove-production-listener-preflight-")
   );
@@ -149,7 +182,16 @@ it("rejects an orphaned listener that still belongs to the worktree", async () =
   const canonicalWorktreePath = realpathSync(worktreePath);
   const portReservation = await reserveBackingPort();
   const port = portReservation.port;
-  recordProductionRun(productionControlDirectory, canonicalWorktreePath, port);
+  const { instanceId } = recordProductionRun(
+    productionControlDirectory,
+    canonicalWorktreePath,
+    port
+  );
+  makeProductionStateHistorical(
+    productionControlDirectory,
+    canonicalWorktreePath,
+    instanceId
+  );
   await portReservation.release();
   const child = spawn(
     process.execPath,
