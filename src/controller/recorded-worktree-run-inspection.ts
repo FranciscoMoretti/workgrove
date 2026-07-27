@@ -45,20 +45,22 @@ function liveRunEvidence(
   ) {
     return null;
   }
-  const endpointPorts = Object.values(instance.run.apps).map(
-    (endpoint) => endpoint.port
+  const listeners = Object.values(instance.run.apps).flatMap((endpoint) =>
+    listeningPortPids(ports, endpoint.port).map((pid) => ({
+      claimed: endpoint.listenerClaimed === true,
+      pid,
+      port: endpoint.port,
+    }))
   );
   const managedPid = processes.managedPid(
     appGroupInstanceProcessId(instance.id),
     worktreePath
   );
-  const listener = endpointPorts
-    .flatMap((port) =>
-      listeningPortPids(ports, port).map((pid) => ({ pid, port }))
-    )
-    .find(({ pid }) => pidOwnedByWorktree(pid, worktreePath));
+  const listener =
+    listeners.find(({ pid }) => pidOwnedByWorktree(pid, worktreePath)) ??
+    listeners.find(({ claimed }) => claimed);
   const pid = managedPid ?? listener?.pid;
-  const port = listener?.port ?? endpointPorts[0];
+  const port = listener?.port ?? Object.values(instance.run.apps)[0]?.port;
   return pid && port ? { pid, port } : null;
 }
 

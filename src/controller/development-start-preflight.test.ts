@@ -110,3 +110,30 @@ it("runs the development Start preflight before local state or repository code",
     rmSync(temporary, { force: true, recursive: true });
   }
 }, 10_000);
+
+it("describes repository discovery failures before invoking the preflight", async () => {
+  const temporary = mkdtempSync(
+    join(tmpdir(), "workgrove-start-preflight-invalid-repository-")
+  );
+  let preflightCalled = false;
+  const controller = new WorkspaceController(undefined, {
+    developmentStartPreflight: () => {
+      preflightCalled = true;
+    },
+    processes: new ProcessSupervisor(join(temporary, "processes")),
+    routing: new InMemoryRoutingEngine(),
+    state: new FileWorkgroveStateStore(join(temporary, "state.json")),
+  });
+
+  try {
+    await expect(
+      controller.startAppGroup(temporary, "unknown", "Chat")
+    ).rejects.toThrow(
+      `Could not resolve Workgrove worktrees for "${temporary}"`
+    );
+    expect(preflightCalled).toBe(false);
+  } finally {
+    await controller.close();
+    rmSync(temporary, { force: true, recursive: true });
+  }
+});

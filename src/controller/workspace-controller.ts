@@ -593,13 +593,25 @@ export class WorkspaceController {
     repoPath: string,
     worktreeIdValue: string
   ): string {
-    const selectedRoot = git(repoPath, ["rev-parse", "--show-toplevel"]);
-    const worktreePath = parseWorktreeList(
-      git(selectedRoot, ["worktree", "list", "--porcelain"])
-    )
-      .filter((item) => !item.prunable && existsSync(item.path))
-      .map((item) => realpathSync(item.path))
-      .find((path) => worktreeId(path) === worktreeIdValue);
+    let worktreePaths: string[];
+    try {
+      const selectedRoot = git(repoPath, ["rev-parse", "--show-toplevel"]);
+      worktreePaths = parseWorktreeList(
+        git(selectedRoot, ["worktree", "list", "--porcelain"])
+      )
+        .filter((item) => !item.prunable && existsSync(item.path))
+        .map((item) => realpathSync(item.path));
+    } catch (error) {
+      throw new Error(
+        `Could not resolve Workgrove worktrees for "${repoPath}": ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        { cause: error }
+      );
+    }
+    const worktreePath = worktreePaths.find(
+      (path) => worktreeId(path) === worktreeIdValue
+    );
     if (!worktreePath) {
       throw new Error("Unknown worktree");
     }
