@@ -46,7 +46,10 @@ import {
   type WorktreeEnvConfig,
 } from "../config/workgrove-config";
 import type { WorkgroveConfig } from "../config/workgrove-schema";
-import { parseWorktreeList } from "../git/discover-worktrees";
+import {
+  type DiscoveredWorktree,
+  parseWorktreeList,
+} from "../git/discover-worktrees";
 import {
   type LocalRoutingEngine,
   PortlessRoutingEngine,
@@ -121,6 +124,22 @@ function git(cwd: string, args: string[]): string {
 
 function worktreeId(path: string): string {
   return Buffer.from(realpathSync(path)).toString("base64url");
+}
+
+interface ResolvedWorktree extends Omit<DiscoveredWorktree, "path"> {
+  id: string;
+  path: string;
+}
+
+function resolveWorktrees(repositoryRoot: string): ResolvedWorktree[] {
+  return parseWorktreeList(
+    git(repositoryRoot, ["worktree", "list", "--porcelain"])
+  )
+    .filter((item) => !item.prunable && existsSync(item.path))
+    .map((item) => {
+      const path = realpathSync(item.path);
+      return { ...item, id: worktreeId(path), path };
+    });
 }
 
 function commandSummary(label: string, command: WorkgroveCommand): string {
@@ -319,9 +338,7 @@ export class WorkspaceController {
     }
     const configDocument = loadWorkgroveConfigDocument(configPath);
     const config = configDocument.config;
-    const discovered = parseWorktreeList(
-      git(selectedRoot, ["worktree", "list", "--porcelain"])
-    ).filter((item) => !item.prunable && existsSync(item.path));
+    const discovered = resolveWorktrees(selectedRoot);
     if (discovered.length === 0) {
       throw new Error("No Git worktrees were discovered");
     }
@@ -329,8 +346,7 @@ export class WorkspaceController {
     const primaryGroupId = primaryAppGroup(config);
     const ports = inspectListeningPorts();
     const worktrees = discovered.map((item, index) => {
-      const path = realpathSync(item.path);
-      const id = worktreeId(path);
+      const { id, path } = item;
       const appGroups = Object.keys(config.appGroups).map((groupId) =>
         this.appGroups.inspect(
           {
@@ -596,11 +612,7 @@ export class WorkspaceController {
     let worktreePaths: string[];
     try {
       const selectedRoot = git(repoPath, ["rev-parse", "--show-toplevel"]);
-      worktreePaths = parseWorktreeList(
-        git(selectedRoot, ["worktree", "list", "--porcelain"])
-      )
-        .filter((item) => !item.prunable && existsSync(item.path))
-        .map((item) => realpathSync(item.path));
+      worktreePaths = resolveWorktrees(selectedRoot).map(({ path }) => path);
     } catch (error) {
       throw new Error(
         `Could not resolve Workgrove worktrees for "${repoPath}": ${
