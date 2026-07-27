@@ -1,0 +1,29 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+import { findVerifiedWorktreeRun } from "../src/controller/recorded-worktree-run-inspection";
+
+export function assertProductionWorktreeAvailable(
+  worktreePath: string,
+  options: { productionControlDirectory?: string } = {}
+): void {
+  const productionControlDirectory =
+    options.productionControlDirectory ?? join(homedir(), ".workgrove");
+  const statePath = join(productionControlDirectory, "state.json");
+  let run: ReturnType<typeof findVerifiedWorktreeRun>;
+  try {
+    run = findVerifiedWorktreeRun(productionControlDirectory, worktreePath);
+  } catch (error) {
+    throw new Error(
+      `Could not verify Production Workgrove state at ${statePath}: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+  if (!run) {
+    return;
+  }
+  throw new Error(
+    `Production Workgrove already has ${run.groupId} running in ${run.worktreePath} on port ${run.port} (PID ${run.pid})`
+  );
+}

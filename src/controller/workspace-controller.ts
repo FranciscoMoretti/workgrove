@@ -160,10 +160,15 @@ function worktreeRouteLabel(
 export interface WorkspaceControllerRuntimeOptions {
   codexContext?: CodexContextStore;
   codexHooks?: CodexHookActivityStore;
+  developmentStartPreflight?: DevelopmentStartPreflight;
   processes?: ProcessSupervisor;
   routing?: LocalRoutingEngine;
   state?: FileWorkgroveStateStore;
 }
+
+export type DevelopmentStartPreflight = (
+  worktreePath: string
+) => Promise<void> | void;
 
 export interface CodexHookResult {
   accepted: boolean;
@@ -175,6 +180,9 @@ export class WorkspaceController {
   private readonly codexAdapter: CodexIntegrationAdapter;
   private readonly codexActivity: CodexHookActivityStore;
   private readonly codexContext: CodexContextStore;
+  private readonly developmentStartPreflight:
+    | DevelopmentStartPreflight
+    | undefined;
   private readonly codexRefreshes = new Map<string, Promise<void>>();
   private readonly knownCodexTasksByPath = new Map<string, Set<string>>();
   private readonly pendingCodexObservations = new Map<
@@ -192,6 +200,7 @@ export class WorkspaceController {
     this.codexAdapter = codexAdapter;
     this.codexActivity = runtime.codexHooks ?? new CodexHookActivityStore();
     this.codexContext = runtime.codexContext ?? new CodexContextStore();
+    this.developmentStartPreflight = runtime.developmentStartPreflight;
     this.processes = runtime.processes ?? new ProcessSupervisor();
     this.routing = runtime.routing ?? new PortlessRoutingEngine();
     this.state = runtime.state ?? new FileWorkgroveStateStore();
@@ -399,11 +408,16 @@ export class WorkspaceController {
     };
   }
 
-  startAppGroup(
+  async startAppGroup(
     repoPath: string,
     worktreeIdValue: string,
     groupId: string
   ): Promise<"already-running" | "started"> {
+    if (this.developmentStartPreflight) {
+      await this.developmentStartPreflight(
+        this.readOnlyWorktreePath(repoPath, worktreeIdValue)
+      );
+    }
     this.assertTrusted(repoPath);
     return this.appGroups.start(
       this.appGroupTarget(repoPath, worktreeIdValue, groupId)
@@ -574,6 +588,24 @@ export class WorkspaceController {
       },
     };
   }
+
+  private readOnlyWorktreePath(
+    repoPath: string,
+    worktreeIdValue: string
+  ): string {
+    const selectedRoot = git(repoPath, ["rev-parse", "--show-toplevel"]);
+    const worktreePath = parseWorktreeList(
+      git(selectedRoot, ["worktree", "list", "--porcelain"])
+    )
+      .filter((item) => !item.prunable && existsSync(item.path))
+      .map((item) => realpathSync(item.path))
+      .find((path) => worktreeId(path) === worktreeIdValue);
+    if (!worktreePath) {
+      throw new Error("Unknown worktree");
+    }
+    return worktreePath;
+  }
+
   private codexEnabledWorktree(path: string): boolean {
     try {
       const root = realpathSync(path);
