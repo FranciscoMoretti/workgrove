@@ -6,6 +6,8 @@ import {
   mkdtempSync,
   realpathSync,
   rmSync,
+  symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -250,7 +252,6 @@ it("ignores stale production state without a live process or listener", async ()
   mkdirSync(worktreePath);
   const canonicalWorktreePath = realpathSync(worktreePath);
   const portReservation = await reserveBackingPort();
-  let portReleased = false;
 
   try {
     recordProductionRun(
@@ -259,7 +260,6 @@ it("ignores stale production state without a live process or listener", async ()
       portReservation.port
     );
     await portReservation.release();
-    portReleased = true;
 
     expect(() =>
       assertProductionWorktreeAvailable(canonicalWorktreePath, {
@@ -267,9 +267,40 @@ it("ignores stale production state without a live process or listener", async ()
       })
     ).not.toThrow();
   } finally {
-    if (!portReleased) {
-      await portReservation.release();
-    }
+    await portReservation.release();
+    rmSync(temporary, { force: true, recursive: true });
+  }
+});
+
+it("fails closed when a recorded worktree path cannot be resolved safely", async () => {
+  const temporary = mkdtempSync(
+    join(tmpdir(), "workgrove-production-path-error-preflight-")
+  );
+  const productionControlDirectory = join(temporary, "home", ".workgrove");
+  const worktreePath = join(temporary, "project");
+  const recordedWorktreePath = join(temporary, "recorded-project");
+  mkdirSync(worktreePath);
+  symlinkSync(worktreePath, recordedWorktreePath);
+  const canonicalWorktreePath = realpathSync(worktreePath);
+  const portReservation = await reserveBackingPort();
+
+  try {
+    recordProductionRun(
+      productionControlDirectory,
+      recordedWorktreePath,
+      portReservation.port
+    );
+    unlinkSync(recordedWorktreePath);
+    symlinkSync(recordedWorktreePath, recordedWorktreePath);
+    await portReservation.release();
+
+    expect(() =>
+      assertProductionWorktreeAvailable(canonicalWorktreePath, {
+        productionControlDirectory,
+      })
+    ).toThrow("Could not verify Production Workgrove state");
+  } finally {
+    await portReservation.release();
     rmSync(temporary, { force: true, recursive: true });
   }
 });

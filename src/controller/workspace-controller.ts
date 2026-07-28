@@ -424,19 +424,19 @@ export class WorkspaceController {
     };
   }
 
-  async startAppGroup(
+  startAppGroup(
     repoPath: string,
     worktreeIdValue: string,
     groupId: string
   ): Promise<"already-running" | "started"> {
-    if (this.developmentStartPreflight) {
-      await this.developmentStartPreflight(
-        this.readOnlyWorktreePath(repoPath, worktreeIdValue)
-      );
+    if (!this.developmentStartPreflight) {
+      return this.startTrustedAppGroup(repoPath, worktreeIdValue, groupId);
     }
-    this.assertTrusted(repoPath);
-    return this.appGroups.start(
-      this.appGroupTarget(repoPath, worktreeIdValue, groupId)
+    return this.startAppGroupAfterDevelopmentPreflight(
+      repoPath,
+      worktreeIdValue,
+      groupId,
+      this.developmentStartPreflight
     );
   }
 
@@ -603,6 +603,27 @@ export class WorkspaceController {
         routeLabel: worktree.branch,
       },
     };
+  }
+
+  private async startAppGroupAfterDevelopmentPreflight(
+    repoPath: string,
+    worktreeIdValue: string,
+    groupId: string,
+    preflight: DevelopmentStartPreflight
+  ): Promise<"already-running" | "started"> {
+    await preflight(this.readOnlyWorktreePath(repoPath, worktreeIdValue));
+    return this.startTrustedAppGroup(repoPath, worktreeIdValue, groupId);
+  }
+
+  private startTrustedAppGroup(
+    repoPath: string,
+    worktreeIdValue: string,
+    groupId: string
+  ): Promise<"already-running" | "started"> {
+    this.assertTrusted(repoPath);
+    return this.appGroups.start(
+      this.appGroupTarget(repoPath, worktreeIdValue, groupId)
+    );
   }
 
   private readOnlyWorktreePath(

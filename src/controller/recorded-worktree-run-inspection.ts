@@ -28,8 +28,12 @@ export interface VerifiedWorktreeRun {
 function canonicalPath(path: string): string | null {
   try {
     return realpathSync(path);
-  } catch {
-    return null;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      return null;
+    }
+    throw error;
   }
 }
 
