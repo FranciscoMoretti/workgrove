@@ -245,6 +245,11 @@ running while Workgrove is developed.
 
 Only one development server may own a checkout's session at a time. Different
 Workgrove checkouts receive different sessions and can run concurrently.
+Before development starts an app group, it checks the production Workgrove
+state and refuses to run the repository Start command if production still has a
+verified process or listener for the same worktree. This guard is read-only and
+only affects Workgrove development.
+
 Stopping the foreground development server releases its ownership lease and
 stops only its own Portless proxy. Codex task discovery remains available, but
 the isolated development hook capability does not replace a running production

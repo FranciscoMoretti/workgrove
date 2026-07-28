@@ -16,6 +16,7 @@ import {
   acquireExclusiveFileLock,
   ExclusiveFileLockBusyError,
 } from "./exclusive-file-lock";
+import { assertProductionWorktreeAvailable } from "./production-run-preflight";
 
 const DEFAULT_PORTLESS_PORT = 1355;
 
@@ -213,6 +214,11 @@ export async function openDevelopmentSession(
         }),
         processes: new ProcessSupervisor(controlDirectory),
         routing,
+        developmentStartPreflight: (worktreePath) => {
+          assertProductionWorktreeAvailable(worktreePath, {
+            productionControlDirectory: join(homeDirectory, ".workgrove"),
+          });
+        },
         state: new FileWorkgroveStateStore(statePath),
       },
       profile,

@@ -83,7 +83,13 @@ export type AppGroupRun = z.infer<typeof AppGroupRunSchema>;
 export type AppGroupInstance = z.infer<typeof AppGroupInstanceSchema>;
 type WorktreeRecord = z.infer<typeof WorktreeRecordSchema>;
 type RepositoryRecord = z.infer<typeof RepositoryRecordSchema>;
-type WorkgroveLocalState = z.infer<typeof WorkgroveLocalStateSchema>;
+export type WorkgroveLocalState = z.infer<typeof WorkgroveLocalStateSchema>;
+
+export function parseCurrentWorkgroveLocalState(
+  value: unknown
+): WorkgroveLocalState {
+  return WorkgroveLocalStateSchema.parse(value);
+}
 
 export interface InstanceRequest {
   groupId: string;

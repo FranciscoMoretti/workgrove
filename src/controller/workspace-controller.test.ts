@@ -196,19 +196,19 @@ describe("controller command contract", () => {
     ).rejects.toThrow();
   });
 
-  it("checks repository trust before retrying an App group", () => {
+  it("checks repository trust synchronously before App-group operations", () => {
     class UntrustedController extends WorkspaceController {
       override assertTrusted(): never {
         throw new Error("trust checked");
       }
     }
 
+    const controller = new UntrustedController();
     expect(() =>
-      new UntrustedController().retryAppGroup(
-        "/not-inspected",
-        "worktree",
-        "apps"
-      )
+      controller.retryAppGroup("/not-inspected", "worktree", "apps")
+    ).toThrow("trust checked");
+    expect(() =>
+      controller.startAppGroup("/not-inspected", "worktree", "apps")
     ).toThrow("trust checked");
   });
 
