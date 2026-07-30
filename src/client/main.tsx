@@ -20,8 +20,8 @@ createRoot(root).render(
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <RecoveryBoundary
-            description="Branchbase caught an unexpected interface error before it could blank the entire dashboard."
-            title="Branchbase needs to recover"
+            description="BranchBase caught an unexpected interface error before it could blank the entire dashboard."
+            title="BranchBase needs to recover"
           >
             <App />
           </RecoveryBoundary>

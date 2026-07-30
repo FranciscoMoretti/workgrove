@@ -67,10 +67,10 @@ async function waitUntilStopped(url: string): Promise<void> {
     }
     await new Promise((resolveSleep) => setTimeout(resolveSleep, 100));
   }
-  throw new Error("Packed Workgrove daemon did not stop");
+  throw new Error("Packed BranchBase daemon did not stop");
 }
 
-const temporaryRoot = mkdtempSync(join(tmpdir(), "workgrove-pack-"));
+const temporaryRoot = mkdtempSync(join(tmpdir(), "branchbase-pack-"));
 const packDirectory = join(temporaryRoot, "pack");
 const installDirectory = join(temporaryRoot, "consumer");
 const fixtureDirectory = join(temporaryRoot, "repository");
@@ -80,7 +80,7 @@ let daemonEnvironment: Record<string, string> = {};
 
 try {
   mkdirSync(installDirectory);
-  const tarballName = "workgrove.tgz";
+  const tarballName = "branchbase.tgz";
   mkdirSync(packDirectory);
   const tarballPath = join(packDirectory, tarballName);
   run("bun", ["pm", "pack", "--filename", tarballPath, "--quiet"]);
@@ -90,11 +90,11 @@ try {
   for (const requiredPath of [
     "package/scripts/daemon.ts",
     "package/dist/index.html",
-    "package/plugins/workgrove/.codex-plugin/plugin.json",
-    "package/plugins/workgrove/hooks/hooks.json",
-    "package/plugins/workgrove/hooks/workgrove-hook",
-    "package/plugins/workgrove/hooks/workgrove-hook.ts",
-    "package/schema/workgrove.schema.json",
+    "package/plugins/branchbase/.codex-plugin/plugin.json",
+    "package/plugins/branchbase/hooks/hooks.json",
+    "package/plugins/branchbase/hooks/branchbase-hook",
+    "package/plugins/branchbase/hooks/branchbase-hook.ts",
+    "package/schema/branchbase.schema.json",
     "package/src/config/public.ts",
   ]) {
     assert(
@@ -109,36 +109,36 @@ try {
 
   writeFileSync(
     join(installDirectory, "package.json"),
-    '{"name":"workgrove-pack-consumer","private":true,"type":"module"}\n',
+    '{"name":"branchbase-pack-consumer","private":true,"type":"module"}\n',
     { flag: "wx" }
   );
   run("bun", ["add", "--ignore-scripts", tarballPath], {
     cwd: installDirectory,
   });
-  cliPath = join(installDirectory, "node_modules", ".bin", "workgrove");
+  cliPath = join(installDirectory, "node_modules", ".bin", "branchbase");
   assert(
     existsSync(cliPath),
-    "Packed install did not expose the workgrove CLI"
+    "Packed install did not expose the branchbase CLI"
   );
   run(
     "bun",
     [
       "-e",
-      'import { WorkgroveConfigSchema } from "workgrove/config"; const config = WorkgroveConfigSchema.parse({ version: 1, setup: { argv: ["bun", "install"] }, appGroups: { Apps: { start: { argv: ["bun", "run", "dev"] }, stop: "process", env: { PORT: "{apps.web.port}" }, apps: { web: { protocol: "http", readiness: "tcp" } } } } }); if (config.appGroups.Apps.apps.web.protocol !== "http") process.exit(1);',
+      'import { BranchBaseConfigSchema } from "branchbase/config"; const config = BranchBaseConfigSchema.parse({ version: 1, setup: { argv: ["bun", "install"] }, appGroups: { Apps: { start: { argv: ["bun", "run", "dev"] }, stop: "process", env: { PORT: "{apps.web.port}" }, apps: { web: { protocol: "http", readiness: "tcp" } } } } }); if (config.appGroups.Apps.apps.web.protocol !== "http") process.exit(1);',
     ],
     { cwd: installDirectory }
   );
 
   run("git", ["init", "--quiet", fixtureDirectory]);
-  run("git", ["config", "user.email", "pack-smoke@workgrove.local"], {
+  run("git", ["config", "user.email", "pack-smoke@branchbase.local"], {
     cwd: fixtureDirectory,
   });
-  run("git", ["config", "user.name", "Workgrove Pack Smoke"], {
+  run("git", ["config", "user.name", "BranchBase Pack Smoke"], {
     cwd: fixtureDirectory,
   });
   writeFileSync(join(fixtureDirectory, "README.md"), "# Fixture\n");
   writeFileSync(
-    join(fixtureDirectory, ".workgrove.json"),
+    join(fixtureDirectory, ".branchbase.json"),
     `${JSON.stringify(
       {
         version: 1,
@@ -166,19 +166,22 @@ try {
   const port = await unusedPort();
   daemonEnvironment = {
     HOME: homeDirectory,
-    WORKGROVE_NO_OPEN: "1",
-    WORKGROVE_PORT: String(port),
+    BRANCHBASE_NO_OPEN: "1",
+    BRANCHBASE_PORT: String(port),
   };
   const startOutput = run(cliPath, ["start", "--repo", fixtureDirectory], {
     cwd: installDirectory,
     env: daemonEnvironment,
   });
-  assert(startOutput.includes("Workgrove started"), "Packed CLI did not start");
+  assert(
+    startOutput.includes("BranchBase started"),
+    "Packed CLI did not start"
+  );
   assert(
     run(cliPath, ["status"], {
       cwd: installDirectory,
       env: daemonEnvironment,
-    }).includes("Workgrove is running"),
+    }).includes("BranchBase is running"),
     "Packed CLI status did not report the daemon"
   );
 
@@ -186,7 +189,7 @@ try {
   const health = await fetch(`${baseUrl}/api/health`);
   const healthBody = (await health.json()) as { service?: string };
   assert(
-    health.ok && healthBody.service === "workgrove",
+    health.ok && healthBody.service === "branchbase",
     "Packed daemon health check failed"
   );
   const workspace = await fetch(
@@ -214,7 +217,7 @@ try {
     run(cliPath, ["stop"], {
       cwd: installDirectory,
       env: daemonEnvironment,
-    }).includes("Workgrove stopped"),
+    }).includes("BranchBase stopped"),
     "Packed CLI did not stop"
   );
   await waitUntilStopped(`${baseUrl}/api/health`);
@@ -224,12 +227,12 @@ try {
     env: daemonEnvironment,
   });
   assert(
-    stoppedStatus.includes("Workgrove is stopped"),
+    stoppedStatus.includes("BranchBase is stopped"),
     "Packed CLI status did not report the stopped daemon"
   );
 
   const daemonLog = readFileSync(
-    join(homeDirectory, ".workgrove", "server.log"),
+    join(homeDirectory, ".branchbase", "server.log"),
     "utf8"
   );
   assert(
@@ -237,7 +240,7 @@ try {
     "Packed daemon unexpectedly started the Vite development server"
   );
   console.log(
-    "Packed Workgrove artifact passed install and daemon smoke tests"
+    "Packed BranchBase artifact passed install and daemon smoke tests"
   );
 } finally {
   if (cliPath) {

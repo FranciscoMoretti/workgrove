@@ -66,7 +66,7 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
     this.nodePath = packageFile("node", "bin", "node");
     this.port = options.port ?? DEFAULT_PROXY_PORT;
     this.stateDirectory =
-      options.stateDirectory ?? join(homedir(), ".workgrove", "portless");
+      options.stateDirectory ?? join(homedir(), ".branchbase", "portless");
   }
 
   async activate(route: LocalRoute): Promise<void> {
@@ -136,7 +136,7 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
     this.run(["proxy", "start", "--port", String(this.port), "--no-tls"]);
     await this.waitUntil(
       async () =>
-        (await observePortlessRoute(this.url("workgrove-probe.localhost"))) !==
+        (await observePortlessRoute(this.url("branchbase-probe.localhost"))) !==
         "unavailable",
       `Portless proxy did not start on port ${this.port}`
     );

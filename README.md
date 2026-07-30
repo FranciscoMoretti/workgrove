@@ -1,9 +1,9 @@
-# Workgrove
+# BranchBase
 
-Workgrove is a macOS-first control center for local development across many Git
-worktrees. It keeps each worktree's apps, ports, processes, logs, and Codex tasks
-in one place, so parallel work does not turn into a collection of terminals and
-forgotten conversations.
+BranchBase is an open-source, macOS-first local development control plane for
+Git worktrees. It keeps each worktree's apps, ports, processes, logs, and Codex
+tasks in one place, so parallel work does not turn into a collection of
+terminals and forgotten conversations.
 
 Use it when you regularly create worktrees, run several copies of the same app,
 or have multiple Codex tasks working in the same repository.
@@ -19,7 +19,7 @@ or have multiple Codex tasks working in the same repository.
 - Command review and trust before repository setup or lifecycle commands run.
 - Every non-archived Codex task associated with each exact worktree path.
 - Direct **Open task** and **New task** links into the Codex desktop app.
-- Optional live Codex activity and automatic Workgrove context through the
+- Optional live Codex activity and automatic BranchBase context through the
   bundled plugin.
 
 The core model is:
@@ -36,12 +36,12 @@ repository
 
 ### Requirements
 
-- Core Workgrove: macOS, Git, [Bun](https://bun.sh/) 1.3 or newer, and `lsof`
+- Core BranchBase: macOS, Git, [Bun](https://bun.sh/) 1.3 or newer, and `lsof`
   (included with macOS).
 - Codex task discovery: a compatible Codex CLI or ChatGPT desktop app bundle.
 - **Open task** and **New task**: ChatGPT desktop, which handles `codex://`
   links.
-- Live status and automatic context: the bundled Workgrove plugin installed in
+- Live status and automatic context: the bundled BranchBase plugin installed in
   Codex, with its hooks trusted.
 
 Codex is optional, and the integration does not require an OpenAI API key.
@@ -51,14 +51,14 @@ Codex is optional, and the integration does not require an OpenAI API key.
 The Codex integration is currently available from `main`:
 
 ```sh
-git clone https://github.com/FranciscoMoretti/workgrove.git
-cd workgrove
+git clone https://github.com/FranciscoMoretti/BranchBase.git
+cd BranchBase
 bun install --frozen-lockfile
 bun run build
 bun scripts/daemon.ts start --repo /path/to/your/repository
 ```
 
-Open <http://127.0.0.1:3999>. Workgrove will inspect the repository's worktrees
+Open <http://127.0.0.1:3999>. BranchBase will inspect the repository's worktrees
 and ask you to review any repository commands before trusting them.
 
 Use these commands to manage the source-run daemon:
@@ -68,21 +68,12 @@ bun scripts/daemon.ts status
 bun scripts/daemon.ts stop
 ```
 
-### Install the published core package
-
-The current `workgrove@0.4.0` package provides core worktree and process
-management but predates the Codex integration:
-
-```sh
-bun add --global workgrove
-workgrove start --repo /path/to/your/repository
-workgrove status
-workgrove stop
-```
+BranchBase has not yet been published to npm. Use the source installation above
+until the first package release is available.
 
 ## Codex integration
 
-Workgrove matches Codex tasks to worktrees using the task's exact canonical
+BranchBase matches Codex tasks to worktrees using the task's exact canonical
 working directory. It exposes every matching non-archived top-level task; the
 UI may emphasize the newest one, but the backend does not discard the others.
 
@@ -90,38 +81,38 @@ UI may emphasize the newest one, but the backend does not discard the others.
 
 No plugin is required for the basic integration:
 
-1. Start Workgrove for a repository.
+1. Start BranchBase for a repository.
 2. Open that repository in the dashboard.
 3. Select a worktree to see all of its associated Codex tasks.
 4. Use **Open task** to continue an existing conversation or **New task** to
    open Codex at that worktree's path.
 
-Workgrove starts a private `codex app-server` process and decodes only task
+BranchBase starts a private `codex app-server` process and decodes only task
 names, IDs, timestamps, Git metadata, and exact working directories. Although a
-task-list response can contain a preview, Workgrove does not retain, project, or
+task-list response can contain a preview, BranchBase does not retain, project, or
 expose it, and it never requests full turns or transcripts with `thread/read`.
-If task discovery is unavailable, the rest of Workgrove continues to work; the
+If task discovery is unavailable, the rest of BranchBase continues to work; the
 **New task** link is still rendered and works when ChatGPT desktop is installed.
 
 ### Optional live status and automatic context
 
-Install the bundled Workgrove plugin to add **Working**, **Waiting for
-approval**, **Ready**, and **Unknown** activity plus automatic Workgrove context:
+Install the bundled BranchBase plugin to add **Working**, **Waiting for
+approval**, **Ready**, and **Unknown** activity plus automatic BranchBase context:
 
 ```sh
-codex plugin marketplace add FranciscoMoretti/workgrove --ref main
-codex plugin add workgrove@workgrove
+codex plugin marketplace add FranciscoMoretti/BranchBase --ref main
+codex plugin add branchbase@branchbase
 ```
 
-Then restart the ChatGPT desktop app, keep the Workgrove daemon running, and
+Then restart the ChatGPT desktop app, keep the BranchBase daemon running, and
 open or resume a Codex task at a worktree whose root contains a valid
-`.workgrove.json`. Review and trust the Workgrove plugin hooks when Codex asks.
+`.branchbase.json`. Review and trust the BranchBase plugin hooks when Codex asks.
 
 The context uses an explicit allowlist: canonical worktree path, branch, app and
 group labels, ports, URLs, and process/readiness state. This helps Codex use the
 correct running app instead of starting a competing server. Managed logs,
 environment values, repository command definitions, prompts, transcripts, and
-tool arguments or results are omitted. Hooks are fail-open: if Workgrove is
+tool arguments or results are omitted. Hooks are fail-open: if BranchBase is
 stopped or the plugin is disabled, Codex continues normally and live activity
 eventually becomes Unknown.
 
@@ -131,18 +122,18 @@ installation and trust model.
 
 ## Repository configuration
 
-Commit `.workgrove.json` at the repository root. The setup command prepares one
+Commit `.branchbase.json` at the repository root. The setup command prepares one
 worktree; each app group can then be started and stopped independently.
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/franciscomoretti/workgrove/main/schema/workgrove.schema.json",
+  "$schema": "https://raw.githubusercontent.com/FranciscoMoretti/BranchBase/main/schema/branchbase.schema.json",
   "version": 1,
   "setup": { "argv": ["bun", "install"] },
   "appGroups": {
     "Product Apps": {
       "instances": { "mode": "per-worktree" },
-      "start": { "argv": ["bun", "run", "dev:workgrove"] },
+      "start": { "argv": ["bun", "run", "dev:branchbase"] },
       "stop": "process",
       "env": {
         "WEB_PORT": "{apps.Web.port}",
@@ -176,7 +167,7 @@ worktree; each app group can then be started and stopped independently.
 Important configuration behavior:
 
 - Commands are argv arrays and run from the selected worktree root.
-- With `"stop": "process"`, Start must remain in the foreground. Workgrove owns
+- With `"stop": "process"`, Start must remain in the foreground. BranchBase owns
   that process and terminates it on Stop.
 - A command-based Stop is useful for detached infrastructure such as Docker
   Compose.
@@ -185,7 +176,7 @@ Important configuration behavior:
 - `"mode": "selectable"` creates a shared Default instance and lets each
   worktree select or create named alternatives—for example, an isolated Docker
   Compose database for a migration experiment.
-- Workgrove assigns each instance collision-free loopback backing ports and
+- BranchBase assigns each instance collision-free loopback backing ports and
   keeps them stable across Stop and Restart.
 - HTTP Apps receive stable `*.localhost` Friendly URLs through Portless. TCP
   Apps expose their assigned host and port to command templates.
@@ -194,22 +185,22 @@ Important configuration behavior:
   reference another selected instance's host, port, direct URL, or Friendly URL
   with tokens such as `{appGroups.Local Infrastructure.apps.Postgres.port}`.
 
-If a repository has no configuration, Workgrove can suggest conservative setup
+If a repository has no configuration, BranchBase can suggest conservative setup
 and start commands for Node.js, Django, FastAPI, Rust, Go, and Docker Compose.
 You still review and trust the resulting command fingerprint before it runs.
 
 ### Repository tooling API
 
-Bun scripts can reuse Workgrove's checked-in configuration contract:
+Bun scripts can reuse BranchBase's checked-in configuration contract:
 
 ```ts
 import {
-  findWorkgroveConfig,
-  loadWorkgroveConfig,
+  findBranchBaseConfig,
+  loadBranchBaseConfig,
   resolveStartCommand,
-  type ResolvedWorkgroveAppGroups,
-  type WorkgroveConfig,
-} from "workgrove/config";
+  type ResolvedBranchBaseAppGroups,
+  type BranchBaseConfig,
+} from "branchbase/config";
 ```
 
 The public API exposes configuration schemas and types, discovery/loading, and
@@ -223,6 +214,7 @@ Maintained decisions and compatibility notes live in:
 
 - [ADR 0001: Portless runtime](docs/adr/0001-portless-runtime.md)
 - [ADR 0002: Repository schema and local state](docs/adr/0002-repository-schema-and-local-state.md)
+- [ADR 0003: Adopt the BranchBase namespace](docs/adr/0003-branchbase-namespace.md)
 
 ## Development
 
@@ -236,26 +228,26 @@ bun run test:integration
 bun run build
 ```
 
-`bun run dev` uses an isolated development session for the current Workgrove
+`bun run dev` uses an isolated development session for the current BranchBase
 checkout. It chooses collision-free dashboard and Portless ports, prints the
 dashboard URL, and keeps its state, trust decisions, managed-process records,
 logs, routes, and Codex hook capability separate from the production daemon
-under `~/.workgrove/development/`. An installed or source-run daemon may remain
-running while Workgrove is developed.
+under `~/.branchbase/development/`. An installed or source-run daemon may remain
+running while BranchBase is developed.
 
 Only one development server may own a checkout's session at a time. Different
-Workgrove checkouts receive different sessions and can run concurrently.
-Before development starts an app group, it checks the production Workgrove
+BranchBase checkouts receive different sessions and can run concurrently.
+Before development starts an app group, it checks the production BranchBase
 state and refuses to run the repository Start command if production still has a
 verified process or listener for the same worktree. This guard is read-only and
-only affects Workgrove development.
+only affects BranchBase development.
 
 Stopping the foreground development server releases its ownership lease and
 stops only its own Portless proxy. Codex task discovery remains available, but
 the isolated development hook capability does not replace a running production
 daemon's capability.
 
-`WORKGROVE_PORT` and `WORKGROVE_PORTLESS_PORT` may be used when a fixed
+`BRANCHBASE_PORT` and `BRANCHBASE_PORTLESS_PORT` may be used when a fixed
 development port is required. They are not needed for normal development.
 
 Git, configuration, port inspection, process ownership, and command rules stay

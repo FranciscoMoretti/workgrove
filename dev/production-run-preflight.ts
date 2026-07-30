@@ -8,14 +8,14 @@ export function assertProductionWorktreeAvailable(
   options: { productionControlDirectory?: string } = {}
 ): void {
   const productionControlDirectory =
-    options.productionControlDirectory ?? join(homedir(), ".workgrove");
+    options.productionControlDirectory ?? join(homedir(), ".branchbase");
   const statePath = join(productionControlDirectory, "state.json");
   let run: ReturnType<typeof findVerifiedWorktreeRun>;
   try {
     run = findVerifiedWorktreeRun(productionControlDirectory, worktreePath);
   } catch (error) {
     throw new Error(
-      `Could not verify Production Workgrove state at ${statePath}: ${
+      `Could not verify Production BranchBase state at ${statePath}: ${
         error instanceof Error ? error.message : String(error)
       }`
     );
@@ -24,6 +24,6 @@ export function assertProductionWorktreeAvailable(
     return;
   }
   throw new Error(
-    `Production Workgrove already has ${run.groupId} running in ${run.worktreePath} on port ${run.port} (PID ${run.pid})`
+    `Production BranchBase already has ${run.groupId} running in ${run.worktreePath} on port ${run.port} (PID ${run.pid})`
   );
 }

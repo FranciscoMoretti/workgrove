@@ -33,11 +33,11 @@ function listenOnPort(port: number): Promise<() => Promise<void>> {
 }
 
 it("isolates development resources from the production runtime", async () => {
-  const temporary = mkdtempSync(join(tmpdir(), "workgrove-development-"));
+  const temporary = mkdtempSync(join(tmpdir(), "branchbase-development-"));
   const homeDirectory = join(temporary, "home");
   const appRoot = realpathSync(".");
   const proxyPort = await reserveBackingPort();
-  const expectedProductionDirectory = join(homeDirectory, ".workgrove");
+  const expectedProductionDirectory = join(homeDirectory, ".branchbase");
   const productionState = join(expectedProductionDirectory, "state.json");
   let opened: Awaited<ReturnType<typeof openDevelopmentSession>> | undefined;
 
@@ -49,8 +49,11 @@ it("isolates development resources from the production runtime", async () => {
     opened = await openDevelopmentSession({
       appRoot,
       environment: {
-        WORKGROVE_CODEX_CONTROL_DIR: join(expectedProductionDirectory, "codex"),
-        WORKGROVE_PORTLESS_PORT: String(port),
+        BRANCHBASE_CODEX_CONTROL_DIR: join(
+          expectedProductionDirectory,
+          "codex"
+        ),
+        BRANCHBASE_PORTLESS_PORT: String(port),
       },
       homeDirectory,
     });
@@ -81,14 +84,14 @@ it("isolates development resources from the production runtime", async () => {
 });
 
 it("allows only one development writer per checkout", async () => {
-  const temporary = mkdtempSync(join(tmpdir(), "workgrove-development-lock-"));
+  const temporary = mkdtempSync(join(tmpdir(), "branchbase-development-lock-"));
   const proxyPort = await reserveBackingPort();
   const port = proxyPort.port;
   let first: Awaited<ReturnType<typeof openDevelopmentSession>> | undefined;
   let reopened: Awaited<ReturnType<typeof openDevelopmentSession>> | undefined;
   const options = {
     appRoot: realpathSync("."),
-    environment: { WORKGROVE_PORTLESS_PORT: String(port) },
+    environment: { BRANCHBASE_PORTLESS_PORT: String(port) },
     homeDirectory: join(temporary, "home"),
   };
 
@@ -96,7 +99,7 @@ it("allows only one development writer per checkout", async () => {
     await proxyPort.release();
     first = await openDevelopmentSession(options);
     await expect(openDevelopmentSession(options)).rejects.toThrow(
-      "Workgrove development is already running for this checkout"
+      "BranchBase development is already running for this checkout"
     );
     await first.close();
     first = undefined;
@@ -112,18 +115,18 @@ it("allows only one development writer per checkout", async () => {
 
 it("rejects an empty explicit development proxy port", async () => {
   const temporary = mkdtempSync(
-    join(tmpdir(), "workgrove-development-empty-port-")
+    join(tmpdir(), "branchbase-development-empty-port-")
   );
 
   try {
     await expect(
       openDevelopmentSession({
         appRoot: realpathSync("."),
-        environment: { WORKGROVE_PORTLESS_PORT: "" },
+        environment: { BRANCHBASE_PORTLESS_PORT: "" },
         homeDirectory: join(temporary, "home"),
       })
     ).rejects.toThrow(
-      "WORKGROVE_PORTLESS_PORT must be an integer between 1 and 65535"
+      "BRANCHBASE_PORTLESS_PORT must be an integer between 1 and 65535"
     );
   } finally {
     rmSync(temporary, { force: true, recursive: true });
@@ -131,7 +134,9 @@ it("rejects an empty explicit development proxy port", async () => {
 });
 
 it("releases session ownership when proxy shutdown fails", async () => {
-  const temporary = mkdtempSync(join(tmpdir(), "workgrove-development-close-"));
+  const temporary = mkdtempSync(
+    join(tmpdir(), "branchbase-development-close-")
+  );
   const options = {
     appRoot: realpathSync("."),
     environment: {},
@@ -172,7 +177,7 @@ it("releases session ownership when proxy shutdown fails", async () => {
 
 it("opens different development checkouts concurrently", async () => {
   const temporary = mkdtempSync(
-    join(tmpdir(), "workgrove-development-checkouts-")
+    join(tmpdir(), "branchbase-development-checkouts-")
   );
   const firstRoot = join(temporary, "first");
   const secondRoot = join(temporary, "second");
@@ -207,7 +212,7 @@ it("opens different development checkouts concurrently", async () => {
 
 it("reuses the development proxy port between sessions", async () => {
   const temporary = mkdtempSync(
-    join(tmpdir(), "workgrove-development-recovery-")
+    join(tmpdir(), "branchbase-development-recovery-")
   );
   const homeDirectory = join(temporary, "home");
   const appRoot = realpathSync(".");
@@ -239,7 +244,7 @@ it("reuses the development proxy port between sessions", async () => {
 
 it("does not silently change a remembered development proxy port", async () => {
   const temporary = mkdtempSync(
-    join(tmpdir(), "workgrove-development-stable-port-")
+    join(tmpdir(), "branchbase-development-stable-port-")
   );
   const options = {
     appRoot: realpathSync("."),
@@ -274,7 +279,7 @@ it("does not silently change a remembered development proxy port", async () => {
 
 it("rejects changing the explicit proxy port for existing state", async () => {
   const temporary = mkdtempSync(
-    join(tmpdir(), "workgrove-development-port-change-")
+    join(tmpdir(), "branchbase-development-port-change-")
   );
   const firstPort = await reserveBackingPort();
   const secondPort = await reserveBackingPort(new Set([firstPort.port]));
@@ -288,7 +293,7 @@ it("rejects changing the explicit proxy port for existing state", async () => {
     await firstPort.release();
     initial = await openDevelopmentSession({
       ...options,
-      environment: { WORKGROVE_PORTLESS_PORT: String(firstPort.port) },
+      environment: { BRANCHBASE_PORTLESS_PORT: String(firstPort.port) },
     });
     await initial.close();
     initial = undefined;
@@ -297,7 +302,7 @@ it("rejects changing the explicit proxy port for existing state", async () => {
     await expect(
       openDevelopmentSession({
         ...options,
-        environment: { WORKGROVE_PORTLESS_PORT: String(secondPort.port) },
+        environment: { BRANCHBASE_PORTLESS_PORT: String(secondPort.port) },
       })
     ).rejects.toThrow(
       `development state uses Portless proxy port ${firstPort.port}`
@@ -312,13 +317,13 @@ it("rejects changing the explicit proxy port for existing state", async () => {
 
 it("rejects an occupied explicit development proxy port", async () => {
   const temporary = mkdtempSync(
-    join(tmpdir(), "workgrove-development-conflict-")
+    join(tmpdir(), "branchbase-development-conflict-")
   );
   const reservation = await reserveBackingPort();
   const options = {
     appRoot: realpathSync("."),
     environment: {
-      WORKGROVE_PORTLESS_PORT: String(reservation.port),
+      BRANCHBASE_PORTLESS_PORT: String(reservation.port),
     },
     homeDirectory: join(temporary, "home"),
   };

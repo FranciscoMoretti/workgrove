@@ -1,11 +1,11 @@
-# Workgrove origin specification (historical)
+# BranchBase origin specification (historical)
 
 Status: Historical source material; see the current `README.md`, `CONTEXT.md`,
 and architectural decisions under `docs/adr/` for the active product model.
 
-Product name: **Workgrove**
+Product name: **BranchBase**
 
-Implementation workspace: `codex/workgrove`
+Implementation workspace: `codex/branchbase`
 
 Last updated: 2026-07-12
 
@@ -19,11 +19,11 @@ The primary source audit is [Alaro `devenv_control` source audit](./alaro-devenv
 
 ## Naming
 
-The finalized product name is **Workgrove**. A grove is a place containing a
+The finalized product name is **BranchBase**. A grove is a place containing a
 manageable collection of trees; the `work` prefix makes the Git worktree model
 explicit and gives the app a distinct command, package, storage, and search
-identity. The implementation lives in `apps/workgrove` as
-`@chatjs/workgrove`.
+identity. The implementation lives in `apps/branchbase` as
+`@chatjs/branchbase`.
 
 ## Goals
 
@@ -347,7 +347,7 @@ The interface returns results; HTTP routes and React Query are adapters at its s
 ### Proposed package layout
 
 ```text
-apps/workgrove/
+apps/branchbase/
   scripts/
     daemon.ts
   src/
@@ -563,7 +563,7 @@ Exit condition: the controller can remain running throughout normal multi-worktr
 
 Please answer these in priority order:
 
-1. **Name:** **Workgrove**.
+1. **Name:** **BranchBase**.
 2. **Form factor:** Is a local web app + persistent daemon correct for v1, or must v1 be a packaged desktop app that launches by clicking an icon?
 3. **Platform:** Can v1 be macOS-only, or is Windows support required immediately?
 4. **Repository scope:** One active repo with recents, or multiple repos visible and running in the same dashboard?

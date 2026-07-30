@@ -1,10 +1,10 @@
 {
-  "$schema": "../schema/workgrove.schema.json",
+  "$schema": "../schema/branchbase.schema.json",
   "version": 1,
   "setup": { "argv": ["bun", "install"] },
   "appGroups": {
     "Product Apps": {
-      "start": { "argv": ["bun", "run", "dev:workgrove"] },
+      "start": { "argv": ["bun", "run", "dev:branchbase"] },
       "stop": "process",
       "env": {
         "WEB_PORT": "{apps.Web.port}",

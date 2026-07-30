@@ -32,7 +32,7 @@ async function readChunk(stream: ReadableStream<Uint8Array>): Promise<string> {
 }
 
 it("holds an exclusive lock until its idempotent release", () => {
-  const temporary = mkdtempSync(join(tmpdir(), "workgrove-exclusive-lock-"));
+  const temporary = mkdtempSync(join(tmpdir(), "branchbase-exclusive-lock-"));
   const file = join(temporary, "session.sqlite");
 
   try {
@@ -52,7 +52,7 @@ it("holds an exclusive lock until its idempotent release", () => {
 
 it("releases the lock when its process crashes", async () => {
   const temporary = mkdtempSync(
-    join(tmpdir(), "workgrove-exclusive-lock-crash-")
+    join(tmpdir(), "branchbase-exclusive-lock-crash-")
   );
   const file = join(temporary, "session.sqlite");
   const child = spawn({

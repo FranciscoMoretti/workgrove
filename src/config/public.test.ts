@@ -1,13 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import {
-  type ResolvedWorkgroveAppGroups,
+  type BranchBaseConfig,
+  type ResolvedBranchBaseAppGroups,
   resolveStartCommand,
-  type WorkgroveConfig,
-} from "workgrove/config";
+} from "branchbase/config";
 
 describe("public config contract", () => {
   it("resolves slot-free app endpoints through the package subpath", () => {
-    const config: WorkgroveConfig = {
+    const config: BranchBaseConfig = {
       version: 1,
       setup: { argv: ["bun", "install"] },
       appGroups: {
@@ -22,7 +22,7 @@ describe("public config contract", () => {
         },
       },
     };
-    const appGroups: ResolvedWorkgroveAppGroups = {
+    const appGroups: ResolvedBranchBaseAppGroups = {
       Apps: {
         id: "Apps",
         apps: {

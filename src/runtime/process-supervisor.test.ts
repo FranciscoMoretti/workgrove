@@ -18,7 +18,7 @@ let controlDirectory = "";
 let supervisor: ProcessSupervisor;
 
 beforeEach(() => {
-  controlDirectory = mkdtempSync(join(tmpdir(), "workgrove-process-test-"));
+  controlDirectory = mkdtempSync(join(tmpdir(), "branchbase-process-test-"));
   supervisor = new ProcessSupervisor(controlDirectory);
 });
 
@@ -82,7 +82,7 @@ describe("managed logs", () => {
   it("contains and logs an executable spawn failure", async () => {
     expect(() =>
       supervisor.startManagedProcess({
-        argv: [`missing-workgrove-command-${process.pid}`],
+        argv: [`missing-branchbase-command-${process.pid}`],
         cwd: process.cwd(),
         env: {},
         ownerRoot: process.cwd(),

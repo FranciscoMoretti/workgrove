@@ -234,6 +234,71 @@ describe("worktree table", () => {
     expect(markup).toContain(">Running<");
   });
 
+  it("derives the primary action from the primary App group", () => {
+    const primaryStoppedWithSecondaryRunning: WorktreeSnapshot = {
+      ...worktree,
+      appGroups: [
+        {
+          apps: [],
+          health: "not-running",
+          id: "product",
+          instance: {
+            id: "product-main",
+            mode: "per-worktree",
+            name: "main",
+          },
+          instances: [{ id: "product-main", name: "main", running: false }],
+          name: "Product Apps",
+          processRunning: false,
+          stop: "process",
+        },
+        {
+          apps: worktree.apps,
+          health: "running",
+          id: "infrastructure",
+          instance: {
+            id: "infrastructure-main",
+            mode: "per-worktree",
+            name: "main",
+          },
+          instances: [
+            { id: "infrastructure-main", name: "main", running: true },
+          ],
+          name: "Infrastructure",
+          processRunning: true,
+          stop: "process",
+        },
+      ],
+      health: "running",
+      processRunning: true,
+    };
+    const markup = renderToStaticMarkup(
+      createElement(WorktreeTable, {
+        appGroupActionBlocked: () => false,
+        appGroupActionPending: () => false,
+        commandActions: {
+          onRestart: () => undefined,
+          onSetup: () => undefined,
+          onStart: () => undefined,
+          onStop: () => undefined,
+        },
+        onDelete: () => undefined,
+        onInspect: () => undefined,
+        onInspectAppGroup: () => undefined,
+        onRestartAppGroup: () => undefined,
+        onRetryAppGroup: () => undefined,
+        onToggleAppGroup: () => undefined,
+        primaryAppGroupId: "product",
+        selectedId: null,
+        worktreeActionPending: () => false,
+        worktrees: [primaryStoppedWithSecondaryRunning],
+      })
+    );
+
+    expect(markup).toContain(">Start apps<");
+    expect(markup).not.toContain(">Stop apps<");
+  });
+
   it("shows pending state only for the affected app group", () => {
     const withGroups = {
       ...worktree,
@@ -352,7 +417,8 @@ describe("worktree table", () => {
     );
 
     expect(markup).toContain(">Setup failed<");
-    expect(markup).toContain(">Routing error<");
+    expect(markup).toContain(">Route unavailable<");
+    expect(markup).toContain('data-status="partial"');
     expect(markup).toContain(">Retry setup<");
     expect(markup).not.toContain(">Start App<");
   });

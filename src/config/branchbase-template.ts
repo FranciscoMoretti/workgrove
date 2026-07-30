@@ -1,4 +1,4 @@
-import type { WorkgroveAppGroup } from "./workgrove-schema";
+import type { BranchBaseAppGroup } from "./branchbase-schema";
 
 const TOKEN_PATTERN = /\{([^{}]+)\}/;
 const BRACE_PATTERN = /[{}]/;
@@ -10,7 +10,7 @@ export interface ResolvedTemplateApp {
   url?: string;
 }
 
-export interface WorkgroveTemplateContext {
+export interface BranchBaseTemplateContext {
   appGroups: Record<string, { apps: Record<string, ResolvedTemplateApp> }>;
   currentGroup: string;
 }
@@ -24,7 +24,7 @@ interface TemplateValue {
 function templateValues(
   appGroups: Record<
     string,
-    WorkgroveAppGroup | WorkgroveTemplateContext["appGroups"][string]
+    BranchBaseAppGroup | BranchBaseTemplateContext["appGroups"][string]
   >,
   currentGroup: string
 ): Map<string, TemplateValue> {
@@ -103,9 +103,9 @@ function replaceKnownTokens(
   return { error: null, value };
 }
 
-export function workgroveTemplateError(
+export function branchbaseTemplateError(
   template: string,
-  appGroups: Record<string, WorkgroveAppGroup>,
+  appGroups: Record<string, BranchBaseAppGroup>,
   currentGroup: string
 ): string | null {
   return replaceKnownTokens(
@@ -115,9 +115,9 @@ export function workgroveTemplateError(
   ).error;
 }
 
-export function renderWorkgroveTemplate(
+export function renderBranchBaseTemplate(
   template: string,
-  context: WorkgroveTemplateContext
+  context: BranchBaseTemplateContext
 ): string {
   const rendered = replaceKnownTokens(
     template,
@@ -130,7 +130,7 @@ export function renderWorkgroveTemplate(
   return rendered.value;
 }
 
-export function renameWorkgroveAppTemplateReferences(
+export function renameBranchBaseAppTemplateReferences(
   template: string,
   groupId: string,
   previousId: string,
@@ -144,7 +144,7 @@ export function renameWorkgroveAppTemplateReferences(
     );
 }
 
-export function renameWorkgroveAppGroupTemplateReferences(
+export function renameBranchBaseAppGroupTemplateReferences(
   template: string,
   previousId: string,
   nextId: string

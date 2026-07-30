@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const CONFIG_DRAFT_STORAGE_PREFIX = "workgrove:configuration-draft:";
+const CONFIG_DRAFT_STORAGE_PREFIX = "branchbase:configuration-draft:";
 
 export interface ConfigDraftStorage {
   getItem(key: string): string | null;

@@ -1,6 +1,6 @@
 # Domain Docs
 
-Workgrove is a single-context repository.
+BranchBase is a single-context repository.
 
 Before exploring or designing, read:
 

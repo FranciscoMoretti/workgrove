@@ -16,7 +16,7 @@ import type {
   LocalRouteState,
   LocalRoutingEngine,
 } from "../runtime/local-routing";
-import { FileWorkgroveStateStore } from "../runtime/local-state";
+import { FileBranchBaseStateStore } from "../runtime/local-state";
 import { ProcessSupervisor } from "../runtime/process-supervisor";
 import { WorkspaceController } from "./workspace-controller";
 
@@ -50,15 +50,15 @@ function git(cwd: string, ...args: string[]): void {
 }
 
 it("runs the development Start preflight before local state or repository code", async () => {
-  const temporary = mkdtempSync(join(tmpdir(), "workgrove-start-preflight-"));
+  const temporary = mkdtempSync(join(tmpdir(), "branchbase-start-preflight-"));
   const repository = join(temporary, "project");
   const marker = join(temporary, "repository-command-ran");
   mkdirSync(repository);
   git(repository, "init", "-q");
-  git(repository, "config", "user.email", "workgrove@example.test");
-  git(repository, "config", "user.name", "Workgrove Test");
+  git(repository, "config", "user.email", "branchbase@example.test");
+  git(repository, "config", "user.name", "BranchBase Test");
   writeFileSync(
-    join(repository, ".workgrove.json"),
+    join(repository, ".branchbase.json"),
     JSON.stringify({
       version: 1,
       setup: { argv: ["true"] },
@@ -78,7 +78,7 @@ it("runs the development Start preflight before local state or repository code",
       },
     })
   );
-  git(repository, "add", ".workgrove.json");
+  git(repository, "add", ".branchbase.json");
   git(repository, "commit", "-qm", "test config");
 
   const statePath = join(temporary, "state.json");
@@ -86,9 +86,9 @@ it("runs the development Start preflight before local state or repository code",
     processes: new ProcessSupervisor(join(temporary, "processes")),
     routing: new InMemoryRoutingEngine(),
     developmentStartPreflight: () => {
-      throw new Error("Production Workgrove is already using this worktree");
+      throw new Error("Production BranchBase is already using this worktree");
     },
-    state: new FileWorkgroveStateStore(statePath),
+    state: new FileBranchBaseStateStore(statePath),
   });
   const worktreeId = Buffer.from(realpathSync(repository)).toString(
     "base64url"
@@ -97,7 +97,7 @@ it("runs the development Start preflight before local state or repository code",
   try {
     await expect(
       controller.startAppGroup(repository, worktreeId, "Chat")
-    ).rejects.toThrow("Production Workgrove is already using this worktree");
+    ).rejects.toThrow("Production BranchBase is already using this worktree");
     expect(existsSync(statePath)).toBe(false);
     expect(existsSync(marker)).toBe(false);
   } finally {
@@ -113,7 +113,7 @@ it("runs the development Start preflight before local state or repository code",
 
 it("describes repository discovery failures before invoking the preflight", async () => {
   const temporary = mkdtempSync(
-    join(tmpdir(), "workgrove-start-preflight-invalid-repository-")
+    join(tmpdir(), "branchbase-start-preflight-invalid-repository-")
   );
   let preflightCalled = false;
   const controller = new WorkspaceController(undefined, {
@@ -122,14 +122,14 @@ it("describes repository discovery failures before invoking the preflight", asyn
     },
     processes: new ProcessSupervisor(join(temporary, "processes")),
     routing: new InMemoryRoutingEngine(),
-    state: new FileWorkgroveStateStore(join(temporary, "state.json")),
+    state: new FileBranchBaseStateStore(join(temporary, "state.json")),
   });
 
   try {
     await expect(
       controller.startAppGroup(temporary, "unknown", "Chat")
     ).rejects.toThrow(
-      `Could not resolve Workgrove worktrees for "${temporary}"`
+      `Could not resolve BranchBase worktrees for "${temporary}"`
     );
     expect(preflightCalled).toBe(false);
   } finally {

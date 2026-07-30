@@ -42,9 +42,9 @@ export function RepositoryInitializeDialog({
     >
       <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-xl overflow-auto">
         <DialogHeader className="pr-8">
-          <DialogTitle>Initialize Branchbase</DialogTitle>
+          <DialogTitle>Initialize BranchBase</DialogTitle>
           <DialogDescription>
-            Review the detected settings before creating .workgrove.json.
+            Review the detected settings before creating .branchbase.json.
           </DialogDescription>
         </DialogHeader>
         <div className="modal-copy initialize-copy">
@@ -53,7 +53,7 @@ export function RepositoryInitializeDialog({
             <div>
               <strong>Create a starter worktree configuration</strong>
               <p>
-                Branchbase detected this repository and prepared a conservative
+                BranchBase detected this repository and prepared a conservative
                 single-app configuration. Nothing is written until you confirm.
               </p>
             </div>

@@ -1,15 +1,15 @@
 import { basename } from "node:path";
 
 import {
-  type ResolvedWorkgroveAppGroups,
+  type ResolvedBranchBaseAppGroups,
   resolveStartCommand,
   resolveStopCommand,
-} from "../config/workgrove-config";
+} from "../config/branchbase-config";
 import type {
-  WorkgroveApp,
-  WorkgroveAppGroup,
-  WorkgroveConfig,
-} from "../config/workgrove-schema";
+  BranchBaseApp,
+  BranchBaseAppGroup,
+  BranchBaseConfig,
+} from "../config/branchbase-schema";
 import type {
   LocalRoute,
   LocalRouteState,
@@ -19,7 +19,7 @@ import type {
   AppGroupInstance,
   AppGroupRun,
   EndpointAssignment,
-  FileWorkgroveStateStore,
+  FileBranchBaseStateStore,
   InstanceRequest,
   RunEndpoint,
   RunKey,
@@ -50,7 +50,7 @@ import type {
 import { commandWorkingDirectory } from "./worktree-command";
 
 export interface AppGroupTarget {
-  config: WorkgroveConfig;
+  config: BranchBaseConfig;
   groupId: string;
   repoPath: string;
   worktree: {
@@ -61,7 +61,7 @@ export interface AppGroupTarget {
 }
 
 interface LifecycleContext {
-  group: WorkgroveAppGroup;
+  group: BranchBaseAppGroup;
   key: RunKey;
   processId: string;
   processPath: string;
@@ -111,12 +111,12 @@ export class AppGroupRuntime {
   private readonly lifecycleOperations = new Map<string, Promise<void>>();
   private readonly processes: ProcessSupervisor;
   private readonly routing: LocalRoutingEngine;
-  private readonly state: FileWorkgroveStateStore;
+  private readonly state: FileBranchBaseStateStore;
 
   constructor(
     processes: ProcessSupervisor,
     routing: LocalRoutingEngine,
-    state: FileWorkgroveStateStore
+    state: FileBranchBaseStateStore
   ) {
     this.processes = processes;
     this.routing = routing;
@@ -381,7 +381,7 @@ export class AppGroupRuntime {
     if (killed.size > 0) {
       this.processes.appendManagedLog(
         context.processId,
-        `[workgrove] Stopped ${killed.size} owned listener${killed.size === 1 ? "" : "s"}`
+        `[branchbase] Stopped ${killed.size} owned listener${killed.size === 1 ? "" : "s"}`
       );
     }
   }
@@ -402,7 +402,7 @@ export class AppGroupRuntime {
     return appGroupInstanceProcessId(instance.id);
   }
 
-  private group(target: AppGroupTarget): WorkgroveAppGroup {
+  private group(target: AppGroupTarget): BranchBaseAppGroup {
     const group = target.config.appGroups[target.groupId];
     if (!group) {
       throw new Error(`Unknown App group "${target.groupId}"`);
@@ -559,7 +559,7 @@ export class AppGroupRuntime {
 
   private instanceIsRunning(
     instance: AppGroupInstance,
-    stop: WorkgroveAppGroup["stop"],
+    stop: BranchBaseAppGroup["stop"],
     ports: ReturnType<typeof inspectListeningPorts>
   ): boolean {
     const run = instance.run;
@@ -584,7 +584,7 @@ export class AppGroupRuntime {
 
   private createRun(input: {
     effectiveInstances: Record<string, AppGroupInstance>;
-    group: WorkgroveAppGroup;
+    group: BranchBaseAppGroup;
     groupId: string;
     instance: AppGroupInstance;
     repoPath: string;
@@ -720,14 +720,14 @@ export class AppGroupRuntime {
     for (const failure of failures) {
       this.processes.appendManagedLog(
         context.processId,
-        `[workgrove] ${failure}`
+        `[branchbase] ${failure}`
       );
     }
     return readyAppIds;
   }
 
   private assertReadyEndpointsOwned(
-    group: WorkgroveAppGroup,
+    group: BranchBaseAppGroup,
     run: AppGroupRun,
     readyAppIds: ReadonlySet<string>
   ): void {
@@ -773,7 +773,7 @@ export class AppGroupRuntime {
   }
 
   private endpointAssignment(input: {
-    app: WorkgroveApp;
+    app: BranchBaseApp;
     appId: string;
     groupId: string;
     instance: AppGroupInstance;
@@ -789,12 +789,12 @@ export class AppGroupRuntime {
   }
 
   private inspectEndpoint(input: {
-    app: WorkgroveApp;
+    app: BranchBaseApp;
     appId: string;
     assignment: EndpointAssignment;
     ports: ReturnType<typeof inspectListeningPorts>;
     run: RunEndpoint | null;
-    stop: WorkgroveAppGroup["stop"];
+    stop: BranchBaseAppGroup["stop"];
     worktreePath: string;
   }): AppEndpointSnapshot {
     if (!input.run) {
@@ -863,11 +863,11 @@ export class AppGroupRuntime {
   }
 
   private resolveTemplateAppGroups(
-    config: WorkgroveConfig,
+    config: BranchBaseConfig,
     repoPath: string,
     worktreePath: string,
     instanceIdsByGroup?: Record<string, string>
-  ): ResolvedWorkgroveAppGroups {
+  ): ResolvedBranchBaseAppGroups {
     return Object.fromEntries(
       Object.entries(config.appGroups).map(([groupId, group]) => [
         groupId,
@@ -950,7 +950,7 @@ export class AppGroupRuntime {
   }
 
   private runEndpoint(
-    app: WorkgroveApp,
+    app: BranchBaseApp,
     assignment: EndpointAssignment
   ): RunEndpoint {
     if (assignment.port === null) {

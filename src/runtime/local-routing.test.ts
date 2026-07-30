@@ -12,7 +12,7 @@ import { PortlessRoutingEngine } from "./local-routing";
 const require = createRequire(import.meta.url);
 
 it("rejects structurally invalid Portless route state", () => {
-  const temporary = mkdtempSync(join(tmpdir(), "workgrove-portless-state-"));
+  const temporary = mkdtempSync(join(tmpdir(), "branchbase-portless-state-"));
   try {
     mkdirSync(temporary, { recursive: true });
     writeFileSync(
@@ -30,7 +30,7 @@ it("rejects structurally invalid Portless route state", () => {
 });
 
 it("accepts Portless routes with supported tunnel metadata", () => {
-  const temporary = mkdtempSync(join(tmpdir(), "workgrove-portless-state-"));
+  const temporary = mkdtempSync(join(tmpdir(), "branchbase-portless-state-"));
   try {
     mkdirSync(temporary, { recursive: true });
     writeFileSync(
@@ -84,7 +84,7 @@ function close(server: Server): Promise<void> {
 }
 
 it("reloads consecutive Portless route updates", async () => {
-  const temporary = mkdtempSync(join(tmpdir(), "workgrove-portless-watch-"));
+  const temporary = mkdtempSync(join(tmpdir(), "branchbase-portless-watch-"));
   const stateDirectory = join(temporary, "portless");
   const backend = createHttpServer((_request, response) => {
     response.end("ok");
@@ -111,23 +111,23 @@ it("reloads consecutive Portless route updates", async () => {
   try {
     await routing.prepare();
     await routing.activate({
-      hostname: "first.workgrove.localhost",
+      hostname: "first.branchbase.localhost",
       port: backendPort,
     });
     expect(
       routing.observe({
-        hostname: "first.workgrove.localhost",
+        hostname: "first.branchbase.localhost",
         port: backendPort,
       })
     ).toBe("active");
 
     await routing.activate({
-      hostname: "second.workgrove.localhost",
+      hostname: "second.branchbase.localhost",
       port: backendPort,
     });
     expect(
       routing.observe({
-        hostname: "second.workgrove.localhost",
+        hostname: "second.branchbase.localhost",
         port: backendPort,
       })
     ).toBe("active");

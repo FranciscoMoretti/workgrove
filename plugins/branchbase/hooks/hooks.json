@@ -1,12 +1,12 @@
 {
-  "description": "Report allowlisted Codex lifecycle activity to the local Workgrove daemon.",
+  "description": "Report allowlisted Codex lifecycle activity to the local BranchBase daemon.",
   "hooks": {
     "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT}/hooks/workgrove-hook\" SessionStart",
+            "command": "\"${PLUGIN_ROOT}/hooks/branchbase-hook\" SessionStart",
             "timeout": 2
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT}/hooks/workgrove-hook\" UserPromptSubmit",
+            "command": "\"${PLUGIN_ROOT}/hooks/branchbase-hook\" UserPromptSubmit",
             "timeout": 2
           }
         ]
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT}/hooks/workgrove-hook\" PermissionRequest",
+            "command": "\"${PLUGIN_ROOT}/hooks/branchbase-hook\" PermissionRequest",
             "timeout": 2
           }
         ]
@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT}/hooks/workgrove-hook\" PostToolUse",
+            "command": "\"${PLUGIN_ROOT}/hooks/branchbase-hook\" PostToolUse",
             "timeout": 2
           }
         ]
@@ -50,7 +50,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT}/hooks/workgrove-hook\" SubagentStart",
+            "command": "\"${PLUGIN_ROOT}/hooks/branchbase-hook\" SubagentStart",
             "timeout": 2
           }
         ]
@@ -61,7 +61,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT}/hooks/workgrove-hook\" SubagentStop",
+            "command": "\"${PLUGIN_ROOT}/hooks/branchbase-hook\" SubagentStop",
             "timeout": 2
           }
         ]
@@ -72,7 +72,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT}/hooks/workgrove-hook\" Stop",
+            "command": "\"${PLUGIN_ROOT}/hooks/branchbase-hook\" Stop",
             "timeout": 2
           }
         ]

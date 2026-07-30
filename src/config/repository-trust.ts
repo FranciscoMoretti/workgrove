@@ -9,11 +9,11 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import type { WorkgroveCommand } from "./workgrove-command";
-import type { WorkgroveConfig } from "./workgrove-config";
+import type { BranchBaseCommand } from "./branchbase-command";
+import type { BranchBaseConfig } from "./branchbase-config";
 
 function defaultControlDirectory(): string {
-  return process.env.WORKGROVE_CONTROL_DIR ?? join(homedir(), ".workgrove");
+  return process.env.BRANCHBASE_CONTROL_DIR ?? join(homedir(), ".branchbase");
 }
 
 function trustFile(controlDirectory = defaultControlDirectory()): string {
@@ -39,15 +39,15 @@ function trustStore(
   }
 }
 
-export function repositoryRequiresTrust(_config: WorkgroveConfig): boolean {
+export function repositoryRequiresTrust(_config: BranchBaseConfig): boolean {
   return true;
 }
 
-function fingerprintCommand(command: WorkgroveCommand) {
+function fingerprintCommand(command: BranchBaseCommand) {
   return { argv: command.argv, ...(command.cwd ? { cwd: command.cwd } : {}) };
 }
 
-export function repositoryCommandFingerprint(config: WorkgroveConfig): string {
+export function repositoryCommandFingerprint(config: BranchBaseConfig): string {
   const commands = {
     appGroups: Object.fromEntries(
       Object.entries(config.appGroups).map(([name, group]) => [
@@ -73,7 +73,7 @@ export function repositoryCommandFingerprint(config: WorkgroveConfig): string {
 
 export function repositoryIsTrusted(
   repoPath: string,
-  config: WorkgroveConfig,
+  config: BranchBaseConfig,
   controlDirectory?: string
 ): boolean {
   return (
@@ -85,7 +85,7 @@ export function repositoryIsTrusted(
 
 export function trustRepository(
   repoPath: string,
-  config: WorkgroveConfig,
+  config: BranchBaseConfig,
   controlDirectory?: string
 ): void {
   const directory = controlDirectory ?? defaultControlDirectory();

@@ -1,7 +1,7 @@
-import { WorkgroveApiError } from "./api";
+import { BranchBaseApiError } from "./api";
 
 export function missingConfigPath(error: unknown): string | null {
-  return error instanceof WorkgroveApiError &&
+  return error instanceof BranchBaseApiError &&
     error.code === "missing_worktree_config"
     ? error.configPath
     : null;

@@ -1,0 +1,17 @@
+{
+  "name": "branchbase",
+  "version": "0.1.0",
+  "description": "Connect Codex lifecycle activity to local BranchBase worktrees.",
+  "author": {
+    "name": "BranchBase"
+  },
+  "interface": {
+    "displayName": "BranchBase",
+    "shortDescription": "Show live Codex activity in BranchBase.",
+    "longDescription": "Reports allowlisted Codex lifecycle metadata to the local BranchBase daemon for explicitly configured worktrees.",
+    "developerName": "BranchBase",
+    "category": "Productivity",
+    "capabilities": ["Lifecycle activity"],
+    "defaultPrompt": "Help me inspect this BranchBase worktree."
+  }
+}

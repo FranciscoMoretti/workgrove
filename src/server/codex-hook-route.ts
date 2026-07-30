@@ -1,12 +1,11 @@
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
-
+import { MAX_BRANCHBASE_CONTEXT_BYTES } from "../codex/branchbase-context";
 import {
   CODEX_HOOK_EVENTS,
   type CodexHookObservation,
 } from "../codex/codex-hook-activity";
-import { MAX_WORKGROVE_CONTEXT_BYTES } from "../codex/workgrove-context";
 
 const MAX_HOOK_BODY = 16 * 1024;
 const LoopbackAddresses = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
@@ -15,7 +14,7 @@ const CodexHookResponseSchema = z.object({
   additionalContext: z
     .string()
     .min(1)
-    .max(MAX_WORKGROVE_CONTEXT_BYTES)
+    .max(MAX_BRANCHBASE_CONTEXT_BYTES)
     .optional(),
 });
 
@@ -128,7 +127,7 @@ export function createCodexHookRequestHandler(options: {
           candidate.success &&
           (!candidate.data.additionalContext ||
             Buffer.byteLength(candidate.data.additionalContext) <=
-              MAX_WORKGROVE_CONTEXT_BYTES)
+              MAX_BRANCHBASE_CONTEXT_BYTES)
         ) {
           hookResponse = candidate.data;
         }

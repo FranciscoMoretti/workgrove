@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { WorkgroveConfigSchema } from "../config/workgrove-schema";
+import { BranchBaseConfigSchema } from "../config/branchbase-schema";
 import type { CommandReceiptSchema } from "./command-contract";
 
 const AppHealthSchema = z.enum(["not-running", "partially-running", "running"]);
@@ -55,7 +55,7 @@ export const WorktreeSnapshotSchema = z.strictObject({
 });
 
 export const WorkspaceSnapshotSchema = z.strictObject({
-  config: WorkgroveConfigSchema,
+  config: BranchBaseConfigSchema,
   configPath: z.string(),
   configRevision: z.string().min(1),
   globalProcesses: z.array(

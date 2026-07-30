@@ -14,7 +14,7 @@ import { createCodexHookCapability } from "./codex-hook-capability";
 
 describe("Codex hook capability", () => {
   it("rotates a private 256-bit token and removes only its own record", () => {
-    const root = mkdtempSync(join(tmpdir(), "workgrove-hook-capability-"));
+    const root = mkdtempSync(join(tmpdir(), "branchbase-hook-capability-"));
     const directory = join(root, "codex");
     try {
       const capability = createCodexHookCapability({

@@ -4,7 +4,6 @@ import type { WorktreeDisplayStatus } from "./app-group-status";
 
 const LABELS: Record<WorktreeDisplayStatus, string> = {
   partial: "Partial",
-  "routing-error": "Routing error",
   running: "Running",
   "setup-failed": "Setup failed",
   "setting-up": "Setting up",

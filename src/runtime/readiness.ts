@@ -1,6 +1,6 @@
 import { createConnection, createServer } from "node:net";
 
-import type { WorkgroveApp } from "../config/workgrove-schema";
+import type { BranchBaseApp } from "../config/branchbase-schema";
 import { inspectHttpStatus } from "../host/http-inspection";
 import type { RunEndpoint } from "./local-state";
 
@@ -69,7 +69,7 @@ function tcpReady(endpoint: RunEndpoint): Promise<boolean> {
   });
 }
 
-function acceptedStatusRange(app: WorkgroveApp): [number, number] {
+function acceptedStatusRange(app: BranchBaseApp): [number, number] {
   if (app.readiness === "tcp") {
     return [200, 399];
   }
@@ -81,7 +81,7 @@ function acceptedStatusRange(app: WorkgroveApp): [number, number] {
 }
 
 async function httpReady(
-  app: WorkgroveApp,
+  app: BranchBaseApp,
   endpoint: RunEndpoint
 ): Promise<boolean> {
   if (!(endpoint.directUrl && app.readiness !== "tcp")) {
@@ -100,7 +100,7 @@ async function httpReady(
 }
 
 export function appIsReady(
-  app: WorkgroveApp,
+  app: BranchBaseApp,
   endpoint: RunEndpoint
 ): Promise<boolean> {
   return app.readiness === "tcp"
@@ -109,7 +109,7 @@ export function appIsReady(
 }
 
 export function appIsReadySync(
-  app: WorkgroveApp,
+  app: BranchBaseApp,
   endpoint: RunEndpoint,
   listening: boolean
 ): boolean {
@@ -130,7 +130,7 @@ export function appIsReadySync(
 }
 
 export async function waitForAppReadiness(
-  app: WorkgroveApp,
+  app: BranchBaseApp,
   endpoint: RunEndpoint
 ): Promise<void> {
   const timeoutSeconds =

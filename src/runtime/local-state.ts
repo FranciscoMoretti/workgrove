@@ -71,7 +71,7 @@ const RepositoryRecordSchema = z.strictObject({
   worktrees: z.record(z.string(), WorktreeRecordSchema),
 });
 
-const WorkgroveLocalStateSchema = z.strictObject({
+const BranchBaseLocalStateSchema = z.strictObject({
   repositories: z.record(z.string(), RepositoryRecordSchema),
   version: z.literal(2),
 });
@@ -83,12 +83,12 @@ export type AppGroupRun = z.infer<typeof AppGroupRunSchema>;
 export type AppGroupInstance = z.infer<typeof AppGroupInstanceSchema>;
 type WorktreeRecord = z.infer<typeof WorktreeRecordSchema>;
 type RepositoryRecord = z.infer<typeof RepositoryRecordSchema>;
-export type WorkgroveLocalState = z.infer<typeof WorkgroveLocalStateSchema>;
+export type BranchBaseLocalState = z.infer<typeof BranchBaseLocalStateSchema>;
 
-export function parseCurrentWorkgroveLocalState(
+export function parseCurrentBranchBaseLocalState(
   value: unknown
-): WorkgroveLocalState {
-  return WorkgroveLocalStateSchema.parse(value);
+): BranchBaseLocalState {
+  return BranchBaseLocalStateSchema.parse(value);
 }
 
 export interface InstanceRequest {
@@ -134,21 +134,21 @@ const LegacyRepositoryRecordSchema = z.strictObject({
   routeLabel: NonEmptyStringSchema,
   worktrees: z.record(z.string(), LegacyWorktreeRecordSchema),
 });
-const LegacyWorkgroveLocalStateSchema = z.strictObject({
+const LegacyBranchBaseLocalStateSchema = z.strictObject({
   repositories: z.record(z.string(), LegacyRepositoryRecordSchema),
   version: z.literal(1),
 });
-type LegacyWorkgroveLocalState = z.infer<
-  typeof LegacyWorkgroveLocalStateSchema
+type LegacyBranchBaseLocalState = z.infer<
+  typeof LegacyBranchBaseLocalStateSchema
 >;
-const PersistedWorkgroveLocalStateSchema = z.discriminatedUnion("version", [
-  LegacyWorkgroveLocalStateSchema,
-  WorkgroveLocalStateSchema,
+const PersistedBranchBaseLocalStateSchema = z.discriminatedUnion("version", [
+  LegacyBranchBaseLocalStateSchema,
+  BranchBaseLocalStateSchema,
 ]);
 
 const DEFAULT_INSTANCE_NAME = "Default";
 
-function emptyState(): WorkgroveLocalState {
+function emptyState(): BranchBaseLocalState {
   return { repositories: {}, version: 2 };
 }
 
@@ -185,8 +185,8 @@ function cloneInstance(instance: AppGroupInstance): AppGroupInstance {
 }
 
 function migrateLegacyState(
-  legacy: LegacyWorkgroveLocalState
-): WorkgroveLocalState {
+  legacy: LegacyBranchBaseLocalState
+): BranchBaseLocalState {
   const repositories: Record<string, RepositoryRecord> = {};
   for (const [repoPath, repository] of Object.entries(legacy.repositories)) {
     const migrated: RepositoryRecord = {
@@ -248,10 +248,10 @@ function migrateLegacyState(
   return { repositories, version: 2 };
 }
 
-export class FileWorkgroveStateStore {
+export class FileBranchBaseStateStore {
   readonly path: string;
 
-  constructor(path = join(homedir(), ".workgrove", "state.json")) {
+  constructor(path = join(homedir(), ".branchbase", "state.json")) {
     this.path = path;
   }
 
@@ -467,12 +467,12 @@ export class FileWorkgroveStateStore {
     return ports;
   }
 
-  private read(): WorkgroveLocalState {
+  private read(): BranchBaseLocalState {
     if (!existsSync(this.path)) {
       return emptyState();
     }
     try {
-      const value = PersistedWorkgroveLocalStateSchema.parse(
+      const value = PersistedBranchBaseLocalStateSchema.parse(
         JSON.parse(readFileSync(this.path, "utf8"))
       );
       if (value.version === 1) {
@@ -483,13 +483,13 @@ export class FileWorkgroveStateStore {
       return value;
     } catch (error) {
       throw new Error(
-        `Invalid Workgrove local state: ${error instanceof Error ? error.message : String(error)}`
+        `Invalid BranchBase local state: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }
 
   private repository(
-    state: WorkgroveLocalState,
+    state: BranchBaseLocalState,
     request: Pick<InstanceRequest, "repoLabel" | "repoPath">
   ): RepositoryRecord {
     const existing = state.repositories[request.repoPath];
@@ -613,7 +613,7 @@ export class FileWorkgroveStateStore {
     return record;
   }
 
-  private write(state: WorkgroveLocalState): void {
+  private write(state: BranchBaseLocalState): void {
     mkdirSync(dirname(this.path), { recursive: true });
     const temporary = `${this.path}.${process.pid}.${Date.now()}`;
     writeFileSync(temporary, `${JSON.stringify(state, null, 2)}\n`, {

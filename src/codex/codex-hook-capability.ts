@@ -34,7 +34,8 @@ export function createCodexHookCapability(options: {
   pid: number;
   processStartMarker: string;
 }): CodexHookCapability {
-  const directory = options.directory ?? join(homedir(), ".workgrove", "codex");
+  const directory =
+    options.directory ?? join(homedir(), ".branchbase", "codex");
   const file = join(directory, "capability.json");
   const record = CodexHookCapabilityRecordSchema.parse({
     endpoint: options.endpoint,

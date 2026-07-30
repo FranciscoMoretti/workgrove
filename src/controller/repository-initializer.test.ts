@@ -11,7 +11,7 @@ import {
 
 describe("repository initialization", () => {
   it("detects commands and creates a slot-free HTTP App", () => {
-    const root = mkdtempSync(join(tmpdir(), "workgrove-initialize-"));
+    const root = mkdtempSync(join(tmpdir(), "branchbase-initialize-"));
     try {
       spawnSync("git", ["init", "-q"], { cwd: root });
       writeFileSync(
@@ -53,7 +53,7 @@ describe("repository initialization", () => {
   });
 
   it("uses safe command defaults when project detection has no commands", () => {
-    const root = mkdtempSync(join(tmpdir(), "workgrove-django-"));
+    const root = mkdtempSync(join(tmpdir(), "branchbase-django-"));
     try {
       spawnSync("git", ["init", "-q"], { cwd: root });
       writeFileSync(join(root, "manage.py"), "");
@@ -66,7 +66,7 @@ describe("repository initialization", () => {
   });
 
   it("uses the same App group start field for Docker Compose", () => {
-    const root = mkdtempSync(join(tmpdir(), "workgrove-compose-"));
+    const root = mkdtempSync(join(tmpdir(), "branchbase-compose-"));
     try {
       spawnSync("git", ["init", "-q"], { cwd: root });
       writeFileSync(join(root, "compose.yaml"), "services: {}\n");

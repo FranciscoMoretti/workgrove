@@ -5,13 +5,13 @@ import { join } from "node:path";
 
 import { AppGroupLifecycleError } from "../controller/app-group-lifecycle-error";
 import {
-  createWorkgroveServer,
-  type WorkgroveServerController,
-} from "./workgrove-server";
+  type BranchBaseServerController,
+  createBranchBaseServer,
+} from "./branchbase-server";
 
-describe("Workgrove HTTP server", () => {
+describe("BranchBase HTTP server", () => {
   it("preserves stable App-group lifecycle error codes", async () => {
-    const appRoot = mkdtempSync(join(tmpdir(), "workgrove-server-error-"));
+    const appRoot = mkdtempSync(join(tmpdir(), "branchbase-server-error-"));
     const controller = {
       close: () => Promise.resolve(),
       execute: () =>
@@ -27,8 +27,8 @@ describe("Workgrove HTTP server", () => {
       },
       inspectCodex: () => Promise.reject(new Error("not used")),
       logs: () => [],
-    } as unknown as WorkgroveServerController;
-    const server = await createWorkgroveServer({
+    } as unknown as BranchBaseServerController;
+    const server = await createBranchBaseServer({
       appRoot,
       controller,
       development: false,
@@ -49,7 +49,7 @@ describe("Workgrove HTTP server", () => {
         }),
         headers: {
           "content-type": "application/json",
-          "x-workgrove-token": session.token,
+          "x-branchbase-token": session.token,
         },
         method: "POST",
       });
@@ -66,7 +66,7 @@ describe("Workgrove HTTP server", () => {
   });
 
   it("starts, authorizes commands, and closes through one interface", async () => {
-    const appRoot = mkdtempSync(join(tmpdir(), "workgrove-server-test-"));
+    const appRoot = mkdtempSync(join(tmpdir(), "branchbase-server-test-"));
     let closeCalls = 0;
     let commandCalls = 0;
     const controller = {
@@ -90,8 +90,8 @@ describe("Workgrove HTTP server", () => {
         throw new Error("not used");
       },
       logs: () => [],
-    } as unknown as WorkgroveServerController;
-    const server = await createWorkgroveServer({
+    } as unknown as BranchBaseServerController;
+    const server = await createBranchBaseServer({
       appRoot,
       controller,
       development: false,
@@ -104,7 +104,7 @@ describe("Workgrove HTTP server", () => {
       const health = await fetch(new URL("/api/health", url));
       expect(await health.json()).toMatchObject({
         ok: true,
-        service: "workgrove",
+        service: "branchbase",
       });
 
       const session = (await (
@@ -123,7 +123,7 @@ describe("Workgrove HTTP server", () => {
         body: "{}",
         headers: {
           "content-type": "application/json",
-          "x-workgrove-token": session.token,
+          "x-branchbase-token": session.token,
         },
         method: "POST",
       });
@@ -138,7 +138,7 @@ describe("Workgrove HTTP server", () => {
   });
 
   it("formats IPv6 hosts as valid origins", async () => {
-    const appRoot = mkdtempSync(join(tmpdir(), "workgrove-server-ipv6-"));
+    const appRoot = mkdtempSync(join(tmpdir(), "branchbase-server-ipv6-"));
     const controller = {
       close: () => Promise.resolve(),
       execute: () => Promise.reject(new Error("not used")),
@@ -148,8 +148,8 @@ describe("Workgrove HTTP server", () => {
       },
       inspectCodex: () => Promise.reject(new Error("not used")),
       logs: () => [],
-    } as unknown as WorkgroveServerController;
-    const server = await createWorkgroveServer({
+    } as unknown as BranchBaseServerController;
+    const server = await createBranchBaseServer({
       appRoot,
       controller,
       development: false,
@@ -169,7 +169,7 @@ describe("Workgrove HTTP server", () => {
   });
 
   it("cleans up the Codex hook capability on process exit", async () => {
-    const appRoot = mkdtempSync(join(tmpdir(), "workgrove-server-exit-"));
+    const appRoot = mkdtempSync(join(tmpdir(), "branchbase-server-exit-"));
     const codexDirectory = join(appRoot, "codex");
     const capabilityFile = join(codexDirectory, "capability.json");
     const controller = {
@@ -181,9 +181,9 @@ describe("Workgrove HTTP server", () => {
       },
       inspectCodex: () => Promise.reject(new Error("not used")),
       logs: () => [],
-    } as unknown as WorkgroveServerController;
+    } as unknown as BranchBaseServerController;
     const previousExitListeners = new Set(process.listeners("exit"));
-    const server = await createWorkgroveServer({
+    const server = await createBranchBaseServer({
       appRoot,
       codexControlDirectory: codexDirectory,
       controller,

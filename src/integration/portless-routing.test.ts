@@ -4,7 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 
-import { FileWorkgroveStateStore } from "../runtime/local-state";
+import { FileBranchBaseStateStore } from "../runtime/local-state";
 import {
   assert,
   endpoint,
@@ -200,23 +200,23 @@ test("re-adopts a surviving process and recovers routes after a proxy crash", as
       .inspect(fixture.root)
       .worktrees.find((worktree) => worktree.isMain);
     assert(main, "Main worktree disappeared");
-    const workgroveRoot = dirname(dirname(import.meta.dir));
+    const branchbaseRoot = dirname(dirname(import.meta.dir));
     const harnessPath = join(fixture.sandbox, "recovery-harness.ts");
     const readyMarker = join(fixture.sandbox, "recovery-ready.json");
     writeFileSync(
       harnessPath,
-      `const { CodexHookActivityStore } = await import(${JSON.stringify(join(workgroveRoot, "src/codex/codex-hook-activity.ts"))});
-const { UnavailableCodexIntegrationAdapter } = await import(${JSON.stringify(join(workgroveRoot, "src/codex/codex-integration.ts"))});
-const { WorkspaceController } = await import(${JSON.stringify(join(workgroveRoot, "src/controller/workspace-controller.ts"))});
-const { PortlessRoutingEngine } = await import(${JSON.stringify(join(workgroveRoot, "src/runtime/local-routing.ts"))});
-const { FileWorkgroveStateStore } = await import(${JSON.stringify(join(workgroveRoot, "src/runtime/local-state.ts"))});
-const { ProcessSupervisor } = await import(${JSON.stringify(join(workgroveRoot, "src/runtime/process-supervisor.ts"))});
+      `const { CodexHookActivityStore } = await import(${JSON.stringify(join(branchbaseRoot, "src/codex/codex-hook-activity.ts"))});
+const { UnavailableCodexIntegrationAdapter } = await import(${JSON.stringify(join(branchbaseRoot, "src/codex/codex-integration.ts"))});
+const { WorkspaceController } = await import(${JSON.stringify(join(branchbaseRoot, "src/controller/workspace-controller.ts"))});
+const { PortlessRoutingEngine } = await import(${JSON.stringify(join(branchbaseRoot, "src/runtime/local-routing.ts"))});
+const { FileBranchBaseStateStore } = await import(${JSON.stringify(join(branchbaseRoot, "src/runtime/local-state.ts"))});
+const { ProcessSupervisor } = await import(${JSON.stringify(join(branchbaseRoot, "src/runtime/process-supervisor.ts"))});
 const { writeFileSync } = await import("node:fs");
 const controller = new WorkspaceController(new UnavailableCodexIntegrationAdapter(), {
   codexHooks: new CodexHookActivityStore({ persist: false }),
   processes: new ProcessSupervisor(${JSON.stringify(fixture.controlDirectory)}),
   routing: new PortlessRoutingEngine({ port: ${fixture.proxyPort}, stateDirectory: ${JSON.stringify(fixture.portlessState)} }),
-  state: new FileWorkgroveStateStore(${JSON.stringify(fixture.statePath)}),
+  state: new FileBranchBaseStateStore(${JSON.stringify(fixture.statePath)}),
 });
 const worktree = controller.inspect(${JSON.stringify(fixture.root)}).worktrees.find((item) => item.isMain);
 if (!worktree) throw new Error("Main worktree disappeared");
@@ -370,7 +370,7 @@ test("rejects and preserves a foreign Friendly URL route", async () => {
       .inspect(fixture.root)
       .worktrees.find((worktree) => worktree.isMain);
     assert(main, "Main worktree disappeared");
-    const state = new FileWorkgroveStateStore(fixture.statePath);
+    const state = new FileBranchBaseStateStore(fixture.statePath);
     const instance = state.instance({
       groupId: "development",
       mode: "per-worktree",
@@ -474,7 +474,7 @@ test("preserves an existing Friendly URL when another route conflicts", async ()
       .worktrees.find((worktree) => worktree.id === main.id)
       ?.appGroups.find((group) => group.id === "development");
     assert(development, "Development app group disappeared");
-    const run = new FileWorkgroveStateStore(fixture.statePath).run({
+    const run = new FileBranchBaseStateStore(fixture.statePath).run({
       instanceId: development.instance.id,
       repoPath: fixture.root,
     });

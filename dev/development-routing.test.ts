@@ -164,7 +164,7 @@ async function reopenAfterParentExit(
 }
 
 it("routes through the embedded development proxy", async () => {
-  const temporary = mkdtempSync(join(tmpdir(), "workgrove-routing-"));
+  const temporary = mkdtempSync(join(tmpdir(), "branchbase-routing-"));
   const reservation = await reserveBackingPort();
   const port = reservation.port;
   const backend = await listenBackend();
@@ -217,7 +217,7 @@ it("routes through the embedded development proxy", async () => {
 });
 
 it("observes a route before reporting activation", async () => {
-  const temporary = mkdtempSync(join(tmpdir(), "workgrove-routing-observe-"));
+  const temporary = mkdtempSync(join(tmpdir(), "branchbase-routing-observe-"));
   const proxyReservation = await reserveBackingPort();
   const backendReservation = await reserveBackingPort(
     new Set([proxyReservation.port])
@@ -251,7 +251,7 @@ it("observes a route before reporting activation", async () => {
 }, 10_000);
 
 it("restores persistent aliases when the embedded proxy reopens", async () => {
-  const temporary = mkdtempSync(join(tmpdir(), "workgrove-routing-reopen-"));
+  const temporary = mkdtempSync(join(tmpdir(), "branchbase-routing-reopen-"));
   const reservation = await reserveBackingPort();
   const port = reservation.port;
   const backend = await listenBackend();
@@ -289,7 +289,7 @@ it("restores persistent aliases when the embedded proxy reopens", async () => {
 });
 
 it("re-observes a persisted route after its backend recovers", async () => {
-  const temporary = mkdtempSync(join(tmpdir(), "workgrove-routing-recovery-"));
+  const temporary = mkdtempSync(join(tmpdir(), "branchbase-routing-recovery-"));
   const reservation = await reserveBackingPort();
   const port = reservation.port;
   const route = { hostname: "recovering.localhost", port: 0 };
@@ -333,7 +333,7 @@ it("re-observes a persisted route after its backend recovers", async () => {
 }, 10_000);
 
 it("rejects occupied ports and releases both loopback listeners", async () => {
-  const temporary = mkdtempSync(join(tmpdir(), "workgrove-routing-port-"));
+  const temporary = mkdtempSync(join(tmpdir(), "branchbase-routing-port-"));
   const reservation = await reserveBackingPort();
   const port = reservation.port;
   let routing: DevelopmentRouting | undefined;
@@ -385,7 +385,7 @@ it("rejects occupied ports and releases both loopback listeners", async () => {
 });
 
 it("stops the proxy when its Bun parent is killed", async () => {
-  const temporary = mkdtempSync(join(tmpdir(), "workgrove-routing-crash-"));
+  const temporary = mkdtempSync(join(tmpdir(), "branchbase-routing-crash-"));
   const reservation = await reserveBackingPort();
   const port = reservation.port;
   await reservation.release();

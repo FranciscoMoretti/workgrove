@@ -172,8 +172,8 @@ export class CodexAppServerClient {
         requestAttestation: false,
       },
       clientInfo: {
-        name: "workgrove",
-        title: "Workgrove",
+        name: "branchbase",
+        title: "BranchBase",
         version: packageMetadata.version,
       },
     });

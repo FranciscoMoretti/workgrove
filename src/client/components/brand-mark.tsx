@@ -2,7 +2,7 @@ import { cn } from "../lib/utils";
 
 export function BrandMark({
   className,
-  title = "Branchbase",
+  title = "BranchBase",
 }: {
   className?: string;
   title?: string;

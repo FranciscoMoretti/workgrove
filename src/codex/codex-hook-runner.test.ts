@@ -8,10 +8,10 @@ import { spawn } from "bun";
 import { processStartMarker } from "../host/process-inspection";
 import { createCodexHookCapability } from "./codex-hook-capability";
 
-const PLUGIN_ROOT = join(import.meta.dir, "..", "..", "plugins", "workgrove");
-const RUNNER = join(PLUGIN_ROOT, "hooks", "workgrove-hook");
+const PLUGIN_ROOT = join(import.meta.dir, "..", "..", "plugins", "branchbase");
+const RUNNER = join(PLUGIN_ROOT, "hooks", "branchbase-hook");
 
-describe("Workgrove Codex hook runner", () => {
+describe("BranchBase Codex hook runner", () => {
   const requests: unknown[] = [];
   let capabilityDirectory = "";
   let endpoint = "";
@@ -21,7 +21,9 @@ describe("Workgrove Codex hook runner", () => {
   beforeEach(async () => {
     requests.length = 0;
     hookResponse = {};
-    capabilityDirectory = mkdtempSync(join(tmpdir(), "workgrove-hook-runner-"));
+    capabilityDirectory = mkdtempSync(
+      join(tmpdir(), "branchbase-hook-runner-")
+    );
     server = createServer(async (request, response) => {
       const chunks: Buffer[] = [];
       for await (const chunk of request) {
@@ -53,7 +55,7 @@ describe("Workgrove Codex hook runner", () => {
       env: {
         ...process.env,
         PLUGIN_ROOT,
-        WORKGROVE_CODEX_CAPABILITY_PATH: capabilityPath,
+        BRANCHBASE_CODEX_CAPABILITY_PATH: capabilityPath,
       },
       stderr: "pipe",
       stdin: new Blob([JSON.stringify(input)]),
@@ -152,7 +154,7 @@ describe("Workgrove Codex hook runner", () => {
   });
 
   it("wraps bounded server context only for model-visible hook events", async () => {
-    hookResponse = { additionalContext: "Safe Workgrove context" };
+    hookResponse = { additionalContext: "Safe BranchBase context" };
     const capability = createCodexHookCapability({
       directory: capabilityDirectory,
       endpoint,
@@ -174,7 +176,7 @@ describe("Workgrove Codex hook runner", () => {
 
     expect(JSON.parse(result.stdout)).toEqual({
       hookSpecificOutput: {
-        additionalContext: "Safe Workgrove context",
+        additionalContext: "Safe BranchBase context",
         hookEventName: "SessionStart",
       },
     });

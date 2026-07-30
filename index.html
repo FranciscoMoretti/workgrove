@@ -20,7 +20,7 @@
       const root = document.documentElement;
       let theme = "system";
       try {
-        theme = localStorage.getItem("workgrove:theme") ?? "system";
+        theme = localStorage.getItem("branchbase:theme") ?? "system";
       } catch {
         // Use the system theme when storage is unavailable.
       }
@@ -34,7 +34,7 @@
       root.style.colorScheme = resolved;
     })();
     </script>
-    <title>Branchbase</title>
+    <title>BranchBase</title>
   </head>
   <body>
     <div id="root"></div>

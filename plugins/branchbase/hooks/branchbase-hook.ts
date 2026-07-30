@@ -52,7 +52,7 @@ function readCapability(path: string): Capability {
     stat.mode % 0o100 !== 0 ||
     (uid !== undefined && stat.uid !== uid)
   ) {
-    throw new Error("Insecure Workgrove capability");
+    throw new Error("Insecure BranchBase capability");
   }
   const value = JSON.parse(readFileSync(path, "utf8")) as Record<
     string,
@@ -69,7 +69,7 @@ function readCapability(path: string): Capability {
     !token ||
     processStartMarker(Number(value.pid)) !== processMarker
   ) {
-    throw new Error("Stale Workgrove capability");
+    throw new Error("Stale BranchBase capability");
   }
   const url = new URL(endpoint);
   if (
@@ -79,7 +79,7 @@ function readCapability(path: string): Capability {
     url.search ||
     url.hash
   ) {
-    throw new Error("Invalid Workgrove hook endpoint");
+    throw new Error("Invalid BranchBase hook endpoint");
   }
   return {
     endpoint,
@@ -120,7 +120,7 @@ async function readBoundedResponse(response: Response): Promise<string> {
     size += chunk.length;
     if (size > MAX_RESPONSE_BYTES) {
       await reader.cancel();
-      throw new Error("Workgrove hook response is too large");
+      throw new Error("BranchBase hook response is too large");
     }
     chunks.push(chunk);
   }
@@ -169,8 +169,8 @@ function normalize(event: string, raw: unknown): Record<string, unknown> {
 async function main(): Promise<unknown> {
   const event = process.argv[2] ?? "";
   const capabilityPath =
-    process.env.WORKGROVE_CODEX_CAPABILITY_PATH ??
-    join(homedir(), ".workgrove", "codex", "capability.json");
+    process.env.BRANCHBASE_CODEX_CAPABILITY_PATH ??
+    join(homedir(), ".branchbase", "codex", "capability.json");
   const [capability, input] = await Promise.all([
     Promise.resolve().then(() => readCapability(capabilityPath)),
     readStdin(),

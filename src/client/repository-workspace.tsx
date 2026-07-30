@@ -89,10 +89,10 @@ function codexAvailability({
 
 function worktreeForAppGroup(
   worktree: WorktreeSnapshot | null,
-  appGroupName: string | null
+  appGroupId: string | null
 ): WorktreeSnapshot | null {
   const group = worktree?.appGroups.find(
-    (candidate) => candidate.id === appGroupName
+    (candidate) => candidate.id === appGroupId
   );
   if (!(worktree && group)) {
     return worktree;
@@ -108,14 +108,14 @@ function worktreeForAppGroup(
 
 function selectedAppGroupActionState(
   worktree: WorktreeSnapshot | null,
-  appGroupName: string | null,
+  appGroupId: string | null,
   appGroupActionBlocked: (
     worktreeId: string,
-    targetAppGroupName: string
+    targetAppGroupId: string
   ) => boolean,
   appGroupActionPending: (
     worktreeId: string,
-    targetAppGroupName: string
+    targetAppGroupId: string
   ) => boolean,
   worktreeActionPending: (worktreeId: string) => boolean
 ): { blocked: boolean; pending: boolean; worktreePending: boolean } {
@@ -123,12 +123,12 @@ function selectedAppGroupActionState(
     return { blocked: false, pending: false, worktreePending: false };
   }
   const worktreePending = worktreeActionPending(worktree.id);
-  if (!appGroupName) {
+  if (!appGroupId) {
     return { blocked: worktreePending, pending: false, worktreePending };
   }
   return {
-    blocked: appGroupActionBlocked(worktree.id, appGroupName),
-    pending: appGroupActionPending(worktree.id, appGroupName),
+    blocked: appGroupActionBlocked(worktree.id, appGroupId),
+    pending: appGroupActionPending(worktree.id, appGroupId),
     worktreePending,
   };
 }
@@ -384,7 +384,7 @@ export function RepositoryWorkspace({
   } else if (selectedForDetails) {
     workspaceContent = (
       <ResizablePanelGroup
-        autoSaveId="workgrove:details-layout:v2"
+        autoSaveId="branchbase:details-layout:v2"
         className="h-full"
         direction="horizontal"
         panelIds={DETAILS_PANEL_IDS}

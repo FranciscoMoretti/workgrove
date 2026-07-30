@@ -19,7 +19,7 @@ import type {
   LocalRouteState,
   LocalRoutingEngine,
 } from "../runtime/local-routing";
-import { FileWorkgroveStateStore } from "../runtime/local-state";
+import { FileBranchBaseStateStore } from "../runtime/local-state";
 import { WorkspaceController } from "./workspace-controller";
 import {
   appGroupCanRestart,
@@ -45,12 +45,12 @@ class FakeRoutingEngine implements LocalRoutingEngine {
 
 describe("slot-free workspace inspection", () => {
   it("projects stable endpoint identity without allocating a backing port", () => {
-    const root = mkdtempSync(join(tmpdir(), "workgrove-controller-"));
+    const root = mkdtempSync(join(tmpdir(), "branchbase-controller-"));
     const statePath = join(root, ".local", "state.json");
     try {
       spawnSync("git", ["init", "-q"], { cwd: root });
       writeFileSync(
-        join(root, ".workgrove.json"),
+        join(root, ".branchbase.json"),
         JSON.stringify({
           version: 1,
           setup: { argv: ["bun", "install"] },
@@ -69,7 +69,7 @@ describe("slot-free workspace inspection", () => {
       );
       const controller = new WorkspaceController(undefined, {
         routing: new FakeRoutingEngine(),
-        state: new FileWorkgroveStateStore(statePath),
+        state: new FileBranchBaseStateStore(statePath),
       });
 
       const snapshot = controller.inspect(root);
@@ -96,7 +96,7 @@ describe("slot-free workspace inspection", () => {
       });
       expect(snapshot.trustCommands).toHaveLength(3);
       expect(readFileSync(statePath, "utf8")).toContain(
-        `website.${snapshot.worktrees[0]?.branch}.workgrove-controller-`
+        `website.${snapshot.worktrees[0]?.branch}.branchbase-controller-`
       );
     } finally {
       rmSync(root, { force: true, recursive: true });
@@ -213,7 +213,7 @@ describe("controller command contract", () => {
   });
 
   it("rejects command working directories that escape through a symlink", () => {
-    const sandbox = mkdtempSync(join(tmpdir(), "workgrove-command-cwd-"));
+    const sandbox = mkdtempSync(join(tmpdir(), "branchbase-command-cwd-"));
     const root = join(sandbox, "worktree");
     const outside = join(sandbox, "outside");
     mkdirSync(root);

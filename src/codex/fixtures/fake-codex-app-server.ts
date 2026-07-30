@@ -14,9 +14,9 @@ if (process.argv.includes("--version")) {
   process.exit(0);
 }
 
-const scenario = process.env.WORKGROVE_FAKE_CODEX_SCENARIO ?? "";
+const scenario = process.env.BRANCHBASE_FAKE_CODEX_SCENARIO ?? "";
 const input = createInterface({ input: process.stdin });
-const recoveryMarker = process.env.WORKGROVE_FAKE_CODEX_RECOVERY_MARKER;
+const recoveryMarker = process.env.BRANCHBASE_FAKE_CODEX_RECOVERY_MARKER;
 let listRequestCount = 0;
 let ready = false;
 
@@ -241,7 +241,7 @@ function handleInitialize(message: RequestMessage): void {
   if (
     capabilities?.experimentalApi !== false ||
     capabilities.requestAttestation !== false ||
-    clientInfo?.name !== "workgrove"
+    clientInfo?.name !== "branchbase"
   ) {
     send({ id: message.id, error: { code: -32_602 } });
     return;

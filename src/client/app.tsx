@@ -20,8 +20,8 @@ import { Spinner } from "./components/ui/spinner";
 import { useWorkspace } from "./queries";
 import { RepositoryWorkspace } from "./repository-workspace";
 
-const REPO_STORAGE_KEY = "workgrove:repo-path";
-const RECENTS_STORAGE_KEY = "workgrove:recent-repos";
+const REPO_STORAGE_KEY = "branchbase:repo-path";
+const RECENTS_STORAGE_KEY = "branchbase:recent-repos";
 const RecentRepositoriesSchema = z
   .array(z.unknown())
   .transform((items) =>

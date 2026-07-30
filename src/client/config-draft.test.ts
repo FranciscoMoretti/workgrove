@@ -26,35 +26,38 @@ describe("configuration drafts", () => {
     const draft = '{"version":1,"appGroups":';
     const storage = createMemoryStorage();
 
-    saveConfigDraft("/repo/.workgrove.json", source, draft, storage);
+    saveConfigDraft("/repo/.branchbase.json", source, draft, storage);
 
-    expect(loadConfigDraft("/repo/.workgrove.json", source, storage)).toBe(
+    expect(loadConfigDraft("/repo/.branchbase.json", source, storage)).toBe(
       draft
     );
-    clearConfigDraft("/repo/.workgrove.json", storage);
+    clearConfigDraft("/repo/.branchbase.json", storage);
     expect(
-      loadConfigDraft("/repo/.workgrove.json", source, storage)
+      loadConfigDraft("/repo/.branchbase.json", source, storage)
     ).toBeNull();
   });
 
   it("drops a draft when the source changed outside the editor", () => {
     const storage = createMemoryStorage();
-    saveConfigDraft("/repo/.workgrove.json", "source", "draft", storage);
+    saveConfigDraft("/repo/.branchbase.json", "source", "draft", storage);
 
     expect(
-      loadConfigDraft("/repo/.workgrove.json", "changed", storage)
+      loadConfigDraft("/repo/.branchbase.json", "changed", storage)
     ).toBeNull();
     expect(
-      loadConfigDraft("/repo/.workgrove.json", "source", storage)
+      loadConfigDraft("/repo/.branchbase.json", "source", storage)
     ).toBeNull();
   });
 
   it("ignores malformed stored data", () => {
     const storage = createMemoryStorage();
-    storage.setItem("workgrove:configuration-draft:/repo/.workgrove.json", "{");
+    storage.setItem(
+      "branchbase:configuration-draft:/repo/.branchbase.json",
+      "{"
+    );
 
     expect(
-      loadConfigDraft("/repo/.workgrove.json", "source", storage)
+      loadConfigDraft("/repo/.branchbase.json", "source", storage)
     ).toBeNull();
   });
 
@@ -72,18 +75,18 @@ describe("configuration drafts", () => {
     };
 
     expect(
-      loadConfigDraft("/repo/.workgrove.json", "source", unavailableStorage)
+      loadConfigDraft("/repo/.branchbase.json", "source", unavailableStorage)
     ).toBeNull();
     expect(() =>
       saveConfigDraft(
-        "/repo/.workgrove.json",
+        "/repo/.branchbase.json",
         "source",
         "draft",
         unavailableStorage
       )
     ).not.toThrow();
     expect(() =>
-      clearConfigDraft("/repo/.workgrove.json", unavailableStorage)
+      clearConfigDraft("/repo/.branchbase.json", unavailableStorage)
     ).not.toThrow();
   });
 });

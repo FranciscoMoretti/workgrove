@@ -2,15 +2,14 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
+import { BranchBaseConfigSchema } from "./branchbase-schema";
 import {
   repositoryCommandFingerprint,
   repositoryIsTrusted,
 } from "./repository-trust";
-import { WorkgroveConfigSchema } from "./workgrove-schema";
 
 function config(mode: "per-worktree" | "selectable") {
-  return WorkgroveConfigSchema.parse({
+  return BranchBaseConfigSchema.parse({
     version: 1,
     setup: { argv: ["true"] },
     appGroups: {
@@ -26,7 +25,7 @@ function config(mode: "per-worktree" | "selectable") {
 
 describe("repository trust fingerprint", () => {
   it("fails closed when any persisted trust entry has an invalid shape", () => {
-    const directory = mkdtempSync(join(tmpdir(), "workgrove-trust-"));
+    const directory = mkdtempSync(join(tmpdir(), "branchbase-trust-"));
     try {
       const repoPath = "/code/chat-js";
       writeFileSync(

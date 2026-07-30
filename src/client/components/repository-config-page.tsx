@@ -2,9 +2,9 @@ import { ArrowLeftIcon, CircleAlertIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
-  type WorkgroveConfig,
-  WorkgroveConfigSchema,
-} from "../../config/workgrove-schema";
+  type BranchBaseConfig,
+  BranchBaseConfigSchema,
+} from "../../config/branchbase-schema";
 import {
   clearConfigDraft,
   loadConfigDraft,
@@ -24,13 +24,13 @@ export function RepositoryConfigPage({
   onSave,
   pending,
 }: {
-  config: WorkgroveConfig;
+  config: BranchBaseConfig;
   configPath: string;
   error: Error | null;
   navigationRequest: number;
   onClose: () => void;
   onDirtyChange: (dirty: boolean) => void;
-  onSave: (value: WorkgroveConfig) => Promise<void>;
+  onSave: (value: BranchBaseConfig) => Promise<void>;
   pending: boolean;
 }) {
   const original = useMemo(() => JSON.stringify(config, null, 2), [config]);
@@ -42,7 +42,7 @@ export function RepositoryConfigPage({
     useState(navigationRequest);
   const parsed = useMemo(() => {
     try {
-      return WorkgroveConfigSchema.safeParse(JSON.parse(source));
+      return BranchBaseConfigSchema.safeParse(JSON.parse(source));
     } catch (caught) {
       return {
         success: false as const,
@@ -139,7 +139,7 @@ export function RepositoryConfigPage({
             </p>
           </div>
           <Textarea
-            aria-label="Branchbase configuration JSON"
+            aria-label="BranchBase configuration JSON"
             className="min-h-[32rem] font-mono text-sm"
             onChange={(event) => setSource(event.target.value)}
             spellCheck={false}

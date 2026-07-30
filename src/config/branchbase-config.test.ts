@@ -1,11 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
-import { resolveStartCommand } from "./workgrove-config";
-import type { WorkgroveConfig } from "./workgrove-schema";
+import { resolveStartCommand } from "./branchbase-config";
+import type { BranchBaseConfig } from "./branchbase-schema";
 
-describe("Workgrove App group environment", () => {
+describe("BranchBase App group environment", () => {
   it("renders one dynamically assigned HTTP endpoint into the trusted command", () => {
-    const config: WorkgroveConfig = {
+    const config: BranchBaseConfig = {
       version: 1,
       setup: { argv: ["true"] },
       appGroups: {
@@ -48,7 +48,7 @@ describe("Workgrove App group environment", () => {
   });
 
   it("renders another selected instance's stable HTTP endpoint", () => {
-    const config: WorkgroveConfig = {
+    const config: BranchBaseConfig = {
       version: 1,
       setup: { argv: ["true"] },
       appGroups: {

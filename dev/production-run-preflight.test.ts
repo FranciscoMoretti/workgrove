@@ -13,7 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { FileWorkgroveStateStore } from "../src/runtime/local-state";
+import { FileBranchBaseStateStore } from "../src/runtime/local-state";
 import {
   appGroupInstanceProcessId,
   ProcessSupervisor,
@@ -30,7 +30,7 @@ function recordProductionRun(
   port: number,
   options: { listenerClaimed?: boolean } = {}
 ): { instanceId: string } {
-  const state = new FileWorkgroveStateStore(
+  const state = new FileBranchBaseStateStore(
     join(productionControlDirectory, "state.json")
   );
   const instance = state.instance({
@@ -86,9 +86,9 @@ async function stopChild(child: ChildProcess): Promise<void> {
 
 it("rejects a worktree with a verified production run", async () => {
   const temporary = mkdtempSync(
-    join(tmpdir(), "workgrove-production-preflight-")
+    join(tmpdir(), "branchbase-production-preflight-")
   );
-  const productionControlDirectory = join(temporary, "home", ".workgrove");
+  const productionControlDirectory = join(temporary, "home", ".branchbase");
   const worktreePath = join(temporary, "project");
   mkdirSync(worktreePath);
   const canonicalWorktreePath = realpathSync(worktreePath);
@@ -132,7 +132,7 @@ it("rejects a worktree with a verified production run", async () => {
         productionControlDirectory,
       })
     ).toThrow(
-      `Production Workgrove already has Chat running in ${canonicalWorktreePath} on port ${port} (PID ${pid})`
+      `Production BranchBase already has Chat running in ${canonicalWorktreePath} on port ${port} (PID ${pid})`
     );
   } finally {
     await processes.stopManagedProcess(processId, canonicalWorktreePath);
@@ -143,9 +143,9 @@ it("rejects a worktree with a verified production run", async () => {
 
 it("rejects an orphaned listener that still belongs to the worktree", async () => {
   const temporary = mkdtempSync(
-    join(tmpdir(), "workgrove-production-listener-preflight-")
+    join(tmpdir(), "branchbase-production-listener-preflight-")
   );
-  const productionControlDirectory = join(temporary, "home", ".workgrove");
+  const productionControlDirectory = join(temporary, "home", ".branchbase");
   const worktreePath = join(temporary, "project");
   mkdirSync(worktreePath);
   const canonicalWorktreePath = realpathSync(worktreePath);
@@ -183,7 +183,7 @@ it("rejects an orphaned listener that still belongs to the worktree", async () =
         productionControlDirectory,
       })
     ).toThrow(
-      `Production Workgrove already has Chat running in ${canonicalWorktreePath} on port ${port} (PID ${child.pid})`
+      `Production BranchBase already has Chat running in ${canonicalWorktreePath} on port ${port} (PID ${child.pid})`
     );
   } finally {
     await stopChild(child);
@@ -193,9 +193,9 @@ it("rejects an orphaned listener that still belongs to the worktree", async () =
 
 it("rejects a claimed command-managed listener outside the worktree", async () => {
   const temporary = mkdtempSync(
-    join(tmpdir(), "workgrove-production-command-listener-preflight-")
+    join(tmpdir(), "branchbase-production-command-listener-preflight-")
   );
-  const productionControlDirectory = join(temporary, "home", ".workgrove");
+  const productionControlDirectory = join(temporary, "home", ".branchbase");
   const worktreePath = join(temporary, "project");
   mkdirSync(worktreePath);
   const canonicalWorktreePath = realpathSync(worktreePath);
@@ -235,7 +235,7 @@ it("rejects a claimed command-managed listener outside the worktree", async () =
         productionControlDirectory,
       })
     ).toThrow(
-      `Production Workgrove already has Chat running in ${canonicalWorktreePath} on port ${port} (PID ${child.pid})`
+      `Production BranchBase already has Chat running in ${canonicalWorktreePath} on port ${port} (PID ${child.pid})`
     );
   } finally {
     await stopChild(child);
@@ -245,9 +245,9 @@ it("rejects a claimed command-managed listener outside the worktree", async () =
 
 it("ignores stale production state without a live process or listener", async () => {
   const temporary = mkdtempSync(
-    join(tmpdir(), "workgrove-production-stale-preflight-")
+    join(tmpdir(), "branchbase-production-stale-preflight-")
   );
-  const productionControlDirectory = join(temporary, "home", ".workgrove");
+  const productionControlDirectory = join(temporary, "home", ".branchbase");
   const worktreePath = join(temporary, "project");
   mkdirSync(worktreePath);
   const canonicalWorktreePath = realpathSync(worktreePath);
@@ -274,9 +274,9 @@ it("ignores stale production state without a live process or listener", async ()
 
 it("fails closed when a recorded worktree path cannot be resolved safely", async () => {
   const temporary = mkdtempSync(
-    join(tmpdir(), "workgrove-production-path-error-preflight-")
+    join(tmpdir(), "branchbase-production-path-error-preflight-")
   );
-  const productionControlDirectory = join(temporary, "home", ".workgrove");
+  const productionControlDirectory = join(temporary, "home", ".branchbase");
   const worktreePath = join(temporary, "project");
   const recordedWorktreePath = join(temporary, "recorded-project");
   mkdirSync(worktreePath);
@@ -298,7 +298,7 @@ it("fails closed when a recorded worktree path cannot be resolved safely", async
       assertProductionWorktreeAvailable(canonicalWorktreePath, {
         productionControlDirectory,
       })
-    ).toThrow("Could not verify Production Workgrove state");
+    ).toThrow("Could not verify Production BranchBase state");
   } finally {
     await portReservation.release();
     rmSync(temporary, { force: true, recursive: true });
@@ -307,9 +307,9 @@ it("fails closed when a recorded worktree path cannot be resolved safely", async
 
 it("fails closed when production state cannot be verified", () => {
   const temporary = mkdtempSync(
-    join(tmpdir(), "workgrove-production-invalid-preflight-")
+    join(tmpdir(), "branchbase-production-invalid-preflight-")
   );
-  const productionControlDirectory = join(temporary, "home", ".workgrove");
+  const productionControlDirectory = join(temporary, "home", ".branchbase");
   const worktreePath = join(temporary, "project");
   mkdirSync(productionControlDirectory, { recursive: true });
   mkdirSync(worktreePath);
@@ -320,7 +320,7 @@ it("fails closed when production state cannot be verified", () => {
       assertProductionWorktreeAvailable(worktreePath, {
         productionControlDirectory,
       })
-    ).toThrow("Could not verify Production Workgrove state");
+    ).toThrow("Could not verify Production BranchBase state");
   } finally {
     rmSync(temporary, { force: true, recursive: true });
   }

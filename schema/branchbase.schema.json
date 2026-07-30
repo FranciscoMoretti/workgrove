@@ -192,7 +192,7 @@
   },
   "required": ["version", "setup", "appGroups"],
   "additionalProperties": false,
-  "$id": "https://raw.githubusercontent.com/franciscomoretti/workgrove/main/schema/workgrove.schema.json",
-  "title": "Workgrove configuration",
+  "$id": "https://raw.githubusercontent.com/FranciscoMoretti/BranchBase/main/schema/branchbase.schema.json",
+  "title": "BranchBase configuration",
   "description": "Configure repository commands, dynamic App endpoints, readiness, and exposed App-group environments."
 }

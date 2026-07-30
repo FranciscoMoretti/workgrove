@@ -12,7 +12,7 @@ import type {
   AppGroupSnapshot,
   WorktreeSnapshot,
 } from "../../controller/workspace-snapshot";
-import { appsAreRunning } from "../../controller/workspace-snapshot";
+import { appGroupIsRunning } from "../../controller/workspace-snapshot";
 import type { WorktreeCommandActions } from "../worktree-command-menu";
 import { AppEndpointLink } from "./app-endpoint-link";
 import { AppGroupActionsMenu } from "./app-group-actions-menu";
@@ -33,6 +33,19 @@ function actionIcon(pending: boolean, running: boolean) {
     return <Spinner />;
   }
   return running ? <SquareIcon /> : <PlayIcon />;
+}
+
+function routeIssueLabel(app: AppGroupSnapshot["apps"][number]) {
+  if (app.protocol !== "http" || app.readiness !== "ready") {
+    return null;
+  }
+  if (app.routeState === "conflict") {
+    return "Route conflict";
+  }
+  if (app.routeState === "unavailable") {
+    return "Route unavailable";
+  }
+  return null;
 }
 
 function CodexTaskSummary({
@@ -145,20 +158,26 @@ function AppGroupSummary({
       </div>
       <div className="app-endpoint-list">
         {group.apps.length > 0 ? (
-          group.apps.map((app) => (
-            <span className="app-endpoint-summary" key={app.id}>
-              <span
-                aria-hidden="true"
-                className="app-endpoint-dot"
-                data-listening={app.listening || undefined}
-                data-ownership={app.ownership}
-                data-readiness={app.readiness}
-                data-route-state={app.routeState}
-              />
-              <span>{app.label}</span>
-              <AppEndpointLink app={app} />
-            </span>
-          ))
+          group.apps.map((app) => {
+            const routeIssue = routeIssueLabel(app);
+            return (
+              <span className="app-endpoint-summary" key={app.id}>
+                <span
+                  aria-hidden="true"
+                  className="app-endpoint-dot"
+                  data-listening={app.listening || undefined}
+                  data-ownership={app.ownership}
+                  data-readiness={app.readiness}
+                  data-route-state={app.routeState}
+                />
+                <span>{app.label}</span>
+                <AppEndpointLink app={app} />
+                {routeIssue ? (
+                  <span className="app-endpoint-route-issue">{routeIssue}</span>
+                ) : null}
+              </span>
+            );
+          })
         ) : (
           <span className="text-muted-foreground">No Apps configured</span>
         )}
@@ -171,11 +190,13 @@ function WorktreePrimaryAction({
   actions,
   blocked,
   pending,
+  primaryGroup,
   worktree,
 }: {
   actions: WorktreeCommandActions;
   blocked: boolean;
   pending: boolean;
+  primaryGroup: AppGroupSnapshot | undefined;
   worktree: WorktreeSnapshot;
 }) {
   if (worktree.setupState === "running") {
@@ -199,10 +220,10 @@ function WorktreePrimaryAction({
       </Button>
     );
   }
-  const running = appsAreRunning(worktree);
+  const running = primaryGroup ? appGroupIsRunning(primaryGroup) : false;
   return (
     <Button
-      disabled={blocked}
+      disabled={blocked || !primaryGroup}
       onClick={() =>
         running ? actions.onStop(worktree) : actions.onStart(worktree)
       }
@@ -336,6 +357,7 @@ export function WorktreeTable({
                   actions={commandActions}
                   blocked={primaryActionBlocked}
                   pending={primaryActionPending}
+                  primaryGroup={primaryGroup}
                   worktree={worktree}
                 />
                 <WorktreeActionsMenu

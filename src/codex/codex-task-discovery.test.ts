@@ -9,7 +9,7 @@ import { CodexTaskDiscoveryAdapter } from "./codex-task-discovery";
 
 const openAdapters: CodexTaskDiscoveryAdapter[] = [];
 const localIntegrationIt =
-  process.env.WORKGROVE_CODEX_INTEGRATION === "1" ? it : it.skip;
+  process.env.BRANCHBASE_CODEX_INTEGRATION === "1" ? it : it.skip;
 
 function fakeCommand(
   scenario: string,
@@ -22,7 +22,7 @@ function fakeCommand(
       ),
     ],
     executable: process.execPath,
-    env: { ...env, WORKGROVE_FAKE_CODEX_SCENARIO: scenario },
+    env: { ...env, BRANCHBASE_FAKE_CODEX_SCENARIO: scenario },
   };
 }
 
@@ -187,7 +187,7 @@ describe("persisted Codex task discovery", () => {
   it("contains executable and app-server process failures", async () => {
     const worktrees = [{ id: "worktree-a", path: "/canonical/a" }];
     const missing = new CodexTaskDiscoveryAdapter({
-      command: { executable: "/missing/workgrove-codex" },
+      command: { executable: "/missing/branchbase-codex" },
       requestTimeoutMs: 50,
     });
     openAdapters.push(missing);
@@ -236,7 +236,7 @@ describe("persisted Codex task discovery", () => {
   it("validates candidates and falls back without invoking a shell", async () => {
     const adapter = new CodexTaskDiscoveryAdapter({
       commands: [
-        { executable: "/missing/workgrove-codex" },
+        { executable: "/missing/branchbase-codex" },
         fakeCommand("single-page"),
       ],
       now: () => new Date("2026-07-18T15:00:00.000Z"),
@@ -257,12 +257,12 @@ describe("persisted Codex task discovery", () => {
   for (const scenario of ["initialize-timeout-once", "partial-eof-once"]) {
     it(`restarts safely after ${scenario}`, async () => {
       const temporary = mkdtempSync(
-        join(tmpdir(), "workgrove-codex-recovery-")
+        join(tmpdir(), "branchbase-codex-recovery-")
       );
       try {
         const adapter = new CodexTaskDiscoveryAdapter({
           command: fakeCommand(scenario, {
-            WORKGROVE_FAKE_CODEX_RECOVERY_MARKER: join(
+            BRANCHBASE_FAKE_CODEX_RECOVERY_MARKER: join(
               temporary,
               "failed-once"
             ),

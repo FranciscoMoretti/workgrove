@@ -17,7 +17,7 @@ import { LogsResponseSchema, SessionResponseSchema } from "../server/schemas";
 
 let sessionToken: Promise<string> | null = null;
 
-export class WorkgroveApiError extends Error {
+export class BranchBaseApiError extends Error {
   readonly code: string | null;
   readonly configPath: string | null;
 
@@ -25,7 +25,7 @@ export class WorkgroveApiError extends Error {
     super(message);
     this.code = code;
     this.configPath = configPath;
-    this.name = "WorkgroveApiError";
+    this.name = "BranchBaseApiError";
   }
 }
 
@@ -40,7 +40,7 @@ async function responseJson(response: Response): Promise<unknown> {
             error?: unknown;
           })
         : {};
-    throw new WorkgroveApiError(
+    throw new BranchBaseApiError(
       typeof value.error === "string"
         ? value.error
         : `Request failed (${response.status})`,
@@ -105,7 +105,7 @@ async function postCommand<T>(
       body: JSON.stringify(input),
       headers: {
         "content-type": "application/json",
-        "x-workgrove-token": await token(),
+        "x-branchbase-token": await token(),
       },
       method: "POST",
     });

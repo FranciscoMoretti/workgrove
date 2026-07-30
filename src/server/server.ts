@@ -1,20 +1,20 @@
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createWorkgroveServer } from "./workgrove-server";
+import { createBranchBaseServer } from "./branchbase-server";
 
 const appRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
-const server = await createWorkgroveServer({
+const server = await createBranchBaseServer({
   appRoot,
-  ...(process.env.WORKGROVE_CODEX_CONTROL_DIR
-    ? { codexControlDirectory: process.env.WORKGROVE_CODEX_CONTROL_DIR }
+  ...(process.env.BRANCHBASE_CODEX_CONTROL_DIR
+    ? { codexControlDirectory: process.env.BRANCHBASE_CODEX_CONTROL_DIR }
     : {}),
   development: false,
   host: "127.0.0.1",
-  port: Number(process.env.WORKGROVE_PORT ?? 3999),
+  port: Number(process.env.BRANCHBASE_PORT ?? 3999),
 });
 
-console.log(`Workgrove: ${await server.listen()}`);
+console.log(`BranchBase: ${await server.listen()}`);
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {

@@ -3,11 +3,7 @@ import type {
   WorktreeSnapshot,
 } from "../../controller/workspace-snapshot";
 
-export type AppGroupDisplayStatus =
-  | "partial"
-  | "routing-error"
-  | "running"
-  | "stopped";
+export type AppGroupDisplayStatus = "partial" | "running" | "stopped";
 export type WorktreeDisplayStatus =
   | AppGroupDisplayStatus
   | "setup-failed"
@@ -24,7 +20,7 @@ export function appGroupDisplayStatus(
         (app.routeState === "conflict" || app.routeState === "unavailable")
     )
   ) {
-    return "routing-error";
+    return "partial";
   }
   if (group.health === "running") {
     return "running";
@@ -50,9 +46,6 @@ export function worktreeDisplayStatus(
     return "setting-up";
   }
   const groupStatuses = worktree.appGroups.map(appGroupDisplayStatus);
-  if (groupStatuses.includes("routing-error")) {
-    return "routing-error";
-  }
   if (
     worktree.health === "partially-running" ||
     groupStatuses.includes("partial") ||

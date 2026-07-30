@@ -5,16 +5,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { FakeCodexIntegrationAdapter } from "../codex/codex-integration";
-import { FileWorkgroveStateStore } from "../runtime/local-state";
+import { FileBranchBaseStateStore } from "../runtime/local-state";
 import { WorkspaceController } from "./workspace-controller";
 
 describe("WorkspaceController Codex projection", () => {
   it("loads Codex data asynchronously for the synchronously inspected worktrees", async () => {
-    const root = mkdtempSync(join(tmpdir(), "workgrove-codex-projection-"));
+    const root = mkdtempSync(join(tmpdir(), "branchbase-codex-projection-"));
     try {
       spawnSync("git", ["init", "-q"], { cwd: root });
       writeFileSync(
-        join(root, ".workgrove.json"),
+        join(root, ".branchbase.json"),
         JSON.stringify({
           appGroups: {
             App: {
@@ -45,7 +45,7 @@ describe("WorkspaceController Codex projection", () => {
         updatedAt: "2026-07-18T13:00:00.000Z",
       });
       const controller = new WorkspaceController(fake, {
-        state: new FileWorkgroveStateStore(join(root, "state.json")),
+        state: new FileBranchBaseStateStore(join(root, "state.json")),
       });
 
       const workspace = controller.inspect(root);

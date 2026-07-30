@@ -184,7 +184,7 @@ describe("Codex hook activity", () => {
   });
 
   it("persists only bounded activity metadata in a private file", () => {
-    const directory = mkdtempSync(join(tmpdir(), "workgrove-hook-activity-"));
+    const directory = mkdtempSync(join(tmpdir(), "branchbase-hook-activity-"));
     const file = join(directory, "codex", "activity.json");
     try {
       const writer = new CodexHookActivityStore({ file });
@@ -223,7 +223,7 @@ describe("Codex hook activity", () => {
   });
 
   it("keeps live activity in memory when persistence is unavailable", () => {
-    const directory = mkdtempSync(join(tmpdir(), "workgrove-hook-memory-"));
+    const directory = mkdtempSync(join(tmpdir(), "branchbase-hook-memory-"));
     const blockedDirectory = join(directory, "blocked");
     try {
       writeFileSync(blockedDirectory, "not a directory");

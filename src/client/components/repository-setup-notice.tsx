@@ -12,9 +12,9 @@ export function RepositorySetupNotice({
   return (
     <Alert>
       <FileWarningIcon />
-      <AlertTitle>This repository needs Branchbase setup</AlertTitle>
+      <AlertTitle>This repository needs BranchBase setup</AlertTitle>
       <AlertDescription>
-        Review a detected starter configuration before Branchbase creates it, or
+        Review a detected starter configuration before BranchBase creates it, or
         add the file manually at <code>{configPath}</code>.
       </AlertDescription>
       {onInitialize ? (

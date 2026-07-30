@@ -96,8 +96,8 @@ export class ProcessSupervisor {
   >();
 
   constructor(
-    controlDirectory = process.env.WORKGROVE_CONTROL_DIR ??
-      join(homedir(), ".workgrove")
+    controlDirectory = process.env.BRANCHBASE_CONTROL_DIR ??
+      join(homedir(), ".branchbase")
   ) {
     this.controlDirectory = controlDirectory;
     mkdirSync(this.controlDirectory, { recursive: true });
@@ -166,7 +166,7 @@ export class ProcessSupervisor {
     child.once("error", (error) => {
       this.appendManagedLog(
         input.logId ?? input.processId,
-        `[workgrove] Failed to start ${command}: ${error.message}`
+        `[branchbase] Failed to start ${command}: ${error.message}`
       );
       if (input.trackExitFailure) {
         this.recordFailure(input.processId, error.message);
@@ -216,12 +216,12 @@ export class ProcessSupervisor {
           const logId = input.logId ?? input.processId;
           this.appendManagedLog(
             logId,
-            "[workgrove] Managed process exited; stopping remaining descendants"
+            "[branchbase] Managed process exited; stopping remaining descendants"
           );
           this.stopProcessTarget(groupTarget, logId).catch((error) => {
             this.appendManagedLog(
               logId,
-              `[workgrove] Failed to stop remaining descendants: ${error instanceof Error ? error.message : String(error)}`
+              `[branchbase] Failed to stop remaining descendants: ${error instanceof Error ? error.message : String(error)}`
             );
           });
         }
@@ -244,7 +244,7 @@ export class ProcessSupervisor {
     }
     this.appendManagedLog(
       input.logId,
-      `[workgrove] ${input.label}: ${input.argv.join(" ")}`
+      `[branchbase] ${input.label}: ${input.argv.join(" ")}`
     );
     const log = openSync(this.logPath(input.logId), "a");
     const child = (() => {
@@ -437,7 +437,7 @@ export class ProcessSupervisor {
     if (logId) {
       this.appendManagedLog(
         logId,
-        "[workgrove] Force-stopping processes that ignored SIGTERM"
+        "[branchbase] Force-stopping processes that ignored SIGTERM"
       );
     }
     try {

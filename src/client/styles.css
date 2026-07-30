@@ -410,7 +410,6 @@
 }
 
 .status-summary[data-status="partial"],
-.status-summary[data-status="routing-error"],
 .status-summary[data-status="setting-up"] {
   color: var(--status-partial-foreground);
 }
@@ -520,6 +519,10 @@
 .app-endpoint-dot[data-readiness="ready"][data-route-state="conflict"],
 .app-endpoint-dot[data-readiness="ready"][data-route-state="unavailable"] {
   background: var(--status-partial-foreground);
+}
+
+.app-endpoint-route-issue {
+  color: var(--status-partial-foreground);
 }
 
 .app-endpoint-dot[data-ownership="foreign"] {

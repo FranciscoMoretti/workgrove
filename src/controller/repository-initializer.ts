@@ -1,13 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { trustRepository } from "../config/repository-trust";
 import {
-  defaultWorkgroveSetupCommand,
-  defaultWorkgroveStartCommand,
-  type WorkgroveCommand,
-} from "../config/workgrove-command";
-import type { WorktreeEnvConfig } from "../config/workgrove-config";
+  type BranchBaseCommand,
+  defaultBranchBaseSetupCommand,
+  defaultBranchBaseStartCommand,
+} from "../config/branchbase-command";
+import type { WorktreeEnvConfig } from "../config/branchbase-config";
+import { trustRepository } from "../config/repository-trust";
 
 const FASTAPI_DEPENDENCY = /\bfastapi\b/i;
 const COMPOSE_FILES = [
@@ -27,8 +27,8 @@ export interface RepositoryInitializationPlan {
 
 interface ProjectDefaults {
   label: string;
-  setup?: WorkgroveCommand;
-  start?: WorkgroveCommand;
+  setup?: BranchBaseCommand;
+  start?: BranchBaseCommand;
 }
 
 function gitRoot(repoPath: string): string {
@@ -54,8 +54,8 @@ function projectDefaults(root: string): ProjectDefaults {
   if (existsSync(join(root, "package.json"))) {
     return {
       label: "Node.js · npm",
-      setup: defaultWorkgroveSetupCommand(),
-      start: defaultWorkgroveStartCommand(),
+      setup: defaultBranchBaseSetupCommand(),
+      start: defaultBranchBaseStartCommand(),
     };
   }
   if (existsSync(join(root, "manage.py"))) {
@@ -92,18 +92,18 @@ export function planRepositoryInitialization(
   repoPath: string
 ): RepositoryInitializationPlan {
   const root = gitRoot(repoPath);
-  const configPath = join(root, ".workgrove.json");
+  const configPath = join(root, ".branchbase.json");
   if (existsSync(configPath)) {
     throw new Error(
       `Worktree environment config already exists: ${configPath}`
     );
   }
   const defaults = projectDefaults(root);
-  const setup = defaults.setup ?? defaultWorkgroveSetupCommand();
-  const start = defaults.start ?? defaultWorkgroveStartCommand();
+  const setup = defaults.setup ?? defaultBranchBaseSetupCommand();
+  const start = defaults.start ?? defaultBranchBaseStartCommand();
   const config: WorktreeEnvConfig = {
     $schema:
-      "https://raw.githubusercontent.com/franciscomoretti/workgrove/main/schema/workgrove.schema.json",
+      "https://raw.githubusercontent.com/FranciscoMoretti/BranchBase/main/schema/branchbase.schema.json",
     version: 1,
     setup,
     appGroups: {

@@ -1,5 +1,5 @@
 {
-  "$schema": "../schema/workgrove.schema.json",
+  "$schema": "../schema/branchbase.schema.json",
   "version": 1,
   "setup": { "argv": ["uv", "sync"] },
   "appGroups": {

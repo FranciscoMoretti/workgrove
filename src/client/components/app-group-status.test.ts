@@ -42,7 +42,7 @@ describe("App-group display status", () => {
         health: "running",
         processRunning: true,
       })
-    ).toBe("routing-error");
+    ).toBe("partial");
     expect(
       appGroupDisplayStatus({
         apps: [
@@ -80,7 +80,7 @@ describe("App-group display status", () => {
     ).toBe("setting-up");
   });
 
-  it("prioritizes route errors and partial readiness in a worktree summary", () => {
+  it("projects route errors and partial readiness as partial status", () => {
     expect(
       worktreeDisplayStatus({
         appGroups: [
@@ -94,7 +94,7 @@ describe("App-group display status", () => {
         processRunning: true,
         setupState: "idle",
       })
-    ).toBe("routing-error");
+    ).toBe("partial");
     expect(
       worktreeDisplayStatus({
         appGroups: [

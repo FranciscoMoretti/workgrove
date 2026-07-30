@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { CodexHookActivityStore } from "../src/codex/codex-hook-activity";
 import type { WorkspaceControllerRuntimeOptions } from "../src/controller/workspace-controller";
-import { FileWorkgroveStateStore } from "../src/runtime/local-state";
+import { FileBranchBaseStateStore } from "../src/runtime/local-state";
 import { ProcessSupervisor } from "../src/runtime/process-supervisor";
 import { reserveBackingPort } from "../src/runtime/readiness";
 import {
@@ -74,7 +74,7 @@ function acquireDevelopmentOwnership(controlDirectory: string): () => void {
   } catch (error) {
     if (error instanceof ExclusiveFileLockBusyError) {
       throw new Error(
-        "Workgrove development is already running for this checkout",
+        "BranchBase development is already running for this checkout",
         { cause: error }
       );
     }
@@ -120,7 +120,7 @@ async function openDevelopmentRouting(
     const requestedPort = configuredPort(
       configuredPortValue,
       DEFAULT_PORTLESS_PORT,
-      "WORKGROVE_PORTLESS_PORT"
+      "BRANCHBASE_PORTLESS_PORT"
     );
     if (rememberedPort !== null && rememberedPort !== requestedPort) {
       throw new Error(
@@ -150,7 +150,7 @@ async function openDevelopmentRouting(
   }
   throw (
     lastConflict ??
-    new Error("Could not allocate a Portless port for Workgrove development")
+    new Error("Could not allocate a Portless port for BranchBase development")
   );
 }
 
@@ -161,7 +161,7 @@ export async function openDevelopmentSession(
   const homeDirectory = options.homeDirectory ?? homedir();
   const controlDirectory = join(
     homeDirectory,
-    ".workgrove",
+    ".branchbase",
     "development",
     developmentProfileId(options.appRoot)
   );
@@ -169,9 +169,9 @@ export async function openDevelopmentSession(
   const portlessStateDirectory = join(controlDirectory, "portless");
   const codexControlDirectory = join(controlDirectory, "codex");
   const dashboardPort = configuredPort(
-    environment.WORKGROVE_PORT,
+    environment.BRANCHBASE_PORT,
     0,
-    "WORKGROVE_PORT",
+    "BRANCHBASE_PORT",
     true
   );
   const releaseOwnership = acquireDevelopmentOwnership(controlDirectory);
@@ -180,7 +180,7 @@ export async function openDevelopmentSession(
   try {
     routing = await openDevelopmentRouting(
       portlessStateDirectory,
-      environment.WORKGROVE_PORTLESS_PORT
+      environment.BRANCHBASE_PORTLESS_PORT
     );
     const profile: DevelopmentSessionProfile = {
       codexControlDirectory,
@@ -200,7 +200,7 @@ export async function openDevelopmentSession(
             const message =
               error instanceof Error ? error.message : String(error);
             console.warn(
-              `Could not stop the Workgrove development proxy: ${message}`
+              `Could not stop the BranchBase development proxy: ${message}`
             );
           } finally {
             releaseOwnership();
@@ -216,10 +216,10 @@ export async function openDevelopmentSession(
         routing,
         developmentStartPreflight: (worktreePath) => {
           assertProductionWorktreeAvailable(worktreePath, {
-            productionControlDirectory: join(homeDirectory, ".workgrove"),
+            productionControlDirectory: join(homeDirectory, ".branchbase"),
           });
         },
-        state: new FileWorkgroveStateStore(statePath),
+        state: new FileBranchBaseStateStore(statePath),
       },
       profile,
     };

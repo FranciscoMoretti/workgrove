@@ -107,7 +107,7 @@ export class CodexHookActivityStore {
       options.persist === false
         ? null
         : (options.file ??
-          join(homedir(), ".workgrove", "codex", "activity.json"));
+          join(homedir(), ".branchbase", "codex", "activity.json"));
     this.load();
   }
 

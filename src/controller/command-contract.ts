@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { WorkgroveConfigSchema } from "../config/workgrove-schema";
+import { BranchBaseConfigSchema } from "../config/branchbase-schema";
 
 const RepositoryPathSchema = z.object({
   repoPath: z.string().min(1),
@@ -59,7 +59,7 @@ const INPUT_SCHEMAS = {
   "stop-apps": StartStopSchema,
   "trust-repository": RepositoryPathSchema,
   "update-repository-config": RepositoryPathSchema.extend({
-    config: WorkgroveConfigSchema,
+    config: BranchBaseConfigSchema,
     revision: z.string().min(1),
   }),
 } as const;
@@ -85,30 +85,28 @@ const RESULT_SCHEMAS = {
   "update-repository-config": CommandReceiptSchema,
 } as const;
 
-export type WorkgroveCommandName = keyof typeof INPUT_SCHEMAS;
-export type WorkgroveCommandInput<Name extends WorkgroveCommandName> = z.infer<
-  (typeof INPUT_SCHEMAS)[Name]
->;
-export type WorkgroveCommandResult<Name extends WorkgroveCommandName> = z.infer<
-  (typeof RESULT_SCHEMAS)[Name]
->;
+export type BranchBaseCommandName = keyof typeof INPUT_SCHEMAS;
+export type BranchBaseCommandInput<Name extends BranchBaseCommandName> =
+  z.infer<(typeof INPUT_SCHEMAS)[Name]>;
+export type BranchBaseCommandResult<Name extends BranchBaseCommandName> =
+  z.infer<(typeof RESULT_SCHEMAS)[Name]>;
 
-export function isWorkgroveCommandName(
+export function isBranchBaseCommandName(
   value: string
-): value is WorkgroveCommandName {
+): value is BranchBaseCommandName {
   return value in INPUT_SCHEMAS;
 }
 
-export function parseCommandInput<Name extends WorkgroveCommandName>(
+export function parseCommandInput<Name extends BranchBaseCommandName>(
   name: Name,
   input: unknown
-): WorkgroveCommandInput<Name> {
-  return INPUT_SCHEMAS[name].parse(input) as WorkgroveCommandInput<Name>;
+): BranchBaseCommandInput<Name> {
+  return INPUT_SCHEMAS[name].parse(input) as BranchBaseCommandInput<Name>;
 }
 
-export function parseCommandResult<Name extends WorkgroveCommandName>(
+export function parseCommandResult<Name extends BranchBaseCommandName>(
   name: Name,
   result: unknown
-): WorkgroveCommandResult<Name> {
-  return RESULT_SCHEMAS[name].parse(result) as WorkgroveCommandResult<Name>;
+): BranchBaseCommandResult<Name> {
+  return RESULT_SCHEMAS[name].parse(result) as BranchBaseCommandResult<Name>;
 }

@@ -73,12 +73,12 @@ export function RepositoryTrustDialog({
           <DialogDescription>
             {actionLabel ? (
               <>
-                To {actionLabel.toLowerCase()}, Branchbase needs permission to
+                To {actionLabel.toLowerCase()}, BranchBase needs permission to
                 run this repository&apos;s configured commands.
               </>
             ) : (
               <>
-                Branchbase opened this repository in restricted mode. You can
+                BranchBase opened this repository in restricted mode. You can
                 inspect it, but configured commands will not run until you trust
                 them.
               </>
@@ -108,7 +108,7 @@ export function RepositoryTrustDialog({
           })}
         </div>
         <p className="text-muted-foreground">
-          Trust is saved for this command fingerprint. Branchbase asks again if
+          Trust is saved for this command fingerprint. BranchBase asks again if
           the configured commands change.
         </p>
         {error ? (

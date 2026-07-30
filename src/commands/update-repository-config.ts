@@ -1,4 +1,4 @@
-import type { WorkgroveConfig } from "../config/workgrove-schema";
+import type { BranchBaseConfig } from "../config/branchbase-schema";
 import type { WorkspaceController } from "../controller/workspace-controller";
 import type { CommandReceipt } from "../controller/workspace-snapshot";
 import { requiredString } from "./command";
@@ -9,7 +9,7 @@ export function updateRepositoryConfig(
 ): CommandReceipt {
   controller.updateConfiguration(
     requiredString(input.repoPath, "Repository path"),
-    input.config as WorkgroveConfig,
+    input.config as BranchBaseConfig,
     requiredString(input.revision, "Configuration revision")
   );
   return {

@@ -230,7 +230,7 @@ function terminalContent({
     return (
       <div className="terminal-state error">
         <strong>Logs temporarily unavailable</strong>
-        <span>Branchbase will keep trying to reconnect.</span>
+        <span>BranchBase will keep trying to reconnect.</span>
         <Button
           className="terminal-retry"
           onClick={onRetry}

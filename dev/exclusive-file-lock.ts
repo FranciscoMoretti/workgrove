@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 
 export class ExclusiveFileLockBusyError extends Error {
   constructor() {
-    super("Workgrove development session ownership is busy");
+    super("BranchBase development session ownership is busy");
     this.name = "ExclusiveFileLockBusyError";
   }
 }
@@ -17,7 +17,7 @@ export function acquireExclusiveFileLock(file: string): () => void {
       throw new ExclusiveFileLockBusyError();
     }
     throw new Error(
-      "Could not acquire Workgrove development session ownership",
+      "Could not acquire BranchBase development session ownership",
       {
         cause: error,
       }

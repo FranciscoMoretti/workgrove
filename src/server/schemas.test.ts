@@ -18,7 +18,7 @@ describe("workspace snapshot transport schema", () => {
           },
         },
       },
-      configPath: "/repo/.workgrove.json",
+      configPath: "/repo/.branchbase.json",
       configRevision: "revision",
       globalProcesses: [],
       globalRunningCount: 1,

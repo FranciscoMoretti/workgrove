@@ -71,7 +71,7 @@ describe("Codex hook HTTP route", () => {
   it("returns the safe context produced while handling a model-visible event", async () => {
     const contextServer = createServer((request, response) => {
       createCodexHookRequestHandler({
-        observe: () => ({ additionalContext: "Safe Workgrove context" }),
+        observe: () => ({ additionalContext: "Safe BranchBase context" }),
         token: "hook-secret",
       })(request, response).catch(() => response.end());
     });
@@ -102,7 +102,7 @@ describe("Codex hook HTTP route", () => {
       );
 
       expect(await response.json()).toEqual({
-        additionalContext: "Safe Workgrove context",
+        additionalContext: "Safe BranchBase context",
       });
     } finally {
       await new Promise<void>((resolve, reject) => {

@@ -2,15 +2,15 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { WorkspaceController } from "../src/controller/workspace-controller";
-import { createWorkgroveServer } from "../src/server/workgrove-server";
+import { createBranchBaseServer } from "../src/server/branchbase-server";
 import { openDevelopmentSession } from "./development-session";
 
 const appRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const session = await openDevelopmentSession({ appRoot });
-let server: Awaited<ReturnType<typeof createWorkgroveServer>> | undefined;
+let server: Awaited<ReturnType<typeof createBranchBaseServer>> | undefined;
 
 try {
-  const activeServer = await createWorkgroveServer({
+  const activeServer = await createBranchBaseServer({
     appRoot,
     codexControlDirectory: session.profile.codexControlDirectory,
     controller: new WorkspaceController(undefined, session.controllerRuntime),
@@ -19,7 +19,7 @@ try {
     port: session.profile.dashboardPort,
   });
   server = activeServer;
-  console.log(`Workgrove: ${await activeServer.listen()}`);
+  console.log(`BranchBase: ${await activeServer.listen()}`);
 
   let shutdownPromise: Promise<void> | undefined;
   const shutdown = () => {

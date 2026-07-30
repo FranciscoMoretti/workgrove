@@ -1,16 +1,16 @@
 {
-  "name": "workgrove",
+  "name": "branchbase",
   "version": "0.4.0",
-  "description": "Run and manage apps across Git worktrees without terminal juggling.",
+  "description": "A local control plane for running apps across Git worktrees.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/FranciscoMoretti/workgrove.git"
+    "url": "git+https://github.com/FranciscoMoretti/BranchBase.git"
   },
-  "homepage": "https://github.com/FranciscoMoretti/workgrove",
-  "bugs": "https://github.com/FranciscoMoretti/workgrove/issues",
+  "homepage": "https://github.com/FranciscoMoretti/BranchBase",
+  "bugs": "https://github.com/FranciscoMoretti/BranchBase/issues",
   "bin": {
-    "workgrove": "scripts/daemon.ts"
+    "branchbase": "scripts/daemon.ts"
   },
   "exports": {
     "./config": "./src/config/public.ts"
@@ -25,8 +25,11 @@
     "LICENSE"
   ],
   "keywords": [
+    "branchbase",
+    "developer-tools",
     "git",
-    "worktree",
+    "git-worktrees",
+    "local-development",
     "development",
     "ports",
     "dev-server"
@@ -43,9 +46,9 @@
     "dev": "bun dev/server.ts",
     "lint": "bunx ultracite@7.4.3 check",
     "prepack": "bun run build",
-    "schema:generate": "bun scripts/generate-config-schema.ts && bunx biome format --write schema/workgrove.schema.json",
+    "schema:generate": "bun scripts/generate-config-schema.ts && bunx biome format --write schema/branchbase.schema.json",
     "test": "bun test ./dev ./src/client ./src/codex ./src/commands ./src/config ./src/controller ./src/runtime ./src/server",
-    "test:integration": "bun test --path-ignore-patterns=__workgrove_no_ignored_tests__ ./src/integration/portless-routing.test.ts",
+    "test:integration": "bun test --path-ignore-patterns=__branchbase_no_ignored_tests__ ./src/integration/portless-routing.test.ts",
     "test:pack": "bun scripts/test-packed-artifact.ts",
     "test:types": "tsc --noEmit"
   },

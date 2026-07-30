@@ -61,7 +61,7 @@ export function DeleteWorktreeDialog({
         </AlertDialogHeader>
         <code className="path-callout">{worktree.path}</code>
         <p className="hint text-xs/relaxed">
-          Git will refuse if the worktree has uncommitted changes. Branchbase
+          Git will refuse if the worktree has uncommitted changes. BranchBase
           never forces removal.
         </p>
         {error ? <p className="field-error">{error}</p> : null}

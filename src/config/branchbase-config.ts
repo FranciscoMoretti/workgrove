@@ -9,56 +9,56 @@ import {
 import { join } from "node:path";
 
 import { z } from "zod";
-import type { WorkgroveCommand } from "./workgrove-command";
+import type { BranchBaseCommand } from "./branchbase-command";
 import {
-  cloneWorkgroveConfig,
-  type WorkgroveAppGroup,
-  type WorkgroveConfig,
-  WorkgroveConfigSchema,
-} from "./workgrove-schema";
+  type BranchBaseAppGroup,
+  type BranchBaseConfig,
+  BranchBaseConfigSchema,
+  cloneBranchBaseConfig,
+} from "./branchbase-schema";
 import {
   type ResolvedTemplateApp,
-  renderWorkgroveTemplate,
-} from "./workgrove-template";
+  renderBranchBaseTemplate,
+} from "./branchbase-template";
 
 // biome-ignore lint/performance/noBarrelFile: preserve the package's internal config-module exports.
 export {
-  type WorkgroveApp,
-  type WorkgroveAppGroup,
-  WorkgroveAppGroupNameSchema,
-  WorkgroveAppGroupSchema,
-  WorkgroveAppIdSchema,
-  WorkgroveAppSchema,
-  type WorkgroveConfig,
-  WorkgroveConfigSchema,
-  WorkgroveEnvironmentNameSchema,
+  type BranchBaseApp,
+  type BranchBaseAppGroup,
+  BranchBaseAppGroupNameSchema,
+  BranchBaseAppGroupSchema,
+  BranchBaseAppIdSchema,
+  BranchBaseAppSchema,
+  type BranchBaseConfig,
+  BranchBaseConfigSchema,
+  BranchBaseEnvironmentNameSchema,
   type WorktreeEnvConfig,
-} from "./workgrove-schema";
+} from "./branchbase-schema";
 
-export type ResolvedWorkgroveApp = ResolvedTemplateApp;
+export type ResolvedBranchBaseApp = ResolvedTemplateApp;
 
-export interface ResolvedWorkgroveAppGroup {
-  apps: Record<string, ResolvedWorkgroveApp>;
+export interface ResolvedBranchBaseAppGroup {
+  apps: Record<string, ResolvedBranchBaseApp>;
   id: string;
 }
 
-export type ResolvedWorkgroveAppGroups = Record<
+export type ResolvedBranchBaseAppGroups = Record<
   string,
-  ResolvedWorkgroveAppGroup
+  ResolvedBranchBaseAppGroup
 >;
 
-export interface ResolvedWorkgroveCommand {
+export interface ResolvedBranchBaseCommand {
   argv: string[];
   cwd?: string;
   env: Record<string, string>;
 }
 
-export interface WorkgroveConfigDocument {
-  config: WorkgroveConfig;
+export interface BranchBaseConfigDocument {
+  config: BranchBaseConfig;
   revision: string;
 }
 
-function group(config: WorkgroveConfig, groupId: string): WorkgroveAppGroup {
+function group(config: BranchBaseConfig, groupId: string): BranchBaseAppGroup {
   const value = config.appGroups[groupId];
   if (!value) {
     throw new Error(`Unknown App group "${groupId}"`);
@@ -66,15 +66,15 @@ function group(config: WorkgroveConfig, groupId: string): WorkgroveAppGroup {
   return value;
 }
 
-export function workgroveCommandEnvironment(
-  config: WorkgroveConfig,
+export function branchbaseCommandEnvironment(
+  config: BranchBaseConfig,
   groupId: string,
-  appGroups: ResolvedWorkgroveAppGroups
+  appGroups: ResolvedBranchBaseAppGroups
 ): Record<string, string> {
   return Object.fromEntries(
     Object.entries(group(config, groupId).env ?? {}).map(([name, template]) => [
       name,
-      renderWorkgroveTemplate(template, {
+      renderBranchBaseTemplate(template, {
         appGroups,
         currentGroup: groupId,
       }),
@@ -82,8 +82,8 @@ export function workgroveCommandEnvironment(
   );
 }
 
-export function findWorkgroveConfig(root: string): string | null {
-  const path = join(root, ".workgrove.json");
+export function findBranchBaseConfig(root: string): string | null {
+  const path = join(root, ".branchbase.json");
   return existsSync(path) ? path : null;
 }
 
@@ -91,35 +91,35 @@ function contentRevision(content: string): string {
   return createHash("sha256").update(content).digest("base64url");
 }
 
-export function loadWorkgroveConfigDocument(
+export function loadBranchBaseConfigDocument(
   path: string
-): WorkgroveConfigDocument {
+): BranchBaseConfigDocument {
   const content = readFileSync(path, "utf8");
-  const result = WorkgroveConfigSchema.safeParse(JSON.parse(content));
+  const result = BranchBaseConfigSchema.safeParse(JSON.parse(content));
   if (!result.success) {
     throw new Error(
-      `Invalid Workgrove config: ${z.prettifyError(result.error)}`
+      `Invalid BranchBase config: ${z.prettifyError(result.error)}`
     );
   }
   return { config: result.data, revision: contentRevision(content) };
 }
 
-export function loadWorkgroveConfig(path: string): WorkgroveConfig {
-  return loadWorkgroveConfigDocument(path).config;
+export function loadBranchBaseConfig(path: string): BranchBaseConfig {
+  return loadBranchBaseConfigDocument(path).config;
 }
 
-export function updateWorkgroveConfig(
+export function updateBranchBaseConfig(
   configPath: string,
-  config: WorkgroveConfig,
+  config: BranchBaseConfig,
   expectedRevision: string
-): WorkgroveConfigDocument {
+): BranchBaseConfigDocument {
   const currentContent = readFileSync(configPath, "utf8");
   if (contentRevision(currentContent) !== expectedRevision) {
     throw new Error(
       "The configuration changed on disk. Reload it before saving your changes."
     );
   }
-  const validated = WorkgroveConfigSchema.parse(cloneWorkgroveConfig(config));
+  const validated = BranchBaseConfigSchema.parse(cloneBranchBaseConfig(config));
   const content = `${JSON.stringify(validated, null, 2)}\n`;
   const temporaryPath = `${configPath}.tmp-${process.pid}-${Date.now()}`;
   writeFileSync(temporaryPath, content, { flag: "wx" });
@@ -133,26 +133,26 @@ export function updateWorkgroveConfig(
 }
 
 function resolveCommand(
-  config: WorkgroveConfig,
+  config: BranchBaseConfig,
   groupId: string,
-  command: WorkgroveCommand,
-  appGroups: ResolvedWorkgroveAppGroups
-): ResolvedWorkgroveCommand {
+  command: BranchBaseCommand,
+  appGroups: ResolvedBranchBaseAppGroups
+): ResolvedBranchBaseCommand {
   const context = { appGroups, currentGroup: groupId };
   return {
     argv: command.argv.map((argument) =>
-      renderWorkgroveTemplate(argument, context)
+      renderBranchBaseTemplate(argument, context)
     ),
     ...(command.cwd ? { cwd: command.cwd } : {}),
-    env: workgroveCommandEnvironment(config, groupId, appGroups),
+    env: branchbaseCommandEnvironment(config, groupId, appGroups),
   };
 }
 
 export function resolveStartCommand(
-  config: WorkgroveConfig,
+  config: BranchBaseConfig,
   groupId: string,
-  appGroups: ResolvedWorkgroveAppGroups
-): ResolvedWorkgroveCommand {
+  appGroups: ResolvedBranchBaseAppGroups
+): ResolvedBranchBaseCommand {
   return resolveCommand(
     config,
     groupId,
@@ -162,10 +162,10 @@ export function resolveStartCommand(
 }
 
 export function resolveStopCommand(
-  config: WorkgroveConfig,
+  config: BranchBaseConfig,
   groupId: string,
-  appGroups: ResolvedWorkgroveAppGroups
-): ResolvedWorkgroveCommand | null {
+  appGroups: ResolvedBranchBaseAppGroups
+): ResolvedBranchBaseCommand | null {
   const stop = group(config, groupId).stop;
   return stop === "process"
     ? null
@@ -173,8 +173,8 @@ export function resolveStopCommand(
 }
 
 export function resolveSetupCommand(
-  config: WorkgroveConfig
-): ResolvedWorkgroveCommand {
+  config: BranchBaseConfig
+): ResolvedBranchBaseCommand {
   return {
     argv: [...config.setup.argv],
     ...(config.setup.cwd ? { cwd: config.setup.cwd } : {}),

@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { basename, join } from "node:path";
+import { CodexContextStore } from "../codex/branchbase-context";
 import {
   CodexHookActivityStore,
   type CodexHookObservation,
@@ -12,7 +13,6 @@ import {
   projectCodexIntegration,
 } from "../codex/codex-integration";
 import { CodexTaskDiscoveryAdapter } from "../codex/codex-task-discovery";
-import { CodexContextStore } from "../codex/workgrove-context";
 import { clearLogs } from "../commands/clear-logs";
 import { createAppGroupInstance } from "../commands/create-app-group-instance";
 import { createWorktree } from "../commands/create-worktree";
@@ -31,21 +31,21 @@ import { stopAllApps } from "../commands/stop-all-apps";
 import { stopApps } from "../commands/stop-apps";
 import { trustRepository } from "../commands/trust-repository";
 import { updateRepositoryConfig } from "../commands/update-repository-config";
+import type { BranchBaseCommand } from "../config/branchbase-command";
+import {
+  findBranchBaseConfig,
+  loadBranchBaseConfig,
+  loadBranchBaseConfigDocument,
+  resolveSetupCommand,
+  updateBranchBaseConfig,
+  type WorktreeEnvConfig,
+} from "../config/branchbase-config";
+import type { BranchBaseConfig } from "../config/branchbase-schema";
 import {
   repositoryIsTrusted,
   repositoryRequiresTrust,
   trustRepository as saveRepositoryTrust,
 } from "../config/repository-trust";
-import type { WorkgroveCommand } from "../config/workgrove-command";
-import {
-  findWorkgroveConfig,
-  loadWorkgroveConfig,
-  loadWorkgroveConfigDocument,
-  resolveSetupCommand,
-  updateWorkgroveConfig,
-  type WorktreeEnvConfig,
-} from "../config/workgrove-config";
-import type { WorkgroveConfig } from "../config/workgrove-schema";
 import {
   type DiscoveredWorktree,
   parseWorktreeList,
@@ -54,7 +54,7 @@ import {
   type LocalRoutingEngine,
   PortlessRoutingEngine,
 } from "../runtime/local-routing";
-import { FileWorkgroveStateStore } from "../runtime/local-state";
+import { FileBranchBaseStateStore } from "../runtime/local-state";
 import { inspectListeningPorts } from "../runtime/ports";
 import {
   ProcessSupervisor,
@@ -62,11 +62,11 @@ import {
 } from "../runtime/process-supervisor";
 import { AppGroupRuntime, type AppGroupTarget } from "./app-group-runtime";
 import {
+  type BranchBaseCommandInput,
+  type BranchBaseCommandName,
+  type BranchBaseCommandResult,
   parseCommandInput,
   parseCommandResult,
-  type WorkgroveCommandInput,
-  type WorkgroveCommandName,
-  type WorkgroveCommandResult,
 } from "./command-contract";
 import { initializeRepository as initializeRepositoryConfig } from "./repository-initializer";
 import {
@@ -80,7 +80,7 @@ type CommandHandler = (
   input: Record<string, unknown>
 ) => unknown;
 
-const COMMAND_HANDLERS: Record<WorkgroveCommandName, CommandHandler> = {
+const COMMAND_HANDLERS: Record<BranchBaseCommandName, CommandHandler> = {
   "clear-logs": clearLogs,
   "create-app-group-instance": createAppGroupInstance,
   "create-worktree": createWorktree,
@@ -142,7 +142,7 @@ function resolveWorktrees(repositoryRoot: string): ResolvedWorktree[] {
     });
 }
 
-function commandSummary(label: string, command: WorkgroveCommand): string {
+function commandSummary(label: string, command: BranchBaseCommand): string {
   return `${label}: ${command.argv.join(" ")}`;
 }
 
@@ -158,7 +158,7 @@ function worktreeSetupState(
   return processes.managedFailure(processId) ? "failed" : "idle";
 }
 
-function primaryAppGroup(config: WorkgroveConfig): string {
+function primaryAppGroup(config: BranchBaseConfig): string {
   const entries = Object.entries(config.appGroups);
   return (
     entries.find(([, group]) => group.stop === "process")?.[0] ?? entries[0][0]
@@ -182,7 +182,7 @@ export interface WorkspaceControllerRuntimeOptions {
   developmentStartPreflight?: DevelopmentStartPreflight;
   processes?: ProcessSupervisor;
   routing?: LocalRoutingEngine;
-  state?: FileWorkgroveStateStore;
+  state?: FileBranchBaseStateStore;
 }
 
 export type DevelopmentStartPreflight = (
@@ -210,7 +210,7 @@ export class WorkspaceController {
   >();
   private readonly processes: ProcessSupervisor;
   private readonly routing: LocalRoutingEngine;
-  private readonly state: FileWorkgroveStateStore;
+  private readonly state: FileBranchBaseStateStore;
 
   constructor(
     codexAdapter: CodexIntegrationAdapter = new CodexTaskDiscoveryAdapter(),
@@ -222,7 +222,7 @@ export class WorkspaceController {
     this.developmentStartPreflight = runtime.developmentStartPreflight;
     this.processes = runtime.processes ?? new ProcessSupervisor();
     this.routing = runtime.routing ?? new PortlessRoutingEngine();
-    this.state = runtime.state ?? new FileWorkgroveStateStore();
+    this.state = runtime.state ?? new FileBranchBaseStateStore();
     this.appGroups = new AppGroupRuntime(
       this.processes,
       this.routing,
@@ -315,28 +315,28 @@ export class WorkspaceController {
     }
   }
 
-  async execute<Name extends WorkgroveCommandName>(
+  async execute<Name extends BranchBaseCommandName>(
     command: Name,
     input: unknown
-  ): Promise<WorkgroveCommandResult<Name>> {
+  ): Promise<BranchBaseCommandResult<Name>> {
     const handler = COMMAND_HANDLERS[command];
     const parsed = parseCommandInput(command, input);
     const result = await handler(
       this,
-      parsed as WorkgroveCommandInput<Name> & Record<string, unknown>
+      parsed as BranchBaseCommandInput<Name> & Record<string, unknown>
     );
     return parseCommandResult(command, result);
   }
 
   inspect(repoPath: string): WorkspaceSnapshot {
     const selectedRoot = git(repoPath, ["rev-parse", "--show-toplevel"]);
-    const configPath = findWorkgroveConfig(selectedRoot);
+    const configPath = findBranchBaseConfig(selectedRoot);
     if (!configPath) {
       throw new MissingWorktreeConfigError(
-        join(selectedRoot, ".workgrove.json")
+        join(selectedRoot, ".branchbase.json")
       );
     }
-    const configDocument = loadWorkgroveConfigDocument(configPath);
+    const configDocument = loadBranchBaseConfigDocument(configPath);
     const config = configDocument.config;
     const discovered = resolveWorktrees(selectedRoot);
     if (discovered.length === 0) {
@@ -465,16 +465,16 @@ export class WorkspaceController {
 
   config(repoPath: string): WorktreeEnvConfig {
     const root = git(repoPath, ["rev-parse", "--show-toplevel"]);
-    const path = findWorkgroveConfig(root);
+    const path = findBranchBaseConfig(root);
     if (!path) {
-      throw new MissingWorktreeConfigError(join(root, ".workgrove.json"));
+      throw new MissingWorktreeConfigError(join(root, ".branchbase.json"));
     }
-    return loadWorkgroveConfig(path);
+    return loadBranchBaseConfig(path);
   }
 
   updateConfiguration(
     repoPath: string,
-    config: WorkgroveConfig,
+    config: BranchBaseConfig,
     revision: string
   ): void {
     const workspace = this.inspect(repoPath);
@@ -491,7 +491,7 @@ export class WorkspaceController {
         "Stop repository App groups and setup processes before changing their configuration."
       );
     }
-    updateWorkgroveConfig(workspace.configPath, config, revision);
+    updateBranchBaseConfig(workspace.configPath, config, revision);
   }
 
   assertTrusted(repoPath: string): void {
@@ -564,7 +564,7 @@ export class WorkspaceController {
     const setup = resolveSetupCommand(workspace.config);
     this.processes.appendManagedLog(
       worktree.id,
-      `[workgrove] Running setup: ${setup.argv.join(" ")}`
+      `[branchbase] Running setup: ${setup.argv.join(" ")}`
     );
     this.processes.startManagedProcess({
       argv: setup.argv,
@@ -636,7 +636,7 @@ export class WorkspaceController {
       worktreePaths = resolveWorktrees(selectedRoot).map(({ path }) => path);
     } catch (error) {
       throw new Error(
-        `Could not resolve Workgrove worktrees for "${repoPath}": ${
+        `Could not resolve BranchBase worktrees for "${repoPath}": ${
           error instanceof Error ? error.message : String(error)
         }`,
         { cause: error }
@@ -654,11 +654,11 @@ export class WorkspaceController {
   private codexEnabledWorktree(path: string): boolean {
     try {
       const root = realpathSync(path);
-      const configPath = findWorkgroveConfig(root);
+      const configPath = findBranchBaseConfig(root);
       if (!configPath) {
         return false;
       }
-      loadWorkgroveConfigDocument(configPath);
+      loadBranchBaseConfigDocument(configPath);
       return true;
     } catch {
       return false;

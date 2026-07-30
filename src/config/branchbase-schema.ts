@@ -1,14 +1,14 @@
 import { z } from "zod";
 
-import { WorkgroveCommandSchema } from "./workgrove-command";
-import { workgroveTemplateError } from "./workgrove-template";
+import { BranchBaseCommandSchema } from "./branchbase-command";
+import { branchbaseTemplateError } from "./branchbase-template";
 
-export const MIN_WORKGROVE_PORT = 1024;
-export const MAX_WORKGROVE_PORT = 65_535;
+export const MIN_BRANCHBASE_PORT = 1024;
+export const MAX_BRANCHBASE_PORT = 65_535;
 
-export const WorkgroveAppGroupNameSchema = z.string().min(1);
-export const WorkgroveAppIdSchema = z.string().min(1);
-export const WorkgroveEnvironmentNameSchema = z
+export const BranchBaseAppGroupNameSchema = z.string().min(1);
+export const BranchBaseAppIdSchema = z.string().min(1);
+export const BranchBaseEnvironmentNameSchema = z
   .string()
   .regex(/^[A-Za-z_][A-Za-z0-9_]*$/);
 
@@ -32,65 +32,65 @@ const HttpReadinessSchema = z.strictObject({
   type: z.literal("http"),
 });
 
-export const WorkgroveReadinessSchema = z.union([
+export const BranchBaseReadinessSchema = z.union([
   z.literal("tcp"),
   HttpReadinessSchema,
 ]);
 
-export const WorkgroveAppSchema = z.strictObject({
+export const BranchBaseAppSchema = z.strictObject({
   name: z.string().min(1).optional(),
   protocol: z.enum(["http", "tcp"]),
-  readiness: WorkgroveReadinessSchema.default("tcp"),
+  readiness: BranchBaseReadinessSchema.default("tcp"),
 });
 
-export type WorkgroveApp = z.infer<typeof WorkgroveAppSchema>;
+export type BranchBaseApp = z.infer<typeof BranchBaseAppSchema>;
 
-export const WorkgroveAppGroupStopSchema = z.union([
+export const BranchBaseAppGroupStopSchema = z.union([
   z.literal("process"),
-  WorkgroveCommandSchema,
+  BranchBaseCommandSchema,
 ]);
 
-export const WorkgroveAppGroupInstancesSchema = z.discriminatedUnion("mode", [
+export const BranchBaseAppGroupInstancesSchema = z.discriminatedUnion("mode", [
   z.strictObject({ mode: z.literal("per-worktree") }),
   z.strictObject({ mode: z.literal("selectable") }),
 ]);
 
-export const WorkgroveAppGroupSchema = z.strictObject({
-  instances: WorkgroveAppGroupInstancesSchema.default({
+export const BranchBaseAppGroupSchema = z.strictObject({
+  instances: BranchBaseAppGroupInstancesSchema.default({
     mode: "per-worktree",
   }),
   name: z.string().min(1).optional(),
-  start: WorkgroveCommandSchema,
-  stop: WorkgroveAppGroupStopSchema,
-  env: z.record(WorkgroveEnvironmentNameSchema, z.string()).optional(),
-  apps: z.record(WorkgroveAppIdSchema, WorkgroveAppSchema),
+  start: BranchBaseCommandSchema,
+  stop: BranchBaseAppGroupStopSchema,
+  env: z.record(BranchBaseEnvironmentNameSchema, z.string()).optional(),
+  apps: z.record(BranchBaseAppIdSchema, BranchBaseAppSchema),
 });
 
-export type WorkgroveAppGroup = z.infer<typeof WorkgroveAppGroupSchema>;
+export type BranchBaseAppGroup = z.infer<typeof BranchBaseAppGroupSchema>;
 
-const WorkgroveConfigObjectSchema = z.strictObject({
+const BranchBaseConfigObjectSchema = z.strictObject({
   $schema: z.string().optional(),
   version: z.literal(1),
-  setup: WorkgroveCommandSchema,
-  appGroups: z.record(WorkgroveAppGroupNameSchema, WorkgroveAppGroupSchema),
+  setup: BranchBaseCommandSchema,
+  appGroups: z.record(BranchBaseAppGroupNameSchema, BranchBaseAppGroupSchema),
 });
 
-type WorkgroveConfigShape = z.infer<typeof WorkgroveConfigObjectSchema>;
+type BranchBaseConfigShape = z.infer<typeof BranchBaseConfigObjectSchema>;
 
-export const WorkgroveConfigSchema = WorkgroveConfigObjectSchema.superRefine(
-  validateWorkgroveConfig
+export const BranchBaseConfigSchema = BranchBaseConfigObjectSchema.superRefine(
+  validateBranchBaseConfig
 );
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: keep schema issues colocated with their exact JSON paths.
-function validateWorkgroveConfig(
-  config: WorkgroveConfigShape,
+function validateBranchBaseConfig(
+  config: BranchBaseConfigShape,
   context: z.RefinementCtx
 ): void {
   const groups = Object.entries(config.appGroups);
   if (groups.length === 0) {
     context.addIssue({
       code: "custom",
-      message: "Workgrove config requires at least one App group",
+      message: "BranchBase config requires at least one App group",
       path: ["appGroups"],
     });
     return;
@@ -116,7 +116,11 @@ function validateWorkgroveConfig(
       }
     }
     for (const [name, template] of Object.entries(group.env ?? {})) {
-      const error = workgroveTemplateError(template, config.appGroups, groupId);
+      const error = branchbaseTemplateError(
+        template,
+        config.appGroups,
+        groupId
+      );
       if (error) {
         context.addIssue({
           code: "custom",
@@ -126,7 +130,11 @@ function validateWorkgroveConfig(
       }
     }
     for (const [index, argument] of group.start.argv.entries()) {
-      const error = workgroveTemplateError(argument, config.appGroups, groupId);
+      const error = branchbaseTemplateError(
+        argument,
+        config.appGroups,
+        groupId
+      );
       if (error) {
         context.addIssue({
           code: "custom",
@@ -137,7 +145,7 @@ function validateWorkgroveConfig(
     }
     if (group.stop !== "process") {
       for (const [index, argument] of group.stop.argv.entries()) {
-        const error = workgroveTemplateError(
+        const error = branchbaseTemplateError(
           argument,
           config.appGroups,
           groupId
@@ -154,9 +162,11 @@ function validateWorkgroveConfig(
   }
 }
 
-export type WorkgroveConfig = z.infer<typeof WorkgroveConfigSchema>;
-export type WorktreeEnvConfig = WorkgroveConfig;
+export type BranchBaseConfig = z.infer<typeof BranchBaseConfigSchema>;
+export type WorktreeEnvConfig = BranchBaseConfig;
 
-export function cloneWorkgroveConfig(config: WorkgroveConfig): WorkgroveConfig {
+export function cloneBranchBaseConfig(
+  config: BranchBaseConfig
+): BranchBaseConfig {
   return structuredClone(config);
 }

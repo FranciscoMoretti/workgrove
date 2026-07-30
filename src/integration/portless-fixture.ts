@@ -6,17 +6,17 @@ import { dirname, join } from "node:path";
 
 import { CodexHookActivityStore } from "../codex/codex-hook-activity";
 import { UnavailableCodexIntegrationAdapter } from "../codex/codex-integration";
-import type { WorkgroveConfig } from "../config/workgrove-schema";
+import type { BranchBaseConfig } from "../config/branchbase-schema";
 import { WorkspaceController } from "../controller/workspace-controller";
 import type { AppEndpointSnapshot } from "../controller/workspace-snapshot";
 import { PortlessRoutingEngine } from "../runtime/local-routing";
-import { FileWorkgroveStateStore } from "../runtime/local-state";
+import { FileBranchBaseStateStore } from "../runtime/local-state";
 import { ProcessSupervisor } from "../runtime/process-supervisor";
 import { reserveBackingPort } from "../runtime/readiness";
 
 const require = createRequire(import.meta.url);
 
-export const integrationConfig: WorkgroveConfig = {
+export const integrationConfig: BranchBaseConfig = {
   version: 1,
   setup: { argv: ["true"] },
   appGroups: {
@@ -144,7 +144,7 @@ export class PortlessIntegrationFixture {
     );
     for (let attempt = 0; attempt < 10; attempt += 1) {
       const sandbox = realpathSync(
-        mkdtempSync(join(tmpdir(), "workgrove-portless-integration-"))
+        mkdtempSync(join(tmpdir(), "branchbase-portless-integration-"))
       );
       const reservation = await reserveBackingPort();
       const proxyPort = reservation.port;
@@ -202,20 +202,20 @@ export class PortlessIntegrationFixture {
       codexHooks: new CodexHookActivityStore({ persist: false }),
       processes: new ProcessSupervisor(this.controlDirectory),
       routing: this.routing,
-      state: new FileWorkgroveStateStore(this.statePath),
+      state: new FileBranchBaseStateStore(this.statePath),
     });
   }
 
   private initializeRepository(): void {
     run(this.sandbox, "git", ["init", "-q", this.root]);
-    run(this.root, "git", ["config", "user.email", "test@workgrove.local"]);
+    run(this.root, "git", ["config", "user.email", "test@branchbase.local"]);
     run(this.root, "git", [
       "config",
       "user.name",
-      "Workgrove Integration Test",
+      "BranchBase Integration Test",
     ]);
     writeFileSync(
-      join(this.root, ".workgrove.json"),
+      join(this.root, ".branchbase.json"),
       `${JSON.stringify(integrationConfig, null, 2)}\n`
     );
     writeFileSync(

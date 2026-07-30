@@ -2,12 +2,12 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { workgroveJsonSchema } from "./workgrove-json-schema";
+import { branchbaseJsonSchema } from "./branchbase-json-schema";
 import {
-  cloneWorkgroveConfig,
-  type WorkgroveConfig,
-  WorkgroveConfigSchema,
-} from "./workgrove-schema";
+  type BranchBaseConfig,
+  BranchBaseConfigSchema,
+  cloneBranchBaseConfig,
+} from "./branchbase-schema";
 
 const validConfig = {
   version: 1,
@@ -43,11 +43,11 @@ const validConfig = {
       apps: { database: { protocol: "tcp", readiness: "tcp" } },
     },
   },
-} satisfies WorkgroveConfig;
+} satisfies BranchBaseConfig;
 
-describe("shared Workgrove schema", () => {
+describe("shared BranchBase schema", () => {
   it("accepts slot-free Apps with app-group environments", () => {
-    const parsed = WorkgroveConfigSchema.parse(validConfig);
+    const parsed = BranchBaseConfigSchema.parse(validConfig);
     expect(parsed.appGroups.development.env).toEqual({
       API_URL: "{apps.api.url}",
       WEB_PORT: "{apps.web.port}",
@@ -56,7 +56,7 @@ describe("shared Workgrove schema", () => {
   });
 
   it("accepts process and command Stop strategies", () => {
-    expect(WorkgroveConfigSchema.parse(validConfig)).toEqual({
+    expect(BranchBaseConfigSchema.parse(validConfig)).toEqual({
       ...validConfig,
       appGroups: {
         ...validConfig.appGroups,
@@ -79,14 +79,15 @@ describe("shared Workgrove schema", () => {
 
   it("requires setup and at least one App group with one App", () => {
     expect(
-      WorkgroveConfigSchema.safeParse({ ...validConfig, setup: undefined })
+      BranchBaseConfigSchema.safeParse({ ...validConfig, setup: undefined })
         .success
     ).toBe(false);
     expect(
-      WorkgroveConfigSchema.safeParse({ ...validConfig, appGroups: {} }).success
+      BranchBaseConfigSchema.safeParse({ ...validConfig, appGroups: {} })
+        .success
     ).toBe(false);
     expect(
-      WorkgroveConfigSchema.safeParse({
+      BranchBaseConfigSchema.safeParse({
         ...validConfig,
         appGroups: {
           empty: {
@@ -102,12 +103,12 @@ describe("shared Workgrove schema", () => {
   it("rejects invalid references and accepts cross-group instance references", () => {
     const unknown = structuredClone(validConfig);
     unknown.appGroups.development.env.WEB_PORT = "{apps.missing.port}";
-    expect(WorkgroveConfigSchema.safeParse(unknown).success).toBe(false);
+    expect(BranchBaseConfigSchema.safeParse(unknown).success).toBe(false);
 
     const crossGroup = structuredClone(validConfig);
     crossGroup.appGroups.development.env.WEB_PORT =
       "{appGroups.services.apps.database.port}";
-    expect(WorkgroveConfigSchema.safeParse(crossGroup).success).toBe(true);
+    expect(BranchBaseConfigSchema.safeParse(crossGroup).success).toBe(true);
   });
 
   it("keeps TCP Apps off HTTP readiness", () => {
@@ -118,14 +119,14 @@ describe("shared Workgrove schema", () => {
       timeoutSeconds: 60,
       type: "http",
     } as never;
-    expect(WorkgroveConfigSchema.safeParse(invalid).success).toBe(false);
+    expect(BranchBaseConfigSchema.safeParse(invalid).success).toBe(false);
   });
 
   it("rejects reversed and out-of-range HTTP status ranges", () => {
     for (const statuses of ["399-200", "099-200", "200-600"]) {
       const invalid = structuredClone(validConfig);
       invalid.appGroups.development.apps.web.readiness.statuses = statuses;
-      expect(WorkgroveConfigSchema.safeParse(invalid).success).toBe(false);
+      expect(BranchBaseConfigSchema.safeParse(invalid).success).toBe(false);
     }
   });
 
@@ -135,15 +136,15 @@ describe("shared Workgrove schema", () => {
       "..",
       "..",
       "schema",
-      "workgrove.schema.json"
+      "branchbase.schema.json"
     );
     expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(
-      workgroveJsonSchema()
+      branchbaseJsonSchema()
     );
   });
 
   it("publishes defaults as optional JSON Schema inputs", () => {
-    const schema = JSON.stringify(workgroveJsonSchema());
+    const schema = JSON.stringify(branchbaseJsonSchema());
     expect(schema).not.toContain('"required":["protocol","readiness"]');
     expect(schema).not.toContain(
       '"required":["path","statuses","timeoutSeconds","type"]'
@@ -151,8 +152,8 @@ describe("shared Workgrove schema", () => {
   });
 
   it("clones to an independent configuration value", () => {
-    const parsed = WorkgroveConfigSchema.parse(validConfig);
-    const clone = cloneWorkgroveConfig(parsed);
+    const parsed = BranchBaseConfigSchema.parse(validConfig);
+    const clone = cloneBranchBaseConfig(parsed);
     expect(clone).toEqual(parsed);
     expect(clone).not.toBe(parsed);
   });

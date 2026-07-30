@@ -119,8 +119,8 @@ export function Onboarding({
             </EmptyMedia>
             <CardTitle>Open a repository</CardTitle>
             <CardDescription>
-              Branchbase discovers existing worktrees from{" "}
-              <code>.workgrove.json</code>, or helps you review a safe starter
+              BranchBase discovers existing worktrees from{" "}
+              <code>.branchbase.json</code>, or helps you review a safe starter
               configuration.
             </CardDescription>
           </CardHeader>

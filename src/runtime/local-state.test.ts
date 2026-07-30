@@ -3,12 +3,12 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { FileWorkgroveStateStore } from "./local-state";
+import { FileBranchBaseStateStore } from "./local-state";
 
 const COLLISION_SAFE_HOSTNAME = /^web-[a-f0-9]{6}\.main\.chat-js\.localhost$/;
 
 function request(
-  overrides: Partial<Parameters<FileWorkgroveStateStore["instance"]>[0]> = {}
+  overrides: Partial<Parameters<FileBranchBaseStateStore["instance"]>[0]> = {}
 ) {
   return {
     groupId: "development",
@@ -21,9 +21,9 @@ function request(
   };
 }
 
-describe("Workgrove local App-group instance state", () => {
+describe("BranchBase local App-group instance state", () => {
   it("rejects structurally invalid persisted state", () => {
-    const directory = mkdtempSync(join(tmpdir(), "workgrove-state-"));
+    const directory = mkdtempSync(join(tmpdir(), "branchbase-state-"));
     try {
       const statePath = join(directory, "state.json");
       writeFileSync(
@@ -43,18 +43,18 @@ describe("Workgrove local App-group instance state", () => {
       );
 
       expect(() =>
-        new FileWorkgroveStateStore(statePath).instance(request())
-      ).toThrow("Invalid Workgrove local state");
+        new FileBranchBaseStateStore(statePath).instance(request())
+      ).toThrow("Invalid BranchBase local state");
     } finally {
       rmSync(directory, { force: true, recursive: true });
     }
   });
 
   it("creates one stable instance and Friendly hostname per worktree", () => {
-    const directory = mkdtempSync(join(tmpdir(), "workgrove-state-"));
+    const directory = mkdtempSync(join(tmpdir(), "branchbase-state-"));
     try {
       const statePath = join(directory, "state.json");
-      const firstStore = new FileWorkgroveStateStore(statePath);
+      const firstStore = new FileBranchBaseStateStore(statePath);
       const instance = firstStore.instance(request());
       const first = firstStore.endpoint({
         appId: "web",
@@ -63,7 +63,7 @@ describe("Workgrove local App-group instance state", () => {
         instanceId: instance.id,
         repoPath: "/code/one/chat-js",
       });
-      const restoredStore = new FileWorkgroveStateStore(statePath);
+      const restoredStore = new FileBranchBaseStateStore(statePath);
       const restoredInstance = restoredStore.instance(
         request({ worktreeLabel: "renamed-main" })
       );
@@ -84,9 +84,9 @@ describe("Workgrove local App-group instance state", () => {
   });
 
   it("shares selectable instances and lets one worktree select a secondary instance", () => {
-    const directory = mkdtempSync(join(tmpdir(), "workgrove-state-"));
+    const directory = mkdtempSync(join(tmpdir(), "branchbase-state-"));
     try {
-      const store = new FileWorkgroveStateStore(join(directory, "state.json"));
+      const store = new FileBranchBaseStateStore(join(directory, "state.json"));
       const mainRequest = request({
         groupId: "services",
         mode: "selectable",
@@ -119,9 +119,9 @@ describe("Workgrove local App-group instance state", () => {
   });
 
   it("reserves the automatic selectable instance name", () => {
-    const directory = mkdtempSync(join(tmpdir(), "workgrove-state-"));
+    const directory = mkdtempSync(join(tmpdir(), "branchbase-state-"));
     try {
-      const store = new FileWorkgroveStateStore(join(directory, "state.json"));
+      const store = new FileBranchBaseStateStore(join(directory, "state.json"));
       const selectable = request({
         groupId: "services",
         mode: "selectable",
@@ -137,10 +137,10 @@ describe("Workgrove local App-group instance state", () => {
   });
 
   it("persists an automatically assigned port on the instance endpoint", () => {
-    const directory = mkdtempSync(join(tmpdir(), "workgrove-state-"));
+    const directory = mkdtempSync(join(tmpdir(), "branchbase-state-"));
     try {
       const statePath = join(directory, "state.json");
-      const store = new FileWorkgroveStateStore(statePath);
+      const store = new FileBranchBaseStateStore(statePath);
       const instance = store.instance(request());
       store.endpoint({
         appId: "web",
@@ -155,7 +155,7 @@ describe("Workgrove local App-group instance state", () => {
         43_127
       );
 
-      const restored = new FileWorkgroveStateStore(statePath).instance(
+      const restored = new FileBranchBaseStateStore(statePath).instance(
         request()
       );
       expect(Object.values(restored.endpoints)[0]?.port).toBe(43_127);
@@ -166,9 +166,9 @@ describe("Workgrove local App-group instance state", () => {
   });
 
   it("keeps hostnames unique when per-worktree groups reuse an App label", () => {
-    const directory = mkdtempSync(join(tmpdir(), "workgrove-state-"));
+    const directory = mkdtempSync(join(tmpdir(), "branchbase-state-"));
     try {
-      const store = new FileWorkgroveStateStore(join(directory, "state.json"));
+      const store = new FileBranchBaseStateStore(join(directory, "state.json"));
       const first = store.instance(request({ groupId: "product" }));
       const second = store.instance(request({ groupId: "admin" }));
       const firstEndpoint = store.endpoint({
@@ -195,7 +195,7 @@ describe("Workgrove local App-group instance state", () => {
   });
 
   it("persists v1 migration before returning generated instance identities", () => {
-    const directory = mkdtempSync(join(tmpdir(), "workgrove-state-"));
+    const directory = mkdtempSync(join(tmpdir(), "branchbase-state-"));
     try {
       const statePath = join(directory, "state.json");
       writeFileSync(
@@ -229,7 +229,7 @@ describe("Workgrove local App-group instance state", () => {
         })
       );
 
-      const store = new FileWorkgroveStateStore(statePath);
+      const store = new FileBranchBaseStateStore(statePath);
       const instance = store.instance(request());
       expect(
         store.endpoint({

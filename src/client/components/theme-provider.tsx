@@ -53,7 +53,7 @@ function applyTheme(theme: Theme, prefersDark: boolean) {
 export function ThemeProvider({
   children,
   defaultTheme = "system",
-  storageKey = "workgrove:theme",
+  storageKey = "branchbase:theme",
 }: ThemeProviderProps) {
   const [theme, setThemeState] = useState<Theme>(() =>
     storedTheme(storageKey, defaultTheme)

@@ -14,7 +14,7 @@ import {
   CodexIntegrationUnavailableError,
 } from "../codex/codex-integration";
 import { AppGroupLifecycleError } from "../controller/app-group-lifecycle-error";
-import { isWorkgroveCommandName } from "../controller/command-contract";
+import { isBranchBaseCommandName } from "../controller/command-contract";
 import {
   MissingWorktreeConfigError,
   WorkspaceController,
@@ -37,22 +37,22 @@ const CONTENT_TYPES: Record<string, string> = {
   ".svg": "image/svg+xml",
 };
 
-export type WorkgroveServerController = Pick<
+export type BranchBaseServerController = Pick<
   WorkspaceController,
   "close" | "execute" | "handleCodexHook" | "inspect" | "inspectCodex" | "logs"
 >;
 
-export interface WorkgroveServerOptions {
+export interface BranchBaseServerOptions {
   appRoot: string;
   codexControlDirectory?: string;
-  controller?: WorkgroveServerController;
+  controller?: BranchBaseServerController;
   development?: boolean;
   enableCodexHooks?: boolean;
   host?: string;
   port?: number;
 }
 
-export interface WorkgroveServer {
+export interface BranchBaseServer {
   close(): Promise<void>;
   listen(): Promise<string>;
 }
@@ -102,9 +102,9 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
 }
 
-export async function createWorkgroveServer(
-  options: WorkgroveServerOptions
-): Promise<WorkgroveServer> {
+export async function createBranchBaseServer(
+  options: BranchBaseServerOptions
+): Promise<BranchBaseServer> {
   const controller = options.controller ?? new WorkspaceController();
   const host = options.host ?? "127.0.0.1";
   const configuredPort = options.port ?? 3999;
@@ -128,7 +128,7 @@ export async function createWorkgroveServer(
     const origin = request.headers.origin;
     const expectedOrigin = `http://${request.headers.host}`;
     return (
-      request.headers["x-workgrove-token"] === token &&
+      request.headers["x-branchbase-token"] === token &&
       (!origin || origin === expectedOrigin)
     );
   }
@@ -141,7 +141,7 @@ export async function createWorkgroveServer(
       sendJson(response, 200, {
         ok: true,
         pid: process.pid,
-        service: "workgrove",
+        service: "branchbase",
       });
       return true;
     }
@@ -204,7 +204,7 @@ export async function createWorkgroveServer(
       sendJson(response, 415, { error: "Commands require application/json" });
       return;
     }
-    if (!isWorkgroveCommandName(command)) {
+    if (!isBranchBaseCommandName(command)) {
       sendJson(response, 404, { error: "Unknown command" });
       return;
     }
@@ -345,7 +345,7 @@ export async function createWorkgroveServer(
           server.off("error", reject);
           const address = server.address();
           if (!address || typeof address === "string") {
-            reject(new Error("Workgrove server did not bind a TCP port"));
+            reject(new Error("BranchBase server did not bind a TCP port"));
             return;
           }
           enableCodexHookBridge(address.port);

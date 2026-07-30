@@ -2,8 +2,8 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 
 import {
-  parseCurrentWorkgroveLocalState,
-  type WorkgroveLocalState,
+  type BranchBaseLocalState,
+  parseCurrentBranchBaseLocalState,
 } from "../runtime/local-state";
 import {
   inspectListeningPorts,
@@ -16,7 +16,7 @@ import {
 } from "../runtime/process-supervisor";
 
 type RecordedInstance =
-  WorkgroveLocalState["repositories"][string]["instances"][string];
+  BranchBaseLocalState["repositories"][string]["instances"][string];
 
 export interface VerifiedWorktreeRun {
   groupId: string;
@@ -76,7 +76,7 @@ export function findVerifiedWorktreeRun(
   if (!existsSync(statePath)) {
     return null;
   }
-  const state = parseCurrentWorkgroveLocalState(
+  const state = parseCurrentBranchBaseLocalState(
     JSON.parse(readFileSync(statePath, "utf8"))
   );
   const worktreePath = realpathSync(worktreePathValue);

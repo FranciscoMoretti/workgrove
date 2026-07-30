@@ -4,9 +4,9 @@ import { join } from "node:path";
 
 import { CODEX_HOOK_EVENTS } from "./codex-hook-activity";
 
-const PLUGIN_ROOT = join(import.meta.dir, "..", "..", "plugins", "workgrove");
+const PLUGIN_ROOT = join(import.meta.dir, "..", "..", "plugins", "branchbase");
 
-describe("Workgrove Codex plugin", () => {
+describe("BranchBase Codex plugin", () => {
   it("uses default hook discovery with one fixed fail-open command per event", () => {
     const manifest = JSON.parse(
       readFileSync(join(PLUGIN_ROOT, ".codex-plugin", "plugin.json"), "utf8")
@@ -25,14 +25,14 @@ describe("Workgrove Codex plugin", () => {
       expect(groups).toHaveLength(1);
       expect(groups[0].hooks).toEqual([
         {
-          command: `"\${PLUGIN_ROOT}/hooks/workgrove-hook" ${event}`,
+          command: `"\${PLUGIN_ROOT}/hooks/branchbase-hook" ${event}`,
           timeout: 2,
           type: "command",
         },
       ]);
     }
     expect(
-      statSync(join(PLUGIN_ROOT, "hooks", "workgrove-hook")).mode % 0o1000
+      statSync(join(PLUGIN_ROOT, "hooks", "branchbase-hook")).mode % 0o1000
     ).toBeGreaterThanOrEqual(0o100);
   });
 });

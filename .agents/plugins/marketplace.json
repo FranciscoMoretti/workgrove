@@ -1,14 +1,14 @@
 {
-  "name": "workgrove",
+  "name": "branchbase",
   "interface": {
-    "displayName": "Workgrove"
+    "displayName": "BranchBase"
   },
   "plugins": [
     {
-      "name": "workgrove",
+      "name": "branchbase",
       "source": {
         "source": "local",
-        "path": "./plugins/workgrove"
+        "path": "./plugins/branchbase"
       },
       "policy": {
         "installation": "AVAILABLE",

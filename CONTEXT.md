@@ -1,6 +1,6 @@
-# Workgrove
+# BranchBase
 
-Workgrove coordinates development worktrees and the app groups they expose.
+BranchBase coordinates development worktrees and the app groups they expose.
 
 ## Language
 
@@ -15,27 +15,27 @@ _Avoid_: Runtime
 An observable endpoint in an app group. An HTTP app has a stable Friendly URL backed by a worktree-specific Backing endpoint.
 
 **Friendly URL**:
-The stable local HTTP address assigned to an app, independent of the backing port selected for its worktree. Every hostname has the shape `<app>.<worktree>.<repository>.localhost`, using stable, locally unique route labels rather than mutable display names. Workgrove owns the assignment and provides the route through Portless.
+The stable local HTTP address assigned to an app, independent of the backing port selected for its worktree. Every hostname has the shape `<app>.<worktree>.<repository>.localhost`, using stable, locally unique route labels rather than mutable display names. BranchBase owns the assignment and provides the route through Portless.
 _Avoid_: Public URL, Portless URL
 
 **Backing endpoint**:
-The host and dynamically assigned port where an app process listens and to which its Friendly URL routes. Workgrove allocates all Backing endpoints for an app group before Start; they may change on every Start.
+The host and dynamically assigned port where an app process listens and to which its Friendly URL routes. BranchBase allocates all Backing endpoints for an app group before Start; they may change on every Start.
 _Avoid_: Slot URL, Real URL
 
 **Endpoint identity**:
 The opaque, locally persisted identity of a repository, worktree, app group, or app. Display names and route labels do not identify an endpoint; app-group and app logical IDs associate checked-in definitions with their local identities.
 
 **Repository environment**:
-The complete, explicit set of environment variables Workgrove constructs before launching an app group. App bindings may expose a Backing port, direct URL, or Friendly URL. Workgrove does not inject a generic `PORT` or `PORTLESS_URL` unless the repository explicitly binds one.
+The complete, explicit set of environment variables BranchBase constructs before launching an app group. App bindings may expose a Backing port, direct URL, or Friendly URL. BranchBase does not inject a generic `PORT` or `PORTLESS_URL` unless the repository explicitly binds one.
 
 **Start**:
 The app-group lifecycle action that verifies Portless, allocates every Backing endpoint, constructs the Repository environment, launches the trusted repository command, verifies app readiness, activates exact routes, and verifies them before exposing links.
 
 **Process**:
-The foreground process launched by Start and owned by Workgrove for one worktree and app group.
+The foreground process launched by Start and owned by BranchBase for one worktree and app group.
 
 **Stop**:
-The app-group lifecycle action that deactivates and verifies routes before stopping the app group with either Workgrove-owned process termination or its trusted repository Stop command, then releases Backing endpoints. A failed route deactivation does not prevent stopping, but its Backing port remains quarantined until the route is confirmed inactive.
+The app-group lifecycle action that deactivates and verifies routes before stopping the app group with either BranchBase-owned process termination or its trusted repository Stop command, then releases Backing endpoints. A failed route deactivation does not prevent stopping, but its Backing port remains quarantined until the route is confirmed inactive.
 
 **Restart**:
 The lifecycle action that completes Stop and then performs Start for the same worktree and app group.
@@ -75,11 +75,11 @@ Live task activity indicating that the observed Codex turn is paused on a permis
 Live task activity indicating that no Codex turn is currently observed in progress. It does not assert that earlier work succeeded.
 
 **Unknown**:
-Live task activity indicating that Workgrove has no sufficiently fresh lifecycle observation for the Codex task.
+Live task activity indicating that BranchBase has no sufficiently fresh lifecycle observation for the Codex task.
 
 **Codex-enabled worktree**:
-A worktree whose own root contains a valid `.workgrove.json`, allowing the Workgrove Codex plugin to report Live task activity and provide Workgrove context.
+A worktree whose own root contains a valid `.branchbase.json`, allowing the BranchBase Codex plugin to report Live task activity and provide BranchBase context.
 _Avoid_: Managed worktree
 
-**Workgrove context**:
-A concise, model-visible snapshot of Workgrove-owned preview endpoints, app-group status, readiness, route state, and process ownership for a Codex-enabled worktree.
+**BranchBase context**:
+A concise, model-visible snapshot of BranchBase-owned preview endpoints, app-group status, readiness, route state, and process ownership for a Codex-enabled worktree.
