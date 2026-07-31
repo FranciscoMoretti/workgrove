@@ -182,7 +182,10 @@ export function RepositoryWorkspace({
   const quickRepository = useRepositoryOpen(onOpenRepository);
   const selected =
     data.worktrees.find((worktree) => worktree.id === selectedId) ?? null;
-  const effectiveAppGroupId = selectedAppGroupId ?? data.primaryAppGroup;
+  const effectiveAppGroupId =
+    selectedAppGroupId ??
+    selected?.primaryAppGroup ??
+    data.projectDefaultPrimaryAppGroup;
   const selectedAppGroup =
     selected?.appGroups.find((group) => group.id === effectiveAppGroupId) ??
     null;
@@ -191,6 +194,8 @@ export function RepositoryWorkspace({
     : null;
   const logs = useLogs(repoPath, selectedId, effectiveAppGroupId);
   const repositoryTrust = useRepositoryTrust({
+    approval: { fingerprint: data.trustFingerprint },
+    commands: data.trustCommands,
     repoPath,
     required: data.trustRequired,
     trusted: data.trusted,
@@ -207,7 +212,6 @@ export function RepositoryWorkspace({
     toggleAppGroup,
     worktreeActionPending,
   } = useWorktreeCommandActions({
-    primaryAppGroup: data.primaryAppGroup,
     repoPath,
     requestRepositoryTrust: repositoryTrust.requestTrust,
     worktrees: data.worktrees,
@@ -240,10 +244,10 @@ export function RepositoryWorkspace({
     return (
       <Suspense fallback={<LoadingWorkspace />}>
         <RepositoryConfigPage
-          config={data.config}
-          configPath={data.configPath}
+          config={data.projectDefaultConfig}
+          configPath={data.projectDefaultConfigPath}
           error={commands.updateRepositoryConfig.error}
-          key={`config-${data.configRevision}`}
+          key={`config-${data.projectDefaultConfigRevision}`}
           navigationRequest={repositoryCloseRequest}
           onClose={onCloseSettings}
           onDirtyChange={onSettingsDirtyChange}
@@ -251,7 +255,7 @@ export function RepositoryWorkspace({
             await commands.updateRepositoryConfig.mutateAsync({
               config,
               repoPath,
-              revision: data.configRevision,
+              revision: data.projectDefaultConfigRevision,
             });
             onCloseSettings();
           }}
@@ -274,7 +278,6 @@ export function RepositoryWorkspace({
       onRestartAppGroup={restartAppGroup}
       onRetryAppGroup={retryAppGroup}
       onToggleAppGroup={toggleAppGroup}
-      primaryAppGroupId={data.primaryAppGroup}
       selectedId={selectedId}
       worktreeActionPending={worktreeActionPending}
       worktrees={data.worktrees}
@@ -341,6 +344,7 @@ export function RepositoryWorkspace({
             codexLoading={codex.isLoading}
             codexTasks={codexWorktrees?.[selectedForDetails.id]?.tasks ?? []}
             commandActions={commandActions}
+            configSourcePending={commands.selectWorktreeConfigSource.isPending}
             error={logs.error}
             loading={logs.isLoading}
             logs={logs.data ?? []}
@@ -366,6 +370,13 @@ export function RepositoryWorkspace({
                 selectedAppGroup,
                 instanceId
               )
+            }
+            onSelectConfigSource={(source) =>
+              commands.selectWorktreeConfigSource.mutate({
+                repoPath,
+                source,
+                worktreeId: selectedForDetails.id,
+              })
             }
             onToggleApps={() =>
               toggleAppGroup(selectedForDetails, selectedAppGroup)
@@ -444,12 +455,15 @@ export function RepositoryWorkspace({
         <Suspense fallback={null}>
           <RepositoryTrustDialog
             actionLabel={repositoryTrust.actionLabel}
-            commands={data.trustCommands}
+            commands={repositoryTrust.commands}
             error={commands.trustRepository.error}
             onClose={repositoryTrust.dismiss}
             onTrust={() =>
               repositoryTrust.approve(() =>
-                commands.trustRepository.mutateAsync({ repoPath })
+                commands.trustRepository.mutateAsync({
+                  approvals: repositoryTrust.approvals,
+                  repoPath,
+                })
               )
             }
             open

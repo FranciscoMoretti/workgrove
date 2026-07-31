@@ -10,6 +10,7 @@ import type {
   BranchBaseAppGroup,
   BranchBaseConfig,
 } from "../config/branchbase-schema";
+import { repositoryCommandFingerprint } from "../config/repository-trust";
 import type {
   LocalRoute,
   LocalRouteState,
@@ -166,7 +167,11 @@ export class AppGroupRuntime {
       instances:
         instance.mode === "selectable"
           ? this.state
-              .instances(target.repoPath, target.groupId)
+              .instances(
+                target.repoPath,
+                target.groupId,
+                repositoryCommandFingerprint(target.config)
+              )
               .map((option) => ({
                 id: option.id,
                 name: option.name,
@@ -413,6 +418,7 @@ export class AppGroupRuntime {
   private instanceRequest(target: AppGroupTarget): InstanceRequest {
     const group = this.group(target);
     return {
+      configFingerprint: repositoryCommandFingerprint(target.config),
       groupId: target.groupId,
       mode: group.instances.mode,
       repoLabel: basename(target.repoPath),
@@ -466,6 +472,7 @@ export class AppGroupRuntime {
       Object.entries(target.config.appGroups).map(([groupId, group]) => [
         groupId,
         this.state.instance({
+          configFingerprint: repositoryCommandFingerprint(target.config),
           groupId,
           mode: group.instances.mode,
           repoLabel: basename(target.repoPath),
@@ -878,6 +885,7 @@ export class AppGroupRuntime {
               const instance = selectedInstanceId
                 ? this.state.instanceById(repoPath, selectedInstanceId)
                 : this.state.instance({
+                    configFingerprint: repositoryCommandFingerprint(config),
                     groupId,
                     mode: group.instances.mode,
                     repoLabel: basename(repoPath),

@@ -28,6 +28,7 @@ const ALL_APP_GROUP_COMMANDS = new Set([
 ]);
 const BLOCKING_WORKTREE_COMMANDS = new Set([
   "delete-worktree",
+  "select-worktree-config-source",
   "setup-all-apps",
 ]);
 
@@ -128,12 +129,10 @@ export function pendingCommandScopes(
 }
 
 export function useWorktreeCommandActions({
-  primaryAppGroup,
   repoPath,
   requestRepositoryTrust,
   worktrees,
 }: {
-  primaryAppGroup: string;
   repoPath: string;
   requestRepositoryTrust: RequestRepositoryTrust;
   worktrees: WorktreeSnapshot[];
@@ -171,8 +170,21 @@ export function useWorktreeCommandActions({
   );
   const primaryGroup = useCallback(
     (worktree: WorktreeSnapshot) =>
-      worktree.appGroups.find((group) => group.id === primaryAppGroup),
-    [primaryAppGroup]
+      worktree.appGroups.find((group) => group.id === worktree.primaryAppGroup),
+    []
+  );
+  const trustScope = useCallback(
+    (worktree: WorktreeSnapshot) => ({
+      approvals: [
+        {
+          fingerprint: worktree.configuration.trustFingerprint,
+          worktreeId: worktree.id,
+        },
+      ],
+      commands: worktree.configuration.trustCommands,
+      trusted: worktree.configuration.trusted,
+    }),
+    []
   );
   const startApps = useCallback(
     (worktree: WorktreeSnapshot) => {
@@ -180,15 +192,25 @@ export function useWorktreeCommandActions({
       if (!appGroupName) {
         return;
       }
-      requestRepositoryTrust("Start apps", () => {
-        commands.startApps.mutate({
-          appGroupName,
-          repoPath,
-          worktreeId: worktree.id,
-        });
-      });
+      requestRepositoryTrust(
+        "Start apps",
+        () => {
+          commands.startApps.mutate({
+            appGroupName,
+            repoPath,
+            worktreeId: worktree.id,
+          });
+        },
+        trustScope(worktree)
+      );
     },
-    [commands.startApps, primaryGroup, repoPath, requestRepositoryTrust]
+    [
+      commands.startApps,
+      primaryGroup,
+      repoPath,
+      requestRepositoryTrust,
+      trustScope,
+    ]
   );
 
   const stopApps = useCallback(
@@ -211,27 +233,41 @@ export function useWorktreeCommandActions({
       if (!appGroupName) {
         return;
       }
-      requestRepositoryTrust("Restart apps", () => {
-        commands.restartApps.mutate({
-          appGroupName,
-          repoPath,
-          worktreeId: worktree.id,
-        });
-      });
+      requestRepositoryTrust(
+        "Restart apps",
+        () => {
+          commands.restartApps.mutate({
+            appGroupName,
+            repoPath,
+            worktreeId: worktree.id,
+          });
+        },
+        trustScope(worktree)
+      );
     },
-    [commands.restartApps, primaryGroup, repoPath, requestRepositoryTrust]
+    [
+      commands.restartApps,
+      primaryGroup,
+      repoPath,
+      requestRepositoryTrust,
+      trustScope,
+    ]
   );
 
   const setupApps = useCallback(
     (worktree: WorktreeSnapshot) => {
-      requestRepositoryTrust("Run setup", () => {
-        commands.setupAllApps.mutate({
-          repoPath,
-          worktreeIds: [worktree.id],
-        });
-      });
+      requestRepositoryTrust(
+        "Run setup",
+        () => {
+          commands.setupAllApps.mutate({
+            repoPath,
+            worktreeIds: [worktree.id],
+          });
+        },
+        trustScope(worktree)
+      );
     },
-    [commands.setupAllApps, repoPath, requestRepositoryTrust]
+    [commands.setupAllApps, repoPath, requestRepositoryTrust, trustScope]
   );
 
   const commandActions = useMemo<WorktreeCommandActions>(
@@ -258,13 +294,17 @@ export function useWorktreeCommandActions({
   const toggleAppGroup = useCallback(
     (worktree: WorktreeSnapshot, group: AppGroupSnapshot) => {
       if (appGroupIsStopped(group)) {
-        requestRepositoryTrust(`Start ${group.name}`, () => {
-          commands.startApps.mutate({
-            appGroupName: group.id,
-            repoPath,
-            worktreeId: worktree.id,
-          });
-        });
+        requestRepositoryTrust(
+          `Start ${group.name}`,
+          () => {
+            commands.startApps.mutate({
+              appGroupName: group.id,
+              repoPath,
+              worktreeId: worktree.id,
+            });
+          },
+          trustScope(worktree)
+        );
       } else {
         commands.stopApps.mutate({
           appGroupName: group.id,
@@ -273,20 +313,30 @@ export function useWorktreeCommandActions({
         });
       }
     },
-    [commands.startApps, commands.stopApps, repoPath, requestRepositoryTrust]
+    [
+      commands.startApps,
+      commands.stopApps,
+      repoPath,
+      requestRepositoryTrust,
+      trustScope,
+    ]
   );
 
   const restartAppGroup = useCallback(
     (worktree: WorktreeSnapshot, group: AppGroupSnapshot) => {
-      requestRepositoryTrust(`Restart ${group.name}`, () => {
-        commands.restartApps.mutate({
-          appGroupName: group.id,
-          repoPath,
-          worktreeId: worktree.id,
-        });
-      });
+      requestRepositoryTrust(
+        `Restart ${group.name}`,
+        () => {
+          commands.restartApps.mutate({
+            appGroupName: group.id,
+            repoPath,
+            worktreeId: worktree.id,
+          });
+        },
+        trustScope(worktree)
+      );
     },
-    [commands.restartApps, repoPath, requestRepositoryTrust]
+    [commands.restartApps, repoPath, requestRepositoryTrust, trustScope]
   );
 
   const retryAppGroup = useCallback(
@@ -334,6 +384,18 @@ export function useWorktreeCommandActions({
 
   const visibleActions = useMemo(() => {
     const worktreeIds = worktrees.map((worktree) => worktree.id);
+    const visibleTrustScope = {
+      approvals: worktrees.map((worktree) => ({
+        fingerprint: worktree.configuration.trustFingerprint,
+        worktreeId: worktree.id,
+      })),
+      commands: [
+        ...new Set(
+          worktrees.flatMap((worktree) => worktree.configuration.trustCommands)
+        ),
+      ],
+      trusted: worktrees.every((worktree) => worktree.configuration.trusted),
+    };
     const pending =
       commands.restartRunningApps.isPending ||
       commands.setupAllApps.isPending ||
@@ -341,16 +403,22 @@ export function useWorktreeCommandActions({
       commands.stopAllApps.isPending;
     return {
       onRestart: () =>
-        requestRepositoryTrust("Restart running apps", () =>
-          commands.restartRunningApps.mutate({ repoPath, worktreeIds })
+        requestRepositoryTrust(
+          "Restart running apps",
+          () => commands.restartRunningApps.mutate({ repoPath, worktreeIds }),
+          visibleTrustScope
         ),
       onSetup: () =>
-        requestRepositoryTrust("Run setup", () =>
-          commands.setupAllApps.mutate({ repoPath, worktreeIds })
+        requestRepositoryTrust(
+          "Run setup",
+          () => commands.setupAllApps.mutate({ repoPath, worktreeIds }),
+          visibleTrustScope
         ),
       onStart: () =>
-        requestRepositoryTrust("Start all apps", () =>
-          commands.startAllApps.mutate({ repoPath, worktreeIds })
+        requestRepositoryTrust(
+          "Start all apps",
+          () => commands.startAllApps.mutate({ repoPath, worktreeIds }),
+          visibleTrustScope
         ),
       onStop: () => commands.stopAllApps.mutate({ repoPath, worktreeIds }),
       pending,

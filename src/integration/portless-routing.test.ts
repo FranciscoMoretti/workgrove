@@ -372,6 +372,7 @@ test("rejects and preserves a foreign Friendly URL route", async () => {
     assert(main, "Main worktree disappeared");
     const state = new FileBranchBaseStateStore(fixture.statePath);
     const instance = state.instance({
+      configFingerprint: "integration",
       groupId: "development",
       mode: "per-worktree",
       repoLabel: "repo",

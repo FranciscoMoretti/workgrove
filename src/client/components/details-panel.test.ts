@@ -25,11 +25,23 @@ const worktree: WorktreeSnapshot = {
     },
   ],
   branch: "main",
+  configuration: {
+    changeBlocked: false,
+    error: null,
+    path: "/tmp/project/.branchbase.json",
+    preference: "project-default",
+    revision: "default-revision",
+    source: "project-default",
+    trustCommands: [],
+    trustFingerprint: "default-fingerprint",
+    trusted: true,
+  },
   health: "not-running",
   id: "worktree",
   isMain: true,
   name: "project",
   path: "/tmp/project",
+  primaryAppGroup: "apps",
   processRunning: false,
   setupState: "idle",
 };
@@ -52,6 +64,7 @@ function renderDetails(
       actionPending: false,
       appGroup: value.appGroups[0] ?? primaryAppGroup,
       clearPending: false,
+      configSourcePending: false,
       ...codex,
       commandActions: {
         onRestart: () => undefined,
@@ -68,6 +81,7 @@ function renderDetails(
       onDelete: () => undefined,
       onInspect: () => undefined,
       onRetryLogs: () => undefined,
+      onSelectConfigSource: () => undefined,
       onSelectAppGroupInstance: () => undefined,
       onToggleApps: () => undefined,
       worktreeActionPending: false,
@@ -77,6 +91,32 @@ function renderDetails(
 }
 
 describe("details panel", () => {
+  it("shows the worktree configuration source and fallback state", () => {
+    const markup = renderDetails({
+      ...worktree,
+      branch: "experiment",
+      configuration: {
+        changeBlocked: false,
+        error: "Invalid checkout configuration",
+        path: "/tmp/project/.branchbase.json",
+        preference: "checkout",
+        revision: "default-revision",
+        source: "project-default",
+        trustCommands: [],
+        trustFingerprint: "default-fingerprint",
+        trusted: true,
+      },
+      isMain: false,
+      name: "project-experiment",
+      path: "/tmp/project-experiment",
+    });
+
+    expect(markup).toContain("Configuration source");
+    expect(markup).toContain("This worktree");
+    expect(markup).toContain("Using Project default");
+    expect(markup).toContain("Invalid checkout configuration");
+  });
+
   it("presents transient log transport errors as a recoverable state", () => {
     const markup = renderToStaticMarkup(
       createElement(DetailsPanel, {
@@ -84,6 +124,7 @@ describe("details panel", () => {
         actionPending: false,
         appGroup: primaryAppGroup,
         clearPending: false,
+        configSourcePending: false,
         commandActions: {
           onRestart: () => undefined,
           onSetup: () => undefined,
@@ -99,6 +140,7 @@ describe("details panel", () => {
         onDelete: () => undefined,
         onInspect: () => undefined,
         onRetryLogs: () => undefined,
+        onSelectConfigSource: () => undefined,
         onSelectAppGroupInstance: () => undefined,
         onToggleApps: () => undefined,
         worktreeActionPending: false,

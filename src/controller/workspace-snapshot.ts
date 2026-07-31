@@ -1,7 +1,10 @@
 import { z } from "zod";
 
 import { BranchBaseConfigSchema } from "../config/branchbase-schema";
+import { WorktreeConfigSourceSchema } from "../config/worktree-config-source";
 import type { CommandReceiptSchema } from "./command-contract";
+
+export type { WorktreeConfigSource } from "../config/worktree-config-source";
 
 const AppHealthSchema = z.enum(["not-running", "partially-running", "running"]);
 
@@ -45,19 +48,28 @@ export const WorktreeSnapshotSchema = z.strictObject({
   appLabel: z.string(),
   apps: z.array(AppEndpointSnapshotSchema),
   branch: z.string(),
+  configuration: z.strictObject({
+    changeBlocked: z.boolean(),
+    error: z.string().nullable(),
+    path: z.string(),
+    preference: WorktreeConfigSourceSchema,
+    revision: z.string().min(1),
+    source: WorktreeConfigSourceSchema,
+    trustCommands: z.array(z.string()),
+    trustFingerprint: z.string().min(1),
+    trusted: z.boolean(),
+  }),
   health: AppHealthSchema,
   id: z.string(),
   isMain: z.boolean(),
   name: z.string(),
   path: z.string(),
+  primaryAppGroup: z.string().min(1),
   processRunning: z.boolean(),
   setupState: z.enum(["failed", "idle", "running"]),
 });
 
 export const WorkspaceSnapshotSchema = z.strictObject({
-  config: BranchBaseConfigSchema,
-  configPath: z.string(),
-  configRevision: z.string().min(1),
   globalProcesses: z.array(
     z.strictObject({
       argv: z.array(z.string()),
@@ -70,10 +82,14 @@ export const WorkspaceSnapshotSchema = z.strictObject({
   ),
   globalRunningCount: z.number().int().nonnegative(),
   mainWorktreePath: z.string(),
-  primaryAppGroup: z.string().min(1),
+  projectDefaultConfig: BranchBaseConfigSchema,
+  projectDefaultConfigPath: z.string(),
+  projectDefaultConfigRevision: z.string().min(1),
+  projectDefaultPrimaryAppGroup: z.string().min(1),
   repoName: z.string(),
   repoPath: z.string(),
   trustCommands: z.array(z.string()),
+  trustFingerprint: z.string().min(1),
   trustRequired: z.boolean(),
   trusted: z.boolean(),
   updatedAt: z.string(),

@@ -11,6 +11,11 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { z } from "zod";
 
+import {
+  type WorktreeConfigSource,
+  WorktreeConfigSourceSchema,
+} from "../config/worktree-config-source";
+
 const NonEmptyStringSchema = z.string().min(1);
 const PortSchema = z.number().int().min(1).max(65_535);
 const AppGroupInstanceModeSchema = z.enum(["per-worktree", "selectable"]);
@@ -45,6 +50,7 @@ const AppGroupRunSchema = z.strictObject({
 });
 
 const AppGroupInstanceSchema = z.strictObject({
+  configFingerprint: z.string().default(""),
   endpoints: z.record(z.string(), EndpointAssignmentSchema),
   groupId: NonEmptyStringSchema,
   id: NonEmptyStringSchema,
@@ -57,6 +63,7 @@ const AppGroupInstanceSchema = z.strictObject({
 });
 
 const WorktreeRecordSchema = z.strictObject({
+  configSource: WorktreeConfigSourceSchema.default("project-default"),
   id: NonEmptyStringSchema,
   instanceSelections: z.record(z.string(), NonEmptyStringSchema),
   path: NonEmptyStringSchema,
@@ -92,6 +99,7 @@ export function parseCurrentBranchBaseLocalState(
 }
 
 export interface InstanceRequest {
+  configFingerprint: string;
   groupId: string;
   mode: AppGroupInstanceMode;
   repoLabel: string;
@@ -176,6 +184,13 @@ function endpointKey(groupId: string, appId: string): string {
   return `${groupId}\0${appId}`;
 }
 
+function instanceSelectionKey(
+  groupId: string,
+  configFingerprint: string
+): string {
+  return `${groupId}\0${configFingerprint}`;
+}
+
 function namesEqual(left: string, right: string): boolean {
   return left.localeCompare(right, undefined, { sensitivity: "base" }) === 0;
 }
@@ -200,6 +215,7 @@ function migrateLegacyState(
       repository.worktrees
     )) {
       migrated.worktrees[worktreePath] = {
+        configSource: "project-default",
         id: worktree.id,
         instanceSelections: {},
         path: worktree.path,
@@ -224,6 +240,7 @@ function migrateLegacyState(
             ])
         );
         migrated.instances[id] = {
+          configFingerprint: "",
           endpoints,
           groupId,
           id,
@@ -261,6 +278,10 @@ export class FileBranchBaseStateStore {
     const worktree = this.worktree(repository, request);
     const existing = this.selectedInstance(repository, worktree, request);
     if (existing) {
+      if (!existing.configFingerprint) {
+        existing.configFingerprint = request.configFingerprint;
+        this.write(state);
+      }
       return cloneInstance(existing);
     }
     const instance = this.createInstanceRecord(repository, worktree, request, {
@@ -273,13 +294,19 @@ export class FileBranchBaseStateStore {
         request.mode === "per-worktree" ? request.worktreePath : null,
     });
     if (request.mode === "selectable") {
-      worktree.instanceSelections[request.groupId] = instance.id;
+      worktree.instanceSelections[
+        instanceSelectionKey(request.groupId, request.configFingerprint)
+      ] = instance.id;
     }
     this.write(state);
     return cloneInstance(instance);
   }
 
-  instances(repoPath: string, groupId: string): AppGroupInstance[] {
+  instances(
+    repoPath: string,
+    groupId: string,
+    configFingerprint: string
+  ): AppGroupInstance[] {
     const repository = this.read().repositories[repoPath];
     if (!repository) {
       return [];
@@ -287,7 +314,9 @@ export class FileBranchBaseStateStore {
     return Object.values(repository.instances)
       .filter(
         (instance) =>
-          instance.groupId === groupId && instance.mode === "selectable"
+          instance.groupId === groupId &&
+          instance.mode === "selectable" &&
+          instance.configFingerprint === configFingerprint
       )
       .toSorted((left, right) => {
         if (left.isDefault !== right.isDefault) {
@@ -296,6 +325,30 @@ export class FileBranchBaseStateStore {
         return left.name.localeCompare(right.name);
       })
       .map(cloneInstance);
+  }
+
+  worktreeConfigSource(
+    repoPath: string,
+    worktreePath: string
+  ): WorktreeConfigSource {
+    return (
+      this.read().repositories[repoPath]?.worktrees[worktreePath]
+        ?.configSource ?? "project-default"
+    );
+  }
+
+  setWorktreeConfigSource(
+    request: Pick<
+      InstanceRequest,
+      "repoLabel" | "repoPath" | "worktreeLabel" | "worktreePath"
+    >,
+    source: WorktreeConfigSource
+  ): void {
+    const state = this.read();
+    const repository = this.repository(state, request);
+    const worktree = this.worktree(repository, request);
+    worktree.configSource = source;
+    this.write(state);
   }
 
   instanceById(repoPath: string, instanceId: string): AppGroupInstance | null {
@@ -322,6 +375,7 @@ export class FileBranchBaseStateStore {
     const worktree = this.worktree(repository, request);
     const duplicate = Object.values(repository.instances).some(
       (instance) =>
+        instance.configFingerprint === request.configFingerprint &&
         instance.groupId === request.groupId &&
         instance.mode === "selectable" &&
         namesEqual(instance.name, normalizedName)
@@ -334,7 +388,9 @@ export class FileBranchBaseStateStore {
       name: normalizedName,
       worktreePath: null,
     });
-    worktree.instanceSelections[request.groupId] = instance.id;
+    worktree.instanceSelections[
+      instanceSelectionKey(request.groupId, request.configFingerprint)
+    ] = instance.id;
     this.write(state);
     return cloneInstance(instance);
   }
@@ -355,11 +411,14 @@ export class FileBranchBaseStateStore {
     if (
       !instance ||
       instance.groupId !== request.groupId ||
-      instance.mode !== "selectable"
+      instance.mode !== "selectable" ||
+      instance.configFingerprint !== request.configFingerprint
     ) {
       throw new Error("Unknown App-group instance");
     }
-    worktree.instanceSelections[request.groupId] = instance.id;
+    worktree.instanceSelections[
+      instanceSelectionKey(request.groupId, request.configFingerprint)
+    ] = instance.id;
     this.write(state);
     return cloneInstance(instance);
   }
@@ -453,6 +512,15 @@ export class FileBranchBaseStateStore {
     this.write(state);
   }
 
+  hasRunForWorktree(repoPath: string, worktreePath: string): boolean {
+    const repository = this.read().repositories[repoPath];
+    return repository
+      ? Object.values(repository.instances).some(
+          (instance) => instance.run?.worktreePath === worktreePath
+        )
+      : false;
+  }
+
   leasedPorts(): Set<number> {
     const ports = new Set<number>();
     for (const repository of Object.values(this.read().repositories)) {
@@ -524,6 +592,7 @@ export class FileBranchBaseStateStore {
     }
     const id = randomUUID();
     const record: WorktreeRecord = {
+      configSource: "project-default",
       id,
       instanceSelections: {},
       path: request.worktreePath,
@@ -549,6 +618,8 @@ export class FileBranchBaseStateStore {
       return (
         Object.values(repository.instances).find(
           (instance) =>
+            (!instance.configFingerprint ||
+              instance.configFingerprint === request.configFingerprint) &&
             instance.groupId === request.groupId &&
             instance.mode === "per-worktree" &&
             instance.worktreePath === request.worktreePath
@@ -556,16 +627,26 @@ export class FileBranchBaseStateStore {
       );
     }
     const selected =
-      repository.instances[worktree.instanceSelections[request.groupId] ?? ""];
+      repository.instances[
+        worktree.instanceSelections[
+          instanceSelectionKey(request.groupId, request.configFingerprint)
+        ] ??
+          worktree.instanceSelections[request.groupId] ??
+          ""
+      ];
     if (
       selected?.groupId === request.groupId &&
-      selected.mode === "selectable"
+      selected.mode === "selectable" &&
+      (!selected.configFingerprint ||
+        selected.configFingerprint === request.configFingerprint)
     ) {
       return selected;
     }
     return (
       Object.values(repository.instances).find(
         (instance) =>
+          (!instance.configFingerprint ||
+            instance.configFingerprint === request.configFingerprint) &&
           instance.groupId === request.groupId &&
           instance.mode === "selectable" &&
           instance.isDefault
@@ -585,6 +666,7 @@ export class FileBranchBaseStateStore {
   ): AppGroupInstance {
     const id = randomUUID();
     const record: AppGroupInstance = {
+      configFingerprint: request.configFingerprint,
       endpoints: {},
       groupId: request.groupId,
       id,

@@ -10,6 +10,8 @@ unreleased slot-based model without a compatibility requirement.
 
 `.branchbase.json` is the checked-in opt-in marker for a BranchBase-capable repository and the only source of truth for repository-specific topology and behavior. It declares Setup, app groups, lifecycle commands, apps, protocols, readiness, and group environments. The dashboard continues to edit this file in the repository.
 
+[ADR 0004](./0004-project-default-and-worktree-configurations.md) subsequently allows user-local state to select whether a worktree inherits the Project default file or reads its own checked-in file. Local state still does not contain or override configuration content.
+
 User-local state records only user-created relationships and BranchBase-owned assignments. It does not mirror or override repository configuration.
 
 Live queries remain the source of truth for processes, listeners, readiness, and routes. BranchBase never persists Running, Partial, Stopped, Ready, Failed, or similar conclusions.

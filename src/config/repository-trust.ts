@@ -22,12 +22,12 @@ function trustFile(controlDirectory = defaultControlDirectory()): string {
 
 const TrustStoreSchema = z.record(
   z.string(),
-  z.union([z.boolean(), z.string()])
+  z.union([z.boolean(), z.string(), z.array(z.string())])
 );
 
 function trustStore(
   controlDirectory?: string
-): Record<string, boolean | string> {
+): Record<string, boolean | string | string[]> {
   const file = trustFile(controlDirectory);
   if (!existsSync(file)) {
     return {};
@@ -76,11 +76,14 @@ export function repositoryIsTrusted(
   config: BranchBaseConfig,
   controlDirectory?: string
 ): boolean {
-  return (
-    !repositoryRequiresTrust(config) ||
-    trustStore(controlDirectory)[repoPath] ===
-      repositoryCommandFingerprint(config)
-  );
+  if (!repositoryRequiresTrust(config)) {
+    return true;
+  }
+  const trusted = trustStore(controlDirectory)[repoPath];
+  const fingerprint = repositoryCommandFingerprint(config);
+  return Array.isArray(trusted)
+    ? trusted.includes(fingerprint)
+    : trusted === fingerprint;
 }
 
 export function trustRepository(
@@ -90,14 +93,23 @@ export function trustRepository(
 ): void {
   const directory = controlDirectory ?? defaultControlDirectory();
   const file = trustFile(directory);
+  const store = trustStore(directory);
+  const existing = store[repoPath];
+  let fingerprints: string[] = [];
+  if (Array.isArray(existing)) {
+    fingerprints = existing;
+  } else if (typeof existing === "string") {
+    fingerprints = [existing];
+  }
+  const fingerprint = repositoryCommandFingerprint(config);
   mkdirSync(directory, { recursive: true });
   const temporary = `${file}.${process.pid}`;
   writeFileSync(
     temporary,
     `${JSON.stringify(
       {
-        ...trustStore(directory),
-        [repoPath]: repositoryCommandFingerprint(config),
+        ...store,
+        [repoPath]: [...new Set([...fingerprints, fingerprint])],
       },
       null,
       2

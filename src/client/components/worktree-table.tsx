@@ -248,7 +248,6 @@ export function WorktreeTable({
   onRestartAppGroup,
   onRetryAppGroup,
   onToggleAppGroup,
-  primaryAppGroupId,
   selectedId,
   worktreeActionPending,
   worktrees,
@@ -273,7 +272,6 @@ export function WorktreeTable({
     worktree: WorktreeSnapshot,
     group: AppGroupSnapshot
   ) => void;
-  primaryAppGroupId: string;
   selectedId: string | null;
   worktreeActionPending: (worktreeId: string) => boolean;
   worktrees: WorktreeSnapshot[];
@@ -291,7 +289,7 @@ export function WorktreeTable({
           const displayStatus = worktreeDisplayStatus(worktree);
           const worktreePending = worktreeActionPending(worktree.id);
           const primaryGroup = worktree.appGroups.find(
-            (group) => group.id === primaryAppGroupId
+            (group) => group.id === worktree.primaryAppGroup
           );
           const primaryGroupBlocked = primaryGroup
             ? appGroupActionBlocked(worktree.id, primaryGroup.id)
