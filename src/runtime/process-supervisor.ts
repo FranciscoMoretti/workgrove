@@ -87,6 +87,15 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+function isMissingPathError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "ENOENT"
+  );
+}
+
 export class ProcessSupervisor {
   readonly controlDirectory: string;
   private readonly plannedStops = new Set<number>();
@@ -164,7 +173,7 @@ export class ProcessSupervisor {
       }
     })();
     child.once("error", (error) => {
-      this.appendManagedLog(
+      this.appendManagedLogIfAvailable(
         input.logId ?? input.processId,
         `[branchbase] Failed to start ${command}: ${error.message}`
       );
@@ -214,12 +223,12 @@ export class ProcessSupervisor {
         };
         if (this.processTargetIsLive(groupTarget)) {
           const logId = input.logId ?? input.processId;
-          this.appendManagedLog(
+          this.appendManagedLogIfAvailable(
             logId,
             "[branchbase] Managed process exited; stopping remaining descendants"
           );
           this.stopProcessTarget(groupTarget, logId).catch((error) => {
-            this.appendManagedLog(
+            this.appendManagedLogIfAvailable(
               logId,
               `[branchbase] Failed to stop remaining descendants: ${error instanceof Error ? error.message : String(error)}`
             );
@@ -380,12 +389,34 @@ export class ProcessSupervisor {
     return join(this.controlDirectory, `${safeId(processId)}.failure.json`);
   }
 
+  private appendManagedLogIfAvailable(
+    processId: string,
+    message: string
+  ): void {
+    try {
+      this.appendManagedLog(processId, message);
+    } catch (error) {
+      if (!isMissingPathError(error)) {
+        throw error;
+      }
+    }
+  }
+
   private recordFailure(processId: string, message: string): void {
     const failure: ProcessFailure = {
       failedAt: new Date().toISOString(),
       message,
     };
-    writeFileSync(this.failurePath(processId), `${JSON.stringify(failure)}\n`);
+    try {
+      writeFileSync(
+        this.failurePath(processId),
+        `${JSON.stringify(failure)}\n`
+      );
+    } catch (error) {
+      if (!isMissingPathError(error)) {
+        throw error;
+      }
+    }
   }
 
   private persistedRecord(processId: string): ProcessRecord | null {

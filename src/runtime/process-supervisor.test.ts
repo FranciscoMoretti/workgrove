@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -93,6 +93,24 @@ describe("managed logs", () => {
     expect(supervisor.readManagedLog(worktreeId).join("\n")).toContain(
       "Failed to start"
     );
+  });
+
+  it("ignores a delayed spawn failure after its control directory is removed", async () => {
+    expect(() =>
+      supervisor.startManagedProcess({
+        argv: [`missing-branchbase-command-${process.pid}`],
+        cwd: process.cwd(),
+        env: {},
+        ownerRoot: process.cwd(),
+        processId: worktreeId,
+        trackExitFailure: true,
+      })
+    ).toThrow("Failed to start");
+    rmSync(controlDirectory, { force: true, recursive: true });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(existsSync(controlDirectory)).toBe(false);
   });
 
   it("rejects a configured working directory outside the worktree", () => {
