@@ -35,6 +35,12 @@ describe("app group actions menu", () => {
     expect(itemIds(group("running"))).toEqual(["stop", "restart"]);
   });
 
+  it("offers only cleanup for a detached run", () => {
+    expect(itemIds({ ...group("not-running"), cleanupOnly: true })).toEqual([
+      "stop",
+    ]);
+  });
+
   it("offers retry while a group is partially running", () => {
     expect(itemIds(group("partially-running"))).toEqual([
       "stop",

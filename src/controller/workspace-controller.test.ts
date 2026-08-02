@@ -31,6 +31,8 @@ import {
 } from "./workspace-snapshot";
 import { commandWorkingDirectory } from "./worktree-command";
 
+const CLEANUP_APP_GROUP = /^cleanup:/;
+
 class FakeRoutingEngine implements LocalRoutingEngine {
   async activate(_route: LocalRoute): Promise<void> {
     // Inspection does not activate routes.
@@ -325,11 +327,6 @@ describe("slot-free workspace inspection", () => {
           "project-default"
         )
       ).toThrow("Stop this worktree's App groups");
-      state.removeRun({
-        instanceId: activeExperimentGroup.instance.id,
-        repoPath: selected.repoPath,
-      });
-
       writeFileSync(join(experiment, ".branchbase.json"), "{");
       const fallback = controller
         .inspect(root)
@@ -341,6 +338,26 @@ describe("slot-free workspace inspection", () => {
           preference: "checkout",
           source: "project-default",
         },
+        primaryAppGroup: expect.stringMatching(CLEANUP_APP_GROUP),
+      });
+      const cleanupGroup = fallback?.appGroups.find(
+        (group) => group.cleanupOnly === true
+      );
+      expect(cleanupGroup).toMatchObject({
+        instance: { id: activeExperimentGroup.instance.id },
+        name: "experiment-apps (cleanup)",
+      });
+      await controller.stopAppGroup(
+        root,
+        activeExperiment.id,
+        cleanupGroup?.id ?? ""
+      );
+      expect(
+        controller
+          .inspect(root)
+          .worktrees.find(({ id }) => id === activeExperiment.id)
+      ).toMatchObject({
+        configuration: { changeBlocked: false },
         primaryAppGroup: "default-apps",
       });
     } finally {

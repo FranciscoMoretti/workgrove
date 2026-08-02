@@ -40,12 +40,19 @@ const RunEndpointSchema = z.strictObject({
   url: NonEmptyStringSchema.optional(),
 });
 
+const ResolvedRunCommandSchema = z.strictObject({
+  argv: z.array(NonEmptyStringSchema).min(1),
+  cwd: NonEmptyStringSchema.optional(),
+  env: z.record(z.string(), z.string()),
+});
+
 const AppGroupRunSchema = z.strictObject({
   apps: z.record(z.string(), RunEndpointSchema),
   createdAt: NonEmptyStringSchema,
   groupId: NonEmptyStringSchema,
   instanceId: NonEmptyStringSchema,
   instanceIdsByGroup: z.record(z.string(), NonEmptyStringSchema),
+  stop: z.union([z.literal("process"), ResolvedRunCommandSchema]).optional(),
   worktreePath: NonEmptyStringSchema,
 });
 
@@ -316,7 +323,8 @@ export class FileBranchBaseStateStore {
         (instance) =>
           instance.groupId === groupId &&
           instance.mode === "selectable" &&
-          instance.configFingerprint === configFingerprint
+          (!instance.configFingerprint ||
+            instance.configFingerprint === configFingerprint)
       )
       .toSorted((left, right) => {
         if (left.isDefault !== right.isDefault) {
@@ -375,7 +383,8 @@ export class FileBranchBaseStateStore {
     const worktree = this.worktree(repository, request);
     const duplicate = Object.values(repository.instances).some(
       (instance) =>
-        instance.configFingerprint === request.configFingerprint &&
+        (!instance.configFingerprint ||
+          instance.configFingerprint === request.configFingerprint) &&
         instance.groupId === request.groupId &&
         instance.mode === "selectable" &&
         namesEqual(instance.name, normalizedName)
@@ -412,9 +421,13 @@ export class FileBranchBaseStateStore {
       !instance ||
       instance.groupId !== request.groupId ||
       instance.mode !== "selectable" ||
-      instance.configFingerprint !== request.configFingerprint
+      (instance.configFingerprint &&
+        instance.configFingerprint !== request.configFingerprint)
     ) {
       throw new Error("Unknown App-group instance");
+    }
+    if (!instance.configFingerprint) {
+      instance.configFingerprint = request.configFingerprint;
     }
     worktree.instanceSelections[
       instanceSelectionKey(request.groupId, request.configFingerprint)
@@ -519,6 +532,18 @@ export class FileBranchBaseStateStore {
           (instance) => instance.run?.worktreePath === worktreePath
         )
       : false;
+  }
+
+  runningInstancesForWorktree(
+    repoPath: string,
+    worktreePath: string
+  ): AppGroupInstance[] {
+    const repository = this.read().repositories[repoPath];
+    return repository
+      ? Object.values(repository.instances)
+          .filter((instance) => instance.run?.worktreePath === worktreePath)
+          .map(cloneInstance)
+      : [];
   }
 
   leasedPorts(): Set<number> {

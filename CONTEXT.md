@@ -19,7 +19,7 @@ _Avoid_: Base configuration
 The user-local choice for a worktree to inherit the Project default configuration or read `.branchbase.json` from that worktree.
 
 **Effective configuration**:
-The valid configuration BranchBase uses to inspect and operate one worktree. If a preferred worktree configuration becomes unavailable, the Project default is effective and the fallback remains visible.
+The valid configuration BranchBase uses to inspect and operate one worktree. If a preferred worktree configuration is missing or invalid, the Project default is effective, the checkout preference remains selected, and the fallback remains visible.
 
 **Configuration contract**:
 The command and app-group topology fingerprint of an Effective configuration. Selectable app-group instances may be shared only by worktrees with the same Configuration contract, preventing one worktree from operating a shared run with incompatible commands or apps.

@@ -81,6 +81,21 @@ export function repositoryIsTrusted(
   }
   const trusted = trustStore(controlDirectory)[repoPath];
   const fingerprint = repositoryCommandFingerprint(config);
+  return repositoryFingerprintIsTrusted(
+    repoPath,
+    fingerprint,
+    controlDirectory,
+    trusted
+  );
+}
+
+export function repositoryFingerprintIsTrusted(
+  repoPath: string,
+  fingerprint: string,
+  controlDirectory?: string,
+  knownValue?: boolean | string | string[]
+): boolean {
+  const trusted = knownValue ?? trustStore(controlDirectory)[repoPath];
   return Array.isArray(trusted)
     ? trusted.includes(fingerprint)
     : trusted === fingerprint;

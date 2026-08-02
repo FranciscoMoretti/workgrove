@@ -41,6 +41,7 @@ export interface PendingCommandScopes {
   allAppGroups: Set<string>;
   appGroups: Map<string, Set<string>>;
   blockedWorktrees: Set<string>;
+  configSourceWorktrees: Set<string>;
   worktrees: Set<string>;
 }
 
@@ -105,6 +106,7 @@ export function pendingCommandScopes(
     allAppGroups: new Set(),
     appGroups: new Map(),
     blockedWorktrees: new Set(),
+    configSourceWorktrees: new Set(),
     worktrees: new Set(),
   };
   for (const pending of commands) {
@@ -117,6 +119,11 @@ export function pendingCommandScopes(
       continue;
     }
     const worktreeIds = requestedWorktreeIds(input);
+    if (pending.command === "select-worktree-config-source") {
+      for (const worktreeId of worktreeIds) {
+        scopes.configSourceWorktrees.add(worktreeId);
+      }
+    }
     if (ALL_APP_GROUP_COMMANDS.has(pending.command)) {
       addWorktreeScopes(scopes, worktreeIds, true);
       continue;
@@ -166,6 +173,10 @@ export function useWorktreeCommandActions({
   );
   const worktreeActionPending = useCallback(
     (worktreeId: string) => pendingScopes.worktrees.has(worktreeId),
+    [pendingScopes]
+  );
+  const configSourcePending = useCallback(
+    (worktreeId: string) => pendingScopes.configSourceWorktrees.has(worktreeId),
     [pendingScopes]
   );
   const primaryGroup = useCallback(
@@ -438,6 +449,7 @@ export function useWorktreeCommandActions({
     appGroupActionPending,
     commandActions,
     commands,
+    configSourcePending,
     createAppGroupInstance,
     restartAppGroup,
     restartApps,

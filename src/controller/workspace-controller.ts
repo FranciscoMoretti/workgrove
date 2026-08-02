@@ -388,23 +388,37 @@ export class WorkspaceController {
       }
       const effectiveConfig = effectiveDocument.config;
       const worktreePrimaryGroupId = primaryAppGroup(effectiveConfig);
-      const appGroups = Object.keys(effectiveConfig.appGroups).map((groupId) =>
-        this.appGroups.inspect(
-          {
-            config: effectiveConfig,
-            groupId,
-            repoPath: projectRoot,
-            worktree: {
-              id,
-              path,
-              routeLabel: worktreeRouteLabel(item, path),
+      const configuredAppGroups = Object.keys(effectiveConfig.appGroups).map(
+        (groupId) =>
+          this.appGroups.inspect(
+            {
+              config: effectiveConfig,
+              groupId,
+              repoPath: projectRoot,
+              worktree: {
+                id,
+                path,
+                routeLabel: worktreeRouteLabel(item, path),
+              },
             },
-          },
-          ports
-        )
+            ports
+          )
       );
+      const configuredInstanceIds = new Set(
+        configuredAppGroups.map((group) => group.instance.id)
+      );
+      const cleanupAppGroups = this.state
+        .runningInstancesForWorktree(projectRoot, path)
+        .filter((instance) => !configuredInstanceIds.has(instance.id))
+        .map((instance) =>
+          this.appGroups.inspectDetached(projectRoot, instance, ports)
+        );
+      const appGroups = [...cleanupAppGroups, ...configuredAppGroups];
       const primary =
-        appGroups.find((group) => group.id === worktreePrimaryGroupId) ??
+        cleanupAppGroups[0] ??
+        configuredAppGroups.find(
+          (group) => group.id === worktreePrimaryGroupId
+        ) ??
         appGroups[0];
       return {
         appGroups,
@@ -434,7 +448,7 @@ export class WorkspaceController {
         isMain: index === 0,
         name: basename(path),
         path,
-        primaryAppGroup: worktreePrimaryGroupId,
+        primaryAppGroup: primary.id,
         processRunning: primary.processRunning,
         setupState: worktreeSetupState(id, path, this.processes),
       };
@@ -494,9 +508,9 @@ export class WorkspaceController {
     groupId: string
   ): Promise<"already-running" | "retried"> {
     this.assertTrusted(repoPath, worktreeIdValue);
-    return this.appGroups.retry(
-      this.appGroupTarget(repoPath, worktreeIdValue, groupId)
-    );
+    const target = this.appGroupTarget(repoPath, worktreeIdValue, groupId);
+    this.assertConfigTrusted(target.repoPath, target.config);
+    return this.appGroups.retry(target);
   }
 
   stopAppGroup(
@@ -504,9 +518,17 @@ export class WorkspaceController {
     worktreeIdValue: string,
     groupId: string
   ): Promise<"already-stopped" | "stopped"> {
+    if (this.appGroups.isDetachedGroupId(groupId)) {
+      const { workspace, worktree } = this.worktree(repoPath, worktreeIdValue);
+      return this.appGroups.stopDetached(
+        workspace.repoPath,
+        worktree.path,
+        groupId
+      );
+    }
     const target = this.appGroupTarget(repoPath, worktreeIdValue, groupId);
     if (target.config.appGroups[groupId]?.stop !== "process") {
-      this.assertTrusted(repoPath, worktreeIdValue);
+      this.assertConfigTrusted(target.repoPath, target.config);
     }
     return this.appGroups.stop(target);
   }
@@ -648,7 +670,10 @@ export class WorkspaceController {
     source: WorktreeConfigSource
   ): void {
     const { workspace, worktree } = this.worktree(repoPath, worktreeIdValue);
-    if (worktree.configuration.changeBlocked) {
+    if (
+      worktree.configuration.changeBlocked ||
+      this.appGroups.hasPendingLifecycle(worktree.path)
+    ) {
       throw new Error(
         "Stop this worktree's App groups and setup process before changing its configuration source."
       );
@@ -674,10 +699,10 @@ export class WorkspaceController {
   }
 
   startSetup(repoPath: string, worktreeIdValue: string): void {
-    const { worktree } = this.worktree(repoPath, worktreeIdValue);
-    const setup = resolveSetupCommand(
-      loadBranchBaseConfig(worktree.configuration.path)
-    );
+    const { workspace, worktree } = this.worktree(repoPath, worktreeIdValue);
+    const config = loadBranchBaseConfig(worktree.configuration.path);
+    this.assertConfigTrusted(workspace.repoPath, config);
+    const setup = resolveSetupCommand(config);
     this.processes.appendManagedLog(
       worktree.id,
       `[branchbase] Running setup: ${setup.argv.join(" ")}`
@@ -738,9 +763,20 @@ export class WorkspaceController {
     groupId: string
   ): Promise<"already-running" | "started"> {
     this.assertTrusted(repoPath, worktreeIdValue);
-    return this.appGroups.start(
-      this.appGroupTarget(repoPath, worktreeIdValue, groupId)
-    );
+    const target = this.appGroupTarget(repoPath, worktreeIdValue, groupId);
+    this.assertConfigTrusted(target.repoPath, target.config);
+    return this.appGroups.start(target);
+  }
+
+  protected assertConfigTrusted(
+    repoPath: string,
+    config: BranchBaseConfig
+  ): void {
+    if (
+      !repositoryIsTrusted(repoPath, config, this.processes.controlDirectory)
+    ) {
+      throw new Error("Review and trust this repository's commands first");
+    }
   }
 
   private readOnlyWorktreePath(

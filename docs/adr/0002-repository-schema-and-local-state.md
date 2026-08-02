@@ -124,11 +124,9 @@ Every app explicitly declares one protocol:
 
 Owned TCP-listener readiness is the default. An HTTP app may configure an HTTP path and accepted status range. BranchBase uses a 60-second startup timeout unless an app overrides it. Timeout produces an Unready or Partial live observation and does not kill the app group.
 
-## Repository-wide trust
+## Project trust
 
-Trust remains one repository-wide decision, not one approval per command. BranchBase fingerprints the repository's complete execution contract: Setup, every Start and Stop command, relative working directories, environment and argv templates, and app declarations that control generated runtime values. Dynamic allocations such as chosen port numbers do not change the fingerprint.
-
-Opening an untrusted repository remains safe for inspection, but BranchBase will not execute its commands until the user approves the current repository fingerprint. A changed execution fingerprint requires one new repository-wide approval.
+BranchBase fingerprints each Effective configuration's complete execution contract. Approval is scoped to the target worktree's Effective configuration, and the Project retains every explicitly approved fingerprint. This lets an approved default and an experimental worktree configuration coexist without either silently authorizing or blocking the other. See [ADR 0004](./0004-project-default-and-worktree-configurations.md) for the current trust and configuration-selection model.
 
 ## Tracked repositories
 

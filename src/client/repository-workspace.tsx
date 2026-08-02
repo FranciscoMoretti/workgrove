@@ -106,6 +106,20 @@ function worktreeForAppGroup(
   };
 }
 
+export function selectedGroupId(
+  worktree: WorktreeSnapshot | null,
+  selectedAppGroupId: string | null,
+  fallback: string
+): string {
+  if (
+    selectedAppGroupId &&
+    worktree?.appGroups.some((group) => group.id === selectedAppGroupId)
+  ) {
+    return selectedAppGroupId;
+  }
+  return worktree?.primaryAppGroup ?? fallback;
+}
+
 function selectedAppGroupActionState(
   worktree: WorktreeSnapshot | null,
   appGroupId: string | null,
@@ -182,10 +196,11 @@ export function RepositoryWorkspace({
   const quickRepository = useRepositoryOpen(onOpenRepository);
   const selected =
     data.worktrees.find((worktree) => worktree.id === selectedId) ?? null;
-  const effectiveAppGroupId =
-    selectedAppGroupId ??
-    selected?.primaryAppGroup ??
-    data.projectDefaultPrimaryAppGroup;
+  const effectiveAppGroupId = selectedGroupId(
+    selected,
+    selectedAppGroupId,
+    data.projectDefaultPrimaryAppGroup
+  );
   const selectedAppGroup =
     selected?.appGroups.find((group) => group.id === effectiveAppGroupId) ??
     null;
@@ -205,6 +220,7 @@ export function RepositoryWorkspace({
     appGroupActionPending,
     commandActions,
     commands,
+    configSourcePending,
     createAppGroupInstance,
     restartAppGroup,
     retryAppGroup,
@@ -344,7 +360,7 @@ export function RepositoryWorkspace({
             codexLoading={codex.isLoading}
             codexTasks={codexWorktrees?.[selectedForDetails.id]?.tasks ?? []}
             commandActions={commandActions}
-            configSourcePending={commands.selectWorktreeConfigSource.isPending}
+            configSourcePending={configSourcePending(selectedForDetails.id)}
             error={logs.error}
             loading={logs.isLoading}
             logs={logs.data ?? []}

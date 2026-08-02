@@ -10,7 +10,10 @@ import type {
   BranchBaseAppGroup,
   BranchBaseConfig,
 } from "../config/branchbase-schema";
-import { repositoryCommandFingerprint } from "../config/repository-trust";
+import {
+  repositoryCommandFingerprint,
+  repositoryFingerprintIsTrusted,
+} from "../config/repository-trust";
 import type {
   LocalRoute,
   LocalRouteState,
@@ -110,6 +113,7 @@ const PORT_STOP_TIMEOUT_MS = 5000;
 
 export class AppGroupRuntime {
   private readonly lifecycleOperations = new Map<string, Promise<void>>();
+  private readonly pendingWorktreeOperations = new Map<string, number>();
   private readonly processes: ProcessSupervisor;
   private readonly routing: LocalRoutingEngine;
   private readonly state: FileBranchBaseStateStore;
@@ -128,8 +132,38 @@ export class AppGroupRuntime {
     target: AppGroupTarget,
     ports: ReturnType<typeof inspectListeningPorts>
   ): AppGroupSnapshot {
-    const group = this.group(target);
     const instance = this.state.instance(this.instanceRequest(target));
+    return this.inspectInstance(target, instance, ports);
+  }
+
+  inspectDetached(
+    repoPath: string,
+    instance: AppGroupInstance,
+    ports: ReturnType<typeof inspectListeningPorts>
+  ): AppGroupSnapshot {
+    const run = instance.run;
+    if (!run) {
+      throw new Error("Cleanup target has no persisted run");
+    }
+    const target = this.detachedTarget(repoPath, instance, run);
+    const snapshot = this.inspectInstance(target, instance, ports);
+    return {
+      ...snapshot,
+      cleanupOnly: true,
+      id: this.detachedGroupId(instance.id),
+      instance: { ...snapshot.instance, mode: "per-worktree" },
+      instances: [{ id: instance.id, name: instance.name, running: true }],
+      name: `${run.groupId} (cleanup)`,
+      stop: run.stop && run.stop !== "process" ? "command" : "process",
+    };
+  }
+
+  private inspectInstance(
+    target: AppGroupTarget,
+    instance: AppGroupInstance,
+    ports: ReturnType<typeof inspectListeningPorts>
+  ): AppGroupSnapshot {
+    const group = this.group(target);
     const run = this.state.run(this.runKey(target.repoPath, instance.id));
     const processPath = run?.worktreePath ?? target.worktree.path;
     const processRunning =
@@ -192,11 +226,14 @@ export class AppGroupRuntime {
 
   start(target: AppGroupTarget): Promise<"already-running" | "started"> {
     const effectiveInstances = this.worktreeInstances(target);
-    return this.serializeLifecycle(
-      Object.values(effectiveInstances).map((instance) =>
-        this.lifecycleKey(target.repoPath, instance.id)
-      ),
-      () => this.startUnlocked(target, effectiveInstances)
+    return this.trackWorktreeOperation(
+      target.worktree.path,
+      this.serializeLifecycle(
+        Object.values(effectiveInstances).map((instance) =>
+          this.lifecycleKey(target.repoPath, instance.id)
+        ),
+        () => this.startUnlocked(target, effectiveInstances)
+      )
     );
   }
 
@@ -216,6 +253,7 @@ export class AppGroupRuntime {
     const allocatedNow = run === null;
     if (!run) {
       run = this.createRun({
+        config: target.config,
         effectiveInstances,
         group,
         groupId: target.groupId,
@@ -240,9 +278,12 @@ export class AppGroupRuntime {
 
   retry(target: AppGroupTarget): Promise<"already-running" | "retried"> {
     const instance = this.state.instance(this.instanceRequest(target));
-    return this.serializeLifecycle(
-      [this.lifecycleKey(target.repoPath, instance.id)],
-      () => this.retryUnlocked(target, instance)
+    return this.trackWorktreeOperation(
+      target.worktree.path,
+      this.serializeLifecycle(
+        [this.lifecycleKey(target.repoPath, instance.id)],
+        () => this.retryUnlocked(target, instance)
+      )
     );
   }
 
@@ -271,10 +312,46 @@ export class AppGroupRuntime {
 
   stop(target: AppGroupTarget): Promise<"already-stopped" | "stopped"> {
     const instance = this.state.instance(this.instanceRequest(target));
-    return this.serializeLifecycle(
-      [this.lifecycleKey(target.repoPath, instance.id)],
-      () => this.stopUnlocked(target, instance)
+    return this.trackWorktreeOperation(
+      target.worktree.path,
+      this.serializeLifecycle(
+        [this.lifecycleKey(target.repoPath, instance.id)],
+        () => this.stopUnlocked(target, instance)
+      )
     );
+  }
+
+  stopDetached(
+    repoPath: string,
+    worktreePath: string,
+    groupId: string
+  ): Promise<"already-stopped" | "stopped"> {
+    const instanceId = this.detachedInstanceId(groupId);
+    const instance = instanceId
+      ? this.state.instanceById(repoPath, instanceId)
+      : null;
+    if (!(instance?.run && instance.run.worktreePath === worktreePath)) {
+      throw new Error("Unknown cleanup App group");
+    }
+    const stopCommandTrusted = repositoryFingerprintIsTrusted(
+      repoPath,
+      instance.configFingerprint,
+      this.processes.controlDirectory
+    );
+    return this.trackWorktreeOperation(
+      worktreePath,
+      this.serializeLifecycle([this.lifecycleKey(repoPath, instance.id)], () =>
+        this.stopDetachedUnlocked(repoPath, instance, stopCommandTrusted)
+      )
+    );
+  }
+
+  hasPendingLifecycle(worktreePath: string): boolean {
+    return (this.pendingWorktreeOperations.get(worktreePath) ?? 0) > 0;
+  }
+
+  isDetachedGroupId(groupId: string): boolean {
+    return this.detachedInstanceId(groupId) !== null;
   }
 
   private async stopUnlocked(
@@ -307,6 +384,44 @@ export class AppGroupRuntime {
       throw new AppGroupLifecycleError("stop-failed", failures.join("; "));
     }
     return "stopped";
+  }
+
+  private async stopDetachedUnlocked(
+    repoPath: string,
+    instance: AppGroupInstance,
+    stopCommandTrusted: boolean
+  ): Promise<"already-stopped" | "stopped"> {
+    const run = instance.run;
+    if (!run) {
+      return "already-stopped";
+    }
+    const target = this.detachedTarget(repoPath, instance, run);
+    const context = this.stopContext(target, instance, run);
+    const failures = await this.deactivateRunRoutes(context);
+    if (run.stop && run.stop !== "process" && stopCommandTrusted) {
+      try {
+        await this.processes.runFiniteCommand({
+          argv: run.stop.argv,
+          cwd: commandWorkingDirectory(run.worktreePath, run.stop.cwd),
+          env: run.stop.env,
+          label: `Stop ${run.groupId}`,
+          logId: context.processId,
+        });
+      } catch (error) {
+        failures.push(errorMessage(error));
+      }
+    }
+    await this.stopRunProcesses(context);
+    if (!(await this.waitForPortsStopped(run))) {
+      failures.push(
+        "App listeners did not stop; Backing endpoints remain quarantined"
+      );
+    }
+    if (failures.length === 0) {
+      this.state.removeRun(context.key);
+      return "stopped";
+    }
+    throw new AppGroupLifecycleError("stop-failed", failures.join("; "));
   }
 
   private async deactivateRunRoutes(context: StopContext): Promise<string[]> {
@@ -465,6 +580,69 @@ export class AppGroupRuntime {
     return [repoPath, instanceId].join("\0");
   }
 
+  private detachedGroupId(instanceId: string): string {
+    return `cleanup:${instanceId}`;
+  }
+
+  private detachedInstanceId(groupId: string): string | null {
+    return groupId.startsWith("cleanup:")
+      ? groupId.slice("cleanup:".length)
+      : null;
+  }
+
+  private detachedTarget(
+    repoPath: string,
+    instance: AppGroupInstance,
+    run: AppGroupRun
+  ): AppGroupTarget {
+    const apps = Object.fromEntries(
+      Object.entries(run.apps).map(([appId, app]) => [
+        appId,
+        { protocol: app.protocol, readiness: "tcp" as const },
+      ])
+    );
+    return {
+      config: {
+        appGroups: {
+          [run.groupId]: {
+            apps,
+            instances: { mode: instance.mode },
+            start: { argv: ["true"] },
+            stop: "process",
+          },
+        },
+        setup: { argv: ["true"] },
+        version: 1,
+      },
+      groupId: run.groupId,
+      repoPath,
+      worktree: {
+        id: run.worktreePath,
+        path: run.worktreePath,
+        routeLabel: instance.routeLabel,
+      },
+    };
+  }
+
+  private trackWorktreeOperation<T>(
+    worktreePath: string,
+    operation: Promise<T>
+  ): Promise<T> {
+    this.pendingWorktreeOperations.set(
+      worktreePath,
+      (this.pendingWorktreeOperations.get(worktreePath) ?? 0) + 1
+    );
+    return operation.finally(() => {
+      const remaining =
+        (this.pendingWorktreeOperations.get(worktreePath) ?? 1) - 1;
+      if (remaining === 0) {
+        this.pendingWorktreeOperations.delete(worktreePath);
+      } else {
+        this.pendingWorktreeOperations.set(worktreePath, remaining);
+      }
+    });
+  }
+
   private worktreeInstances(
     target: AppGroupTarget
   ): Record<string, AppGroupInstance> {
@@ -590,6 +768,7 @@ export class AppGroupRuntime {
   }
 
   private createRun(input: {
+    config: BranchBaseConfig;
     effectiveInstances: Record<string, AppGroupInstance>;
     group: BranchBaseAppGroup;
     groupId: string;
@@ -609,17 +788,32 @@ export class AppGroupRuntime {
         return [appId, this.runEndpoint(app, assignment)];
       })
     );
+    const instanceIdsByGroup = Object.fromEntries(
+      Object.entries(input.effectiveInstances).map(([groupId, instance]) => [
+        groupId,
+        instance.id,
+      ])
+    );
+    const stop =
+      input.group.stop === "process"
+        ? "process"
+        : resolveStopCommand(
+            input.config,
+            input.groupId,
+            this.resolveTemplateAppGroups(
+              input.config,
+              input.repoPath,
+              input.worktreePath,
+              instanceIdsByGroup
+            )
+          );
     return {
       apps,
       createdAt: new Date().toISOString(),
       groupId: input.groupId,
       instanceId: input.instance.id,
-      instanceIdsByGroup: Object.fromEntries(
-        Object.entries(input.effectiveInstances).map(([groupId, instance]) => [
-          groupId,
-          instance.id,
-        ])
-      ),
+      instanceIdsByGroup,
+      stop: stop ?? "process",
       worktreePath: input.worktreePath,
     };
   }
@@ -875,6 +1069,7 @@ export class AppGroupRuntime {
     worktreePath: string,
     instanceIdsByGroup?: Record<string, string>
   ): ResolvedBranchBaseAppGroups {
+    const configFingerprint = repositoryCommandFingerprint(config);
     return Object.fromEntries(
       Object.entries(config.appGroups).map(([groupId, group]) => [
         groupId,
@@ -885,7 +1080,7 @@ export class AppGroupRuntime {
               const instance = selectedInstanceId
                 ? this.state.instanceById(repoPath, selectedInstanceId)
                 : this.state.instance({
-                    configFingerprint: repositoryCommandFingerprint(config),
+                    configFingerprint,
                     groupId,
                     mode: group.instances.mode,
                     repoLabel: basename(repoPath),

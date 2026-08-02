@@ -171,8 +171,8 @@ Important configuration behavior:
   source in the inspector.
 - A worktree-specific selection reads `.branchbase.json` from that worktree, so
   a branch can test different commands or App groups without changing its
-  siblings. If the selected file becomes unavailable, BranchBase visibly falls
-  back to the Project default.
+  siblings. If the selected file is missing or invalid, BranchBase visibly falls
+  back to the Project default while preserving the worktree-specific preference.
 - Commands are argv arrays and run from the selected worktree root.
 - With `"stop": "process"`, Start must remain in the foreground. BranchBase owns
   that process and terminates it on Stop.

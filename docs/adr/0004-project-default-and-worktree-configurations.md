@@ -2,9 +2,9 @@
 
 Status: Accepted on 2026-07-31.
 
-BranchBase treats the Primary worktree's `.branchbase.json` as the Project default and stores a user-local preference for each worktree to inherit that default or read its own checked-in file. This makes configuration experiments deliberate and isolated without introducing merge semantics or duplicating repository commands in local state.
+BranchBase treats the Primary worktree's `.branchbase.json` as the Project default and stores a user-local preference for each worktree to inherit that default or read its own checked-in file. This makes configuration experiments deliberate and isolated without introducing merge semantics. While a run is active, local state also retains its resolved Stop strategy so the run remains cleanly stoppable if its source configuration later disappears or becomes invalid.
 
-If a selected worktree configuration is missing or invalid, BranchBase visibly falls back to the Project default while preserving the preference so the experiment can recover when the file is fixed. Configuration-source changes are blocked only while that worktree owns active lifecycle state. A run owned by another worktree does not block the change.
+If a selected worktree configuration is missing or invalid, BranchBase visibly falls back to the Project default while preserving the preference so the experiment can recover when the file is fixed. Runs from the previous configuration remain visible as cleanup-only App groups. BranchBase may execute their captured Stop command only while that configuration fingerprint remains approved; otherwise it performs process-owned cleanup only. Configuration-source changes are blocked only while that worktree owns active or in-flight lifecycle state. A run owned by another worktree does not block the change.
 
 Selectable app-group instances are shared only within the same Effective-configuration command fingerprint. Reusing an app-group ID in an incompatible configuration therefore creates a separate instance namespace instead of allowing one worktree to inspect or operate another contract's run.
 

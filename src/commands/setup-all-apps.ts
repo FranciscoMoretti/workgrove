@@ -12,8 +12,13 @@ export function setupAllApps(
     workspace.worktrees,
     input.worktreeIds
   );
+  if (targets.length === 0) {
+    controller.assertTrusted(repoPath);
+  }
   for (const worktree of targets) {
     controller.assertTrusted(repoPath, worktree.id);
+  }
+  for (const worktree of targets) {
     controller.startSetup(repoPath, worktree.id);
   }
   return {
