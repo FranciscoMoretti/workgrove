@@ -24,6 +24,7 @@ import { restartApps } from "../commands/restart-apps";
 import { restartRunningApps } from "../commands/restart-running-apps";
 import { retryApps } from "../commands/retry-apps";
 import { selectAppGroupInstance } from "../commands/select-app-group-instance";
+import { selectWorktreeConfigSource } from "../commands/select-worktree-config-source";
 import { setupAllApps } from "../commands/setup-all-apps";
 import { startAllApps } from "../commands/start-all-apps";
 import { startApps } from "../commands/start-apps";
@@ -42,10 +43,13 @@ import {
 } from "../config/branchbase-config";
 import type { BranchBaseConfig } from "../config/branchbase-schema";
 import {
+  repositoryCommandFingerprint,
   repositoryIsTrusted,
   repositoryRequiresTrust,
   trustRepository as saveRepositoryTrust,
 } from "../config/repository-trust";
+import type { RepositoryTrustApproval } from "../config/repository-trust-approval";
+import type { WorktreeConfigSource } from "../config/worktree-config-source";
 import {
   type DiscoveredWorktree,
   parseWorktreeList,
@@ -92,6 +96,7 @@ const COMMAND_HANDLERS: Record<BranchBaseCommandName, CommandHandler> = {
   "restart-running-apps": restartRunningApps,
   "retry-apps": retryApps,
   "select-app-group-instance": selectAppGroupInstance,
+  "select-worktree-config-source": selectWorktreeConfigSource,
   "setup-all-apps": setupAllApps,
   "start-all-apps": startAllApps,
   "start-apps": startApps,
@@ -167,6 +172,18 @@ function primaryAppGroup(config: BranchBaseConfig): string {
 
 function displayName(id: string, value: { name?: string }): string {
   return value.name ?? id;
+}
+
+function trustCommands(config: BranchBaseConfig): string[] {
+  return [
+    commandSummary("Setup", config.setup),
+    ...Object.entries(config.appGroups).flatMap(([groupId, group]) => [
+      commandSummary(`${displayName(groupId, group)} Start`, group.start),
+      ...(group.stop === "process"
+        ? []
+        : [commandSummary(`${displayName(groupId, group)} Stop`, group.stop)]),
+    ]),
+  ];
 }
 
 function worktreeRouteLabel(
@@ -330,71 +347,115 @@ export class WorkspaceController {
 
   inspect(repoPath: string): WorkspaceSnapshot {
     const selectedRoot = git(repoPath, ["rev-parse", "--show-toplevel"]);
-    const configPath = findBranchBaseConfig(selectedRoot);
-    if (!configPath) {
-      throw new MissingWorktreeConfigError(
-        join(selectedRoot, ".branchbase.json")
-      );
-    }
-    const configDocument = loadBranchBaseConfigDocument(configPath);
-    const config = configDocument.config;
     const discovered = resolveWorktrees(selectedRoot);
     if (discovered.length === 0) {
       throw new Error("No Git worktrees were discovered");
     }
-
+    const projectRoot = discovered[0].path;
+    const configPath = findBranchBaseConfig(projectRoot);
+    if (!configPath) {
+      throw new MissingWorktreeConfigError(
+        join(projectRoot, ".branchbase.json")
+      );
+    }
+    const configDocument = loadBranchBaseConfigDocument(configPath);
+    const config = configDocument.config;
     const primaryGroupId = primaryAppGroup(config);
     const ports = inspectListeningPorts();
     const worktrees = discovered.map((item, index) => {
       const { id, path } = item;
-      const appGroups = Object.keys(config.appGroups).map((groupId) =>
-        this.appGroups.inspect(
-          {
-            config,
-            groupId,
-            repoPath: selectedRoot,
-            worktree: {
-              id,
-              path,
-              routeLabel: worktreeRouteLabel(item, path),
+      const preference = this.state.worktreeConfigSource(projectRoot, path);
+      let effectiveDocument = configDocument;
+      let effectivePath = configPath;
+      let source: WorktreeConfigSource = "project-default";
+      let configurationError: string | null = null;
+      if (preference === "checkout") {
+        const checkoutConfigPath = findBranchBaseConfig(path);
+        if (checkoutConfigPath) {
+          try {
+            effectiveDocument =
+              loadBranchBaseConfigDocument(checkoutConfigPath);
+            effectivePath = checkoutConfigPath;
+            source = "checkout";
+          } catch (error) {
+            configurationError = `Invalid checkout configuration: ${
+              error instanceof Error ? error.message : String(error)
+            }`;
+          }
+        } else {
+          configurationError = `Missing checkout configuration: ${join(path, ".branchbase.json")}`;
+        }
+      }
+      const effectiveConfig = effectiveDocument.config;
+      const worktreePrimaryGroupId = primaryAppGroup(effectiveConfig);
+      const configuredAppGroups = Object.keys(effectiveConfig.appGroups).map(
+        (groupId) =>
+          this.appGroups.inspect(
+            {
+              config: effectiveConfig,
+              groupId,
+              repoPath: projectRoot,
+              worktree: {
+                id,
+                path,
+                routeLabel: worktreeRouteLabel(item, path),
+              },
             },
-          },
-          ports
-        )
+            ports
+          )
       );
+      const configuredInstanceIds = new Set(
+        configuredAppGroups.map((group) => group.instance.id)
+      );
+      const cleanupAppGroups = this.state
+        .runningInstancesForWorktree(projectRoot, path)
+        .filter((instance) => !configuredInstanceIds.has(instance.id))
+        .map((instance) =>
+          this.appGroups.inspectDetached(projectRoot, instance, ports)
+        );
+      const appGroups = [...cleanupAppGroups, ...configuredAppGroups];
       const primary =
-        appGroups.find((group) => group.id === primaryGroupId) ?? appGroups[0];
+        cleanupAppGroups[0] ??
+        configuredAppGroups.find(
+          (group) => group.id === worktreePrimaryGroupId
+        ) ??
+        appGroups[0];
       return {
         appGroups,
         appLabel: primary.name,
         apps: primary.apps,
         branch:
           item.branch ?? `detached ${item.head?.slice(0, 7) ?? "unknown"}`,
+        configuration: {
+          changeBlocked:
+            worktreeSetupState(id, path, this.processes) === "running" ||
+            this.state.hasRunForWorktree(projectRoot, path),
+          error: configurationError,
+          path: effectivePath,
+          preference,
+          revision: effectiveDocument.revision,
+          source,
+          trustCommands: trustCommands(effectiveConfig),
+          trustFingerprint: repositoryCommandFingerprint(effectiveConfig),
+          trusted: repositoryIsTrusted(
+            projectRoot,
+            effectiveConfig,
+            this.processes.controlDirectory
+          ),
+        },
         health: primary.health,
         id,
         isMain: index === 0,
         name: basename(path),
         path,
+        primaryAppGroup: primary.id,
         processRunning: primary.processRunning,
         setupState: worktreeSetupState(id, path, this.processes),
       };
     });
 
     const globalProcesses = this.processes.listManagedProcesses();
-    const lifecycleCommands = Object.entries(config.appGroups).flatMap(
-      ([groupId, group]) => [
-        commandSummary(`${displayName(groupId, group)} Start`, group.start),
-        ...(group.stop === "process"
-          ? []
-          : [
-              commandSummary(`${displayName(groupId, group)} Stop`, group.stop),
-            ]),
-      ]
-    );
     return {
-      config,
-      configPath,
-      configRevision: configDocument.revision,
       globalProcesses,
       globalRunningCount: new Set(
         worktrees.flatMap((worktree) =>
@@ -406,16 +467,17 @@ export class WorkspaceController {
         )
       ).size,
       mainWorktreePath: worktrees[0].path,
-      primaryAppGroup: primaryGroupId,
+      projectDefaultConfig: config,
+      projectDefaultConfigPath: configPath,
+      projectDefaultConfigRevision: configDocument.revision,
+      projectDefaultPrimaryAppGroup: primaryGroupId,
       repoName: basename(worktrees[0].path),
-      repoPath: selectedRoot,
-      trustCommands: [
-        commandSummary("Setup", config.setup),
-        ...lifecycleCommands,
-      ],
+      repoPath: projectRoot,
+      trustCommands: trustCommands(config),
+      trustFingerprint: repositoryCommandFingerprint(config),
       trustRequired: repositoryRequiresTrust(config),
       trusted: repositoryIsTrusted(
-        selectedRoot,
+        projectRoot,
         config,
         this.processes.controlDirectory
       ),
@@ -445,10 +507,10 @@ export class WorkspaceController {
     worktreeIdValue: string,
     groupId: string
   ): Promise<"already-running" | "retried"> {
-    this.assertTrusted(repoPath);
-    return this.appGroups.retry(
-      this.appGroupTarget(repoPath, worktreeIdValue, groupId)
-    );
+    this.assertTrusted(repoPath, worktreeIdValue);
+    const target = this.appGroupTarget(repoPath, worktreeIdValue, groupId);
+    this.assertConfigTrusted(target.repoPath, target.config);
+    return this.appGroups.retry(target);
   }
 
   stopAppGroup(
@@ -456,20 +518,23 @@ export class WorkspaceController {
     worktreeIdValue: string,
     groupId: string
   ): Promise<"already-stopped" | "stopped"> {
+    if (this.appGroups.isDetachedGroupId(groupId)) {
+      const { workspace, worktree } = this.worktree(repoPath, worktreeIdValue);
+      return this.appGroups.stopDetached(
+        workspace.repoPath,
+        worktree.path,
+        groupId
+      );
+    }
     const target = this.appGroupTarget(repoPath, worktreeIdValue, groupId);
     if (target.config.appGroups[groupId]?.stop !== "process") {
-      this.assertTrusted(repoPath);
+      this.assertConfigTrusted(target.repoPath, target.config);
     }
     return this.appGroups.stop(target);
   }
 
   config(repoPath: string): WorktreeEnvConfig {
-    const root = git(repoPath, ["rev-parse", "--show-toplevel"]);
-    const path = findBranchBaseConfig(root);
-    if (!path) {
-      throw new MissingWorktreeConfigError(join(root, ".branchbase.json"));
-    }
-    return loadBranchBaseConfig(path);
+    return this.inspect(repoPath).projectDefaultConfig;
   }
 
   updateConfiguration(
@@ -479,7 +544,7 @@ export class WorkspaceController {
   ): void {
     const workspace = this.inspect(repoPath);
     const topologyChanged =
-      JSON.stringify(workspace.config.appGroups) !==
+      JSON.stringify(workspace.projectDefaultConfig.appGroups) !==
       JSON.stringify(config.appGroups);
     const hasRunningProcesses = workspace.worktrees.some(
       (worktree) =>
@@ -491,23 +556,63 @@ export class WorkspaceController {
         "Stop repository App groups and setup processes before changing their configuration."
       );
     }
-    updateBranchBaseConfig(workspace.configPath, config, revision);
+    updateBranchBaseConfig(
+      workspace.projectDefaultConfigPath,
+      config,
+      revision
+    );
   }
 
-  assertTrusted(repoPath: string): void {
+  assertTrusted(repoPath: string, worktreeIdValue?: string): void {
     const workspace = this.inspect(repoPath);
-    if (!workspace.trusted) {
+    const trusted = worktreeIdValue
+      ? workspace.worktrees.find(({ id }) => id === worktreeIdValue)
+          ?.configuration.trusted
+      : workspace.trusted;
+    if (!trusted) {
       throw new Error("Review and trust this repository's commands first");
     }
   }
 
-  trustRepository(repoPath: string): void {
+  trustRepository(
+    repoPath: string,
+    approvals?: readonly RepositoryTrustApproval[]
+  ): void {
     const workspace = this.inspect(repoPath);
-    saveRepositoryTrust(
-      workspace.repoPath,
-      workspace.config,
-      this.processes.controlDirectory
-    );
+    const reviewed = approvals ?? [
+      {
+        fingerprint: workspace.trustFingerprint,
+      },
+    ];
+    const configurations = reviewed.map((approval) => {
+      const path = approval.worktreeId
+        ? (() => {
+            const worktree = workspace.worktrees.find(
+              (item) => item.id === approval.worktreeId
+            );
+            if (!worktree) {
+              throw new Error("Unknown worktree");
+            }
+            return worktree.configuration.path;
+          })()
+        : workspace.projectDefaultConfigPath;
+      const config = loadBranchBaseConfig(path);
+      if (repositoryCommandFingerprint(config) !== approval.fingerprint) {
+        throw new Error(
+          "Repository commands changed after they were reviewed; review them again."
+        );
+      }
+      return { config, path };
+    });
+    for (const { config } of new Map(
+      configurations.map((configuration) => [configuration.path, configuration])
+    ).values()) {
+      saveRepositoryTrust(
+        workspace.repoPath,
+        config,
+        this.processes.controlDirectory
+      );
+    }
   }
 
   initializeRepository(repoPath: string) {
@@ -559,9 +664,45 @@ export class WorkspaceController {
     );
   }
 
+  selectWorktreeConfigSource(
+    repoPath: string,
+    worktreeIdValue: string,
+    source: WorktreeConfigSource
+  ): void {
+    const { workspace, worktree } = this.worktree(repoPath, worktreeIdValue);
+    if (
+      worktree.configuration.changeBlocked ||
+      this.appGroups.hasPendingLifecycle(worktree.path)
+    ) {
+      throw new Error(
+        "Stop this worktree's App groups and setup process before changing its configuration source."
+      );
+    }
+    if (source === "checkout") {
+      const path = findBranchBaseConfig(worktree.path);
+      if (!path) {
+        throw new MissingWorktreeConfigError(
+          join(worktree.path, ".branchbase.json")
+        );
+      }
+      loadBranchBaseConfigDocument(path);
+    }
+    this.state.setWorktreeConfigSource(
+      {
+        repoLabel: workspace.repoName,
+        repoPath: workspace.repoPath,
+        worktreeLabel: worktree.branch,
+        worktreePath: worktree.path,
+      },
+      source
+    );
+  }
+
   startSetup(repoPath: string, worktreeIdValue: string): void {
     const { workspace, worktree } = this.worktree(repoPath, worktreeIdValue);
-    const setup = resolveSetupCommand(workspace.config);
+    const config = loadBranchBaseConfig(worktree.configuration.path);
+    this.assertConfigTrusted(workspace.repoPath, config);
+    const setup = resolveSetupCommand(config);
     this.processes.appendManagedLog(
       worktree.id,
       `[branchbase] Running setup: ${setup.argv.join(" ")}`
@@ -590,11 +731,12 @@ export class WorkspaceController {
     groupId: string
   ): AppGroupTarget {
     const { workspace, worktree } = this.worktree(repoPath, worktreeIdValue);
-    if (!workspace.config.appGroups[groupId]) {
+    const config = loadBranchBaseConfig(worktree.configuration.path);
+    if (!config.appGroups[groupId]) {
       throw new Error(`Unknown App group "${groupId}"`);
     }
     return {
-      config: workspace.config,
+      config,
       groupId,
       repoPath: workspace.repoPath,
       worktree: {
@@ -620,10 +762,21 @@ export class WorkspaceController {
     worktreeIdValue: string,
     groupId: string
   ): Promise<"already-running" | "started"> {
-    this.assertTrusted(repoPath);
-    return this.appGroups.start(
-      this.appGroupTarget(repoPath, worktreeIdValue, groupId)
-    );
+    this.assertTrusted(repoPath, worktreeIdValue);
+    const target = this.appGroupTarget(repoPath, worktreeIdValue, groupId);
+    this.assertConfigTrusted(target.repoPath, target.config);
+    return this.appGroups.start(target);
+  }
+
+  protected assertConfigTrusted(
+    repoPath: string,
+    config: BranchBaseConfig
+  ): void {
+    if (
+      !repositoryIsTrusted(repoPath, config, this.processes.controlDirectory)
+    ) {
+      throw new Error("Review and trust this repository's commands first");
+    }
   }
 
   private readOnlyWorktreePath(

@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { BranchBaseConfigSchema } from "../config/branchbase-schema";
+import { RepositoryTrustApprovalSchema } from "../config/repository-trust-approval";
+import { WorktreeConfigSourceSchema } from "../config/worktree-config-source";
 
 const RepositoryPathSchema = z.object({
   repoPath: z.string().min(1),
@@ -52,12 +54,18 @@ const INPUT_SCHEMAS = {
   "select-app-group-instance": StartStopSchema.extend({
     instanceId: z.string().min(1),
   }),
+  "select-worktree-config-source": RepositoryPathSchema.extend({
+    source: WorktreeConfigSourceSchema,
+    worktreeId: z.string().min(1),
+  }),
   "setup-all-apps": VisibleBulkSchema,
   "start-all-apps": VisibleBulkSchema,
   "start-apps": StartStopSchema,
   "stop-all-apps": VisibleBulkSchema,
   "stop-apps": StartStopSchema,
-  "trust-repository": RepositoryPathSchema,
+  "trust-repository": RepositoryPathSchema.extend({
+    approvals: z.array(RepositoryTrustApprovalSchema).min(1),
+  }),
   "update-repository-config": RepositoryPathSchema.extend({
     config: BranchBaseConfigSchema,
     revision: z.string().min(1),
@@ -76,6 +84,7 @@ const RESULT_SCHEMAS = {
   "retry-apps": CommandReceiptSchema,
   "restart-running-apps": CommandReceiptSchema,
   "select-app-group-instance": CommandReceiptSchema,
+  "select-worktree-config-source": CommandReceiptSchema,
   "setup-all-apps": CommandReceiptSchema,
   "start-all-apps": CommandReceiptSchema,
   "start-apps": CommandReceiptSchema,

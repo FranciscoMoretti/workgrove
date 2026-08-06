@@ -49,6 +49,21 @@ describe("pending command scopes", () => {
     expect(scopes.appGroups.size).toBe(0);
   });
 
+  it("scopes configuration-source pending state to its worktree", () => {
+    const scopes = pendingCommandScopes(
+      [
+        {
+          command: "select-worktree-config-source",
+          variables: { repoPath, worktreeId: "feature" },
+        },
+      ],
+      repoPath
+    );
+
+    expect(scopes.configSourceWorktrees).toEqual(new Set(["feature"]));
+    expect(scopes.configSourceWorktrees.has("main")).toBe(false);
+  });
+
   it("marks every group pending for aggregate lifecycle commands", () => {
     const scopes = pendingCommandScopes(
       [

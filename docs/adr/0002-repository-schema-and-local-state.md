@@ -10,6 +10,8 @@ unreleased slot-based model without a compatibility requirement.
 
 `.branchbase.json` is the checked-in opt-in marker for a BranchBase-capable repository and the only source of truth for repository-specific topology and behavior. It declares Setup, app groups, lifecycle commands, apps, protocols, readiness, and group environments. The dashboard continues to edit this file in the repository.
 
+[ADR 0004](./0004-project-default-and-worktree-configurations.md) subsequently allows user-local state to select whether a worktree inherits the Project default file or reads its own checked-in file. Local state still does not contain or override configuration content.
+
 User-local state records only user-created relationships and BranchBase-owned assignments. It does not mirror or override repository configuration.
 
 Live queries remain the source of truth for processes, listeners, readiness, and routes. BranchBase never persists Running, Partial, Stopped, Ready, Failed, or similar conclusions.
@@ -122,11 +124,9 @@ Every app explicitly declares one protocol:
 
 Owned TCP-listener readiness is the default. An HTTP app may configure an HTTP path and accepted status range. BranchBase uses a 60-second startup timeout unless an app overrides it. Timeout produces an Unready or Partial live observation and does not kill the app group.
 
-## Repository-wide trust
+## Project trust
 
-Trust remains one repository-wide decision, not one approval per command. BranchBase fingerprints the repository's complete execution contract: Setup, every Start and Stop command, relative working directories, environment and argv templates, and app declarations that control generated runtime values. Dynamic allocations such as chosen port numbers do not change the fingerprint.
-
-Opening an untrusted repository remains safe for inspection, but BranchBase will not execute its commands until the user approves the current repository fingerprint. A changed execution fingerprint requires one new repository-wide approval.
+BranchBase fingerprints each Effective configuration's complete execution contract. Approval is scoped to the target worktree's Effective configuration, and the Project retains every explicitly approved fingerprint. This lets an approved default and an experimental worktree configuration coexist without either silently authorizing or blocking the other. See [ADR 0004](./0004-project-default-and-worktree-configurations.md) for the current trust and configuration-selection model.
 
 ## Tracked repositories
 

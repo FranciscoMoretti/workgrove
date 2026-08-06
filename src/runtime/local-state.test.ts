@@ -3,14 +3,15 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { FileBranchBaseStateStore } from "./local-state";
+import { FileBranchBaseStateStore, type InstanceRequest } from "./local-state";
 
 const COLLISION_SAFE_HOSTNAME = /^web-[a-f0-9]{6}\.main\.chat-js\.localhost$/;
 
 function request(
   overrides: Partial<Parameters<FileBranchBaseStateStore["instance"]>[0]> = {}
-) {
+): InstanceRequest {
   return {
+    configFingerprint: "default-contract",
     groupId: "development",
     mode: "per-worktree" as const,
     repoLabel: "chat-js",
@@ -106,13 +107,143 @@ describe("BranchBase local App-group instance state", () => {
       );
       expect(store.instance(featureRequest).id).toBe(experiment.id);
       expect(store.instance(mainRequest).id).toBe(shared.id);
-      expect(store.instances(mainRequest.repoPath, "services")).toEqual([
+      expect(
+        store.instances(
+          mainRequest.repoPath,
+          "services",
+          mainRequest.configFingerprint
+        )
+      ).toEqual([
         expect.objectContaining({ id: shared.id, name: "Default" }),
         expect.objectContaining({
           id: experiment.id,
           name: "Migration experiment",
         }),
       ]);
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("isolates selectable instances with incompatible configuration contracts", () => {
+    const directory = mkdtempSync(join(tmpdir(), "branchbase-state-"));
+    try {
+      const store = new FileBranchBaseStateStore(join(directory, "state.json"));
+      const stable = request({
+        configFingerprint: "stable-contract",
+        groupId: "services",
+        mode: "selectable",
+      });
+      const experiment = request({
+        configFingerprint: "experiment-contract",
+        groupId: "services",
+        mode: "selectable",
+      });
+
+      const stableInstance = store.instance(stable);
+      const experimentInstance = store.instance(experiment);
+      const stableSelection = store.createSelectableInstance(
+        stable,
+        "Shared data"
+      );
+      const experimentSelection = store.createSelectableInstance(
+        experiment,
+        "Shared data"
+      );
+
+      expect(experimentInstance.id).not.toBe(stableInstance.id);
+      expect(store.instance(stable).id).toBe(stableSelection.id);
+      expect(store.instance(experiment).id).toBe(experimentSelection.id);
+      expect(
+        store.instances(
+          stable.repoPath,
+          stable.groupId,
+          stable.configFingerprint
+        )
+      ).toContainEqual(expect.objectContaining({ id: stableInstance.id }));
+      expect(
+        store.instances(
+          experiment.repoPath,
+          experiment.groupId,
+          experiment.configFingerprint
+        )
+      ).toContainEqual(expect.objectContaining({ id: experimentInstance.id }));
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps legacy selectable instances visible, reserved, and selectable", () => {
+    const directory = mkdtempSync(join(tmpdir(), "branchbase-state-"));
+    try {
+      const statePath = join(directory, "state.json");
+      const selectable = request({ groupId: "services", mode: "selectable" });
+      const store = new FileBranchBaseStateStore(statePath);
+      const primary = store.instance(selectable);
+      const secondary = store.createSelectableInstance(
+        selectable,
+        "Legacy data"
+      );
+      const persisted = JSON.parse(readFileSync(statePath, "utf8"));
+      persisted.repositories[selectable.repoPath].instances[
+        primary.id
+      ].configFingerprint = "";
+      persisted.repositories[selectable.repoPath].instances[
+        secondary.id
+      ].configFingerprint = "";
+      writeFileSync(statePath, JSON.stringify(persisted));
+
+      const restored = new FileBranchBaseStateStore(statePath);
+      expect(
+        restored
+          .instances(
+            selectable.repoPath,
+            selectable.groupId,
+            selectable.configFingerprint
+          )
+          .map(({ id }) => id)
+      ).toEqual([primary.id, secondary.id]);
+      expect(() =>
+        restored.createSelectableInstance(selectable, "legacy DATA")
+      ).toThrow('An instance named "legacy DATA" already exists');
+      expect(restored.selectInstance(selectable, secondary.id).id).toBe(
+        secondary.id
+      );
+      expect(restored.instance(selectable).configFingerprint).toBe(
+        selectable.configFingerprint
+      );
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("reports persisted runs only for the worktree that owns them", () => {
+    const directory = mkdtempSync(join(tmpdir(), "branchbase-state-"));
+    try {
+      const store = new FileBranchBaseStateStore(join(directory, "state.json"));
+      const main = request();
+      const instance = store.instance(main);
+      store.saveRun(
+        { instanceId: instance.id, repoPath: main.repoPath },
+        {
+          apps: {},
+          createdAt: new Date().toISOString(),
+          groupId: main.groupId,
+          instanceId: instance.id,
+          instanceIdsByGroup: { [main.groupId]: instance.id },
+          worktreePath: main.worktreePath,
+        }
+      );
+
+      expect(store.hasRunForWorktree(main.repoPath, main.worktreePath)).toBe(
+        true
+      );
+      expect(
+        store.runningInstancesForWorktree(main.repoPath, main.worktreePath)
+      ).toEqual([expect.objectContaining({ id: instance.id })]);
+      expect(
+        store.hasRunForWorktree(main.repoPath, "/code/one/chat-js-feature")
+      ).toBe(false);
     } finally {
       rmSync(directory, { force: true, recursive: true });
     }

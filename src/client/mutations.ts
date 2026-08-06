@@ -41,6 +41,10 @@ export function useCommands(repoPath: string) {
     "select-app-group-instance",
     repoPath
   );
+  const selectWorktreeConfigSource = useCommand(
+    "select-worktree-config-source",
+    repoPath
+  );
   const stopApps = useCommand("stop-apps", repoPath);
   const stopAllApps = useCommand("stop-all-apps", repoPath);
   const trustRepository = useCommand("trust-repository", repoPath);
@@ -59,6 +63,7 @@ export function useCommands(repoPath: string) {
     retryApps,
     restartRunningApps,
     selectAppGroupInstance,
+    selectWorktreeConfigSource,
     setupAllApps,
     startAllApps,
     startApps,

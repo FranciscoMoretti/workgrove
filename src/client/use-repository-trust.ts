@@ -1,55 +1,85 @@
 import { useCallback, useState } from "react";
 
+import type { RepositoryTrustApproval } from "../config/repository-trust-approval";
+
 export type RepositoryTrustAction = () => void | Promise<void>;
+
+export interface RepositoryTrustScope {
+  approvals: RepositoryTrustApproval[];
+  commands: string[];
+  trusted: boolean;
+}
 
 export type RequestRepositoryTrust = (
   label: string,
-  action: RepositoryTrustAction
+  action: RepositoryTrustAction,
+  scope?: RepositoryTrustScope
 ) => void;
 
 interface TrustRequest {
   action: RepositoryTrustAction;
+  approvals: RepositoryTrustApproval[];
+  commands: string[];
   key: string;
   label: string;
+  trusted: boolean;
+}
+
+export function repositoryTrustDialogOpen(
+  required: boolean,
+  trusted: boolean,
+  hasRequest: boolean
+): boolean {
+  return required && !trusted && hasRequest;
 }
 
 export function useRepositoryTrust({
+  approval,
+  commands,
   repoPath,
   required,
   trusted,
 }: {
+  approval: RepositoryTrustApproval;
+  commands: string[];
   repoPath: string;
   required: boolean;
   trusted: boolean;
 }) {
-  const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
   const [request, setRequest] = useState<TrustRequest | null>(null);
   const key = repoPath;
   const currentRequest = request?.key === key ? request : null;
-  const open =
-    required && !trusted && (currentRequest !== null || !dismissed.has(key));
+  const activeTrusted = currentRequest?.trusted ?? trusted;
+  const open = repositoryTrustDialogOpen(
+    required,
+    activeTrusted,
+    currentRequest !== null
+  );
 
   const requestTrust = useCallback<RequestRepositoryTrust>(
-    (label, action) => {
-      if (!(required && !trusted)) {
+    (label, action, scope) => {
+      const requestTrusted = scope?.trusted ?? trusted;
+      if (!(required && !requestTrusted)) {
         Promise.resolve()
           .then(action)
           .catch(() => undefined);
         return;
       }
-      setRequest({ action, key, label });
+      setRequest({
+        action,
+        approvals: scope?.approvals ?? [approval],
+        commands: scope?.commands ?? commands,
+        key,
+        label,
+        trusted: requestTrusted,
+      });
     },
-    [key, required, trusted]
+    [approval, commands, key, required, trusted]
   );
 
   const dismiss = useCallback(() => {
-    setDismissed((current) => {
-      const next = new Set(current);
-      next.add(key);
-      return next;
-    });
     setRequest(null);
-  }, [key]);
+  }, []);
 
   const approve = useCallback(
     async (authorize: () => Promise<unknown>) => {
@@ -59,11 +89,6 @@ export function useRepositoryTrust({
       } catch {
         return;
       }
-      setDismissed((current) => {
-        const next = new Set(current);
-        next.add(key);
-        return next;
-      });
       setRequest(null);
       try {
         await action?.();
@@ -71,12 +96,14 @@ export function useRepositoryTrust({
         // The command mutation owns its error state and presentation.
       }
     },
-    [currentRequest, key]
+    [currentRequest]
   );
 
   return {
     actionLabel: currentRequest?.label ?? null,
+    approvals: currentRequest?.approvals ?? [approval],
     approve,
+    commands: currentRequest?.commands ?? commands,
     dismiss,
     open,
     requestTrust,

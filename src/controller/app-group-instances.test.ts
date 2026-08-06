@@ -12,9 +12,14 @@ import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import {
+  repositoryCommandFingerprint,
+  trustRepository,
+} from "../config/repository-trust";
 import type { LocalRoute, LocalRoutingEngine } from "../runtime/local-routing";
 import { FileBranchBaseStateStore } from "../runtime/local-state";
 import { ProcessSupervisor } from "../runtime/process-supervisor";
+import { AppGroupRuntime } from "./app-group-runtime";
 import { WorkspaceController } from "./workspace-controller";
 
 class InMemoryRoutingEngine implements LocalRoutingEngine {
@@ -62,6 +67,27 @@ class FailingPrepareRoutingEngine extends InMemoryRoutingEngine {
   }
 }
 
+class BlockingPrepareRoutingEngine extends InMemoryRoutingEngine {
+  private released = false;
+  private releasePrepare: (() => void) | null = null;
+
+  override prepare(): Promise<void> {
+    if (this.released) {
+      this.prepared = true;
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      this.releasePrepare = resolve;
+    });
+  }
+
+  release(): void {
+    this.released = true;
+    this.prepared = true;
+    this.releasePrepare?.();
+  }
+}
+
 class RecoverableActivationRoutingEngine extends InMemoryRoutingEngine {
   private failing = true;
 
@@ -78,6 +104,10 @@ class RecoverableActivationRoutingEngine extends InMemoryRoutingEngine {
 
 class TrustedWorkspaceController extends WorkspaceController {
   override assertTrusted(): void {
+    // This fixture controls every command and does not touch repository trust.
+  }
+
+  protected override assertConfigTrusted(): void {
     // This fixture controls every command and does not touch repository trust.
   }
 }
@@ -103,6 +133,111 @@ function close(server: Server): Promise<void> {
 }
 
 describe("App-group instance assignment", () => {
+  it("uses an approved captured Stop command for a detached run", async () => {
+    const temporary = mkdtempSync(join(tmpdir(), "branchbase-cleanup-stop-"));
+    try {
+      const controlDirectory = join(temporary, "control");
+      const marker = join(temporary, "stopped");
+      const config = {
+        appGroups: {
+          Services: {
+            apps: {},
+            instances: { mode: "per-worktree" as const },
+            start: { argv: ["true"] },
+            stop: { argv: ["true"] },
+          },
+        },
+        setup: { argv: ["true"] },
+        version: 1 as const,
+      };
+      const state = new FileBranchBaseStateStore(join(temporary, "state.json"));
+      const instance = state.instance({
+        configFingerprint: repositoryCommandFingerprint(config),
+        groupId: "Services",
+        mode: "per-worktree",
+        repoLabel: "project",
+        repoPath: temporary,
+        worktreeLabel: "main",
+        worktreePath: temporary,
+      });
+      state.saveRun(
+        { instanceId: instance.id, repoPath: temporary },
+        {
+          apps: {},
+          createdAt: new Date().toISOString(),
+          groupId: "Services",
+          instanceId: instance.id,
+          instanceIdsByGroup: { Services: instance.id },
+          stop: {
+            argv: [
+              "bun",
+              "-e",
+              `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "stopped")`,
+            ],
+            env: {},
+          },
+          worktreePath: temporary,
+        }
+      );
+      trustRepository(temporary, config, controlDirectory);
+      const runtime = new AppGroupRuntime(
+        new ProcessSupervisor(controlDirectory),
+        new InMemoryRoutingEngine(),
+        state
+      );
+
+      await runtime.stopDetached(
+        temporary,
+        temporary,
+        `cleanup:${instance.id}`
+      );
+
+      expect(readFileSync(marker, "utf8")).toBe("stopped");
+      expect(state.run({ instanceId: instance.id, repoPath: temporary })).toBe(
+        null
+      );
+    } finally {
+      rmSync(temporary, { force: true, recursive: true });
+    }
+  });
+
+  it("exposes in-flight lifecycle work before a run is persisted", async () => {
+    const temporary = mkdtempSync(join(tmpdir(), "branchbase-pending-start-"));
+    try {
+      const routing = new BlockingPrepareRoutingEngine();
+      const runtime = new AppGroupRuntime(
+        new ProcessSupervisor(join(temporary, "control")),
+        routing,
+        new FileBranchBaseStateStore(join(temporary, "state.json"))
+      );
+      const target = {
+        config: {
+          appGroups: {
+            Apps: {
+              apps: {},
+              instances: { mode: "per-worktree" as const },
+              start: { argv: ["true"] },
+              stop: "process" as const,
+            },
+          },
+          setup: { argv: ["true"] },
+          version: 1 as const,
+        },
+        groupId: "Apps",
+        repoPath: temporary,
+        worktree: { id: "main", path: temporary, routeLabel: "main" },
+      };
+
+      const started = runtime.start(target);
+      expect(runtime.hasPendingLifecycle(temporary)).toBe(true);
+      routing.release();
+      await started;
+      expect(runtime.hasPendingLifecycle(temporary)).toBe(false);
+    } finally {
+      rmSync(temporary, { force: true, recursive: true });
+    }
+  });
+
   it("shares selectable defaults and lets one worktree switch to an isolated instance", () => {
     const temporary = mkdtempSync(join(tmpdir(), "branchbase-instances-"));
     const repository = join(temporary, "project");

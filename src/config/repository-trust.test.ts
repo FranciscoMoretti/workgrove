@@ -6,6 +6,7 @@ import { BranchBaseConfigSchema } from "./branchbase-schema";
 import {
   repositoryCommandFingerprint,
   repositoryIsTrusted,
+  trustRepository,
 } from "./repository-trust";
 
 function config(mode: "per-worktree" | "selectable") {
@@ -48,5 +49,22 @@ describe("repository trust fingerprint", () => {
     expect(repositoryCommandFingerprint(config("per-worktree"))).not.toBe(
       repositoryCommandFingerprint(config("selectable"))
     );
+  });
+
+  it("retains approvals for multiple effective configurations in one Project", () => {
+    const directory = mkdtempSync(join(tmpdir(), "branchbase-trust-"));
+    try {
+      const repoPath = "/code/chat-js";
+      const primary = config("per-worktree");
+      const experiment = config("selectable");
+
+      trustRepository(repoPath, primary, directory);
+      trustRepository(repoPath, experiment, directory);
+
+      expect(repositoryIsTrusted(repoPath, primary, directory)).toBe(true);
+      expect(repositoryIsTrusted(repoPath, experiment, directory)).toBe(true);
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
   });
 });

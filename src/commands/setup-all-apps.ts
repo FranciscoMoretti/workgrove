@@ -7,12 +7,17 @@ export function setupAllApps(
   input: Record<string, unknown>
 ): CommandReceipt {
   const repoPath = requiredString(input.repoPath, "Repository path");
-  controller.assertTrusted(repoPath);
   const workspace = controller.inspect(repoPath);
   const targets = selectRequestedWorktrees(
     workspace.worktrees,
     input.worktreeIds
   );
+  if (targets.length === 0) {
+    controller.assertTrusted(repoPath);
+  }
+  for (const worktree of targets) {
+    controller.assertTrusted(repoPath, worktree.id);
+  }
   for (const worktree of targets) {
     controller.startSetup(repoPath, worktree.id);
   }

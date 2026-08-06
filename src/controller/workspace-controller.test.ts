@@ -13,6 +13,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { selectRequestedWorktrees } from "../commands/command";
+import { loadBranchBaseConfig } from "../config/branchbase-config";
+import { trustRepository as saveRepositoryTrust } from "../config/repository-trust";
 import { parseWorktreeList } from "../git/discover-worktrees";
 import type {
   LocalRoute,
@@ -20,6 +22,7 @@ import type {
   LocalRoutingEngine,
 } from "../runtime/local-routing";
 import { FileBranchBaseStateStore } from "../runtime/local-state";
+import { ProcessSupervisor } from "../runtime/process-supervisor";
 import { WorkspaceController } from "./workspace-controller";
 import {
   appGroupCanRestart,
@@ -27,6 +30,8 @@ import {
   worktreeHasRunningAppGroups,
 } from "./workspace-snapshot";
 import { commandWorkingDirectory } from "./worktree-command";
+
+const CLEANUP_APP_GROUP = /^cleanup:/;
 
 class FakeRoutingEngine implements LocalRoutingEngine {
   async activate(_route: LocalRoute): Promise<void> {
@@ -73,7 +78,7 @@ describe("slot-free workspace inspection", () => {
       });
 
       const snapshot = controller.inspect(root);
-      expect(snapshot.primaryAppGroup).toBe("product");
+      expect(snapshot.projectDefaultPrimaryAppGroup).toBe("product");
       expect(snapshot.worktrees[0]?.appGroups[0]).toMatchObject({
         health: "not-running",
         id: "product",
@@ -100,6 +105,263 @@ describe("slot-free workspace inspection", () => {
       );
     } finally {
       rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  it("lets one worktree use its own configuration without changing the Project default", async () => {
+    const sandbox = mkdtempSync(join(tmpdir(), "branchbase-config-source-"));
+    const root = join(sandbox, "chat-js");
+    const experiment = join(sandbox, "chat-js-experiment");
+    const statePath = join(sandbox, ".local", "state.json");
+    const controlDirectory = join(sandbox, ".control");
+    const config = (groupId: string, startCommand = "true") => ({
+      version: 1,
+      setup: { argv: ["true"] },
+      appGroups: {
+        [groupId]: {
+          start: { argv: [startCommand] },
+          stop: "process",
+          apps: {
+            web: { protocol: "http", readiness: "tcp" },
+          },
+        },
+      },
+    });
+    try {
+      mkdirSync(root);
+      spawnSync("git", ["init", "-q"], { cwd: root });
+      spawnSync("git", ["config", "user.email", "branchbase@example.com"], {
+        cwd: root,
+      });
+      spawnSync("git", ["config", "user.name", "BranchBase Test"], {
+        cwd: root,
+      });
+      writeFileSync(
+        join(root, ".branchbase.json"),
+        JSON.stringify(config("default-apps"))
+      );
+      spawnSync("git", ["add", ".branchbase.json"], { cwd: root });
+      spawnSync("git", ["commit", "-qm", "Add BranchBase config"], {
+        cwd: root,
+      });
+      spawnSync(
+        "git",
+        ["worktree", "add", "-q", "-b", "experiment", experiment],
+        { cwd: root }
+      );
+      writeFileSync(
+        join(experiment, ".branchbase.json"),
+        JSON.stringify(config("experiment-apps"))
+      );
+      const state = new FileBranchBaseStateStore(statePath);
+      const controller = new WorkspaceController(undefined, {
+        processes: new ProcessSupervisor(controlDirectory),
+        routing: new FakeRoutingEngine(),
+        state,
+      });
+
+      const inherited = controller.inspect(experiment);
+      const experimentWorktree = inherited.worktrees.find(
+        ({ path }) => path === realpathSync(experiment)
+      );
+      expect(inherited.repoPath).toBe(realpathSync(root));
+      expect(experimentWorktree).toMatchObject({
+        configuration: {
+          path: join(realpathSync(root), ".branchbase.json"),
+          preference: "project-default",
+          source: "project-default",
+        },
+        primaryAppGroup: "default-apps",
+      });
+
+      await controller.execute("select-worktree-config-source", {
+        repoPath: experiment,
+        source: "checkout",
+        worktreeId: experimentWorktree?.id,
+      });
+      const reviewedExperiment = controller
+        .inspect(root)
+        .worktrees.find(({ path }) => path === realpathSync(experiment));
+      if (!reviewedExperiment) {
+        throw new Error("Expected the experiment worktree");
+      }
+      const experimentApproval = {
+        fingerprint: reviewedExperiment.configuration.trustFingerprint,
+        worktreeId: reviewedExperiment.id,
+      };
+      writeFileSync(
+        join(experiment, ".branchbase.json"),
+        JSON.stringify(config("experiment-apps", "printf"))
+      );
+      expect(() =>
+        controller.trustRepository(root, [experimentApproval])
+      ).toThrow("commands changed after they were reviewed");
+      writeFileSync(
+        join(experiment, ".branchbase.json"),
+        JSON.stringify(config("experiment-apps"))
+      );
+      controller.trustRepository(root, [experimentApproval]);
+      const experimentOnlyTrust = controller.inspect(root);
+      expect(experimentOnlyTrust.trusted).toBe(false);
+      expect(
+        experimentOnlyTrust.worktrees.find(
+          ({ path }) => path === realpathSync(experiment)
+        )?.configuration.trusted
+      ).toBe(true);
+      writeFileSync(
+        join(experiment, ".branchbase.json"),
+        JSON.stringify(config("experiment-apps", "printf"))
+      );
+      saveRepositoryTrust(
+        realpathSync(root),
+        loadBranchBaseConfig(join(root, ".branchbase.json")),
+        controlDirectory
+      );
+
+      const selected = controller.inspect(root);
+      const selectedExperiment = selected.worktrees.find(
+        ({ path }) => path === realpathSync(experiment)
+      );
+      expect(selectedExperiment).toMatchObject({
+        configuration: {
+          path: join(realpathSync(experiment), ".branchbase.json"),
+          preference: "checkout",
+          source: "checkout",
+        },
+        primaryAppGroup: "experiment-apps",
+      });
+      expect(selectedExperiment?.appGroups.map(({ id }) => id)).toEqual([
+        "experiment-apps",
+      ]);
+      const selectedMain = selected.worktrees.find(
+        ({ path }) => path === realpathSync(root)
+      );
+      expect(selectedMain).toMatchObject({
+        configuration: {
+          preference: "project-default",
+          source: "project-default",
+          trusted: true,
+        },
+        primaryAppGroup: "default-apps",
+      });
+      expect(selected.trusted).toBe(true);
+      expect(selectedExperiment?.configuration.trusted).toBe(false);
+      expect(() =>
+        controller.assertTrusted(selected.repoPath, selectedMain?.id)
+      ).not.toThrow();
+      expect(() =>
+        controller.assertTrusted(selected.repoPath, selectedExperiment?.id)
+      ).toThrow("Review and trust");
+
+      const selectedMainGroup = selectedMain?.appGroups[0];
+      if (!(selectedMain && selectedMainGroup)) {
+        throw new Error("Expected the main worktree App group");
+      }
+      state.saveRun(
+        {
+          instanceId: selectedMainGroup.instance.id,
+          repoPath: selected.repoPath,
+        },
+        {
+          apps: {},
+          createdAt: new Date().toISOString(),
+          groupId: selectedMainGroup.id,
+          instanceId: selectedMainGroup.instance.id,
+          instanceIdsByGroup: {
+            [selectedMainGroup.id]: selectedMainGroup.instance.id,
+          },
+          worktreePath: selectedMain.path,
+        }
+      );
+
+      const activeMain = controller.inspect(root);
+      expect(
+        activeMain.worktrees.find(({ path }) => path === realpathSync(root))
+          ?.configuration.changeBlocked
+      ).toBe(true);
+      expect(
+        activeMain.worktrees.find(
+          ({ path }) => path === realpathSync(experiment)
+        )?.configuration.changeBlocked
+      ).toBe(false);
+      expect(() =>
+        controller.selectWorktreeConfigSource(
+          root,
+          selectedExperiment?.id ?? "",
+          "project-default"
+        )
+      ).not.toThrow();
+      controller.selectWorktreeConfigSource(
+        root,
+        selectedExperiment?.id ?? "",
+        "checkout"
+      );
+
+      const activeExperiment = controller
+        .inspect(root)
+        .worktrees.find(({ path }) => path === realpathSync(experiment));
+      const activeExperimentGroup = activeExperiment?.appGroups[0];
+      if (!(activeExperiment && activeExperimentGroup)) {
+        throw new Error("Expected the experiment App group");
+      }
+      state.saveRun(
+        {
+          instanceId: activeExperimentGroup.instance.id,
+          repoPath: selected.repoPath,
+        },
+        {
+          apps: {},
+          createdAt: new Date().toISOString(),
+          groupId: activeExperimentGroup.id,
+          instanceId: activeExperimentGroup.instance.id,
+          instanceIdsByGroup: {
+            [activeExperimentGroup.id]: activeExperimentGroup.instance.id,
+          },
+          worktreePath: activeExperiment.path,
+        }
+      );
+      expect(() =>
+        controller.selectWorktreeConfigSource(
+          root,
+          activeExperiment.id,
+          "project-default"
+        )
+      ).toThrow("Stop this worktree's App groups");
+      writeFileSync(join(experiment, ".branchbase.json"), "{");
+      const fallback = controller
+        .inspect(root)
+        .worktrees.find(({ path }) => path === realpathSync(experiment));
+      expect(fallback).toMatchObject({
+        configuration: {
+          error: expect.stringContaining("Invalid checkout configuration"),
+          path: join(realpathSync(root), ".branchbase.json"),
+          preference: "checkout",
+          source: "project-default",
+        },
+        primaryAppGroup: expect.stringMatching(CLEANUP_APP_GROUP),
+      });
+      const cleanupGroup = fallback?.appGroups.find(
+        (group) => group.cleanupOnly === true
+      );
+      expect(cleanupGroup).toMatchObject({
+        instance: { id: activeExperimentGroup.instance.id },
+        name: "experiment-apps (cleanup)",
+      });
+      await controller.stopAppGroup(
+        root,
+        activeExperiment.id,
+        cleanupGroup?.id ?? ""
+      );
+      expect(
+        controller
+          .inspect(root)
+          .worktrees.find(({ id }) => id === activeExperiment.id)
+      ).toMatchObject({
+        configuration: { changeBlocked: false },
+        primaryAppGroup: "default-apps",
+      });
+    } finally {
+      rmSync(sandbox, { force: true, recursive: true });
     }
   });
 });

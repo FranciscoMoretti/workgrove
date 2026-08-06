@@ -12,8 +12,10 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import type { CodexTaskSnapshot } from "../../codex/codex-integration";
+import { WorktreeConfigSourceSchema } from "../../config/worktree-config-source";
 import type {
   AppGroupSnapshot,
+  WorktreeConfigSource,
   WorktreeSnapshot,
 } from "../../controller/workspace-snapshot";
 import { appsAreRunning } from "../../controller/workspace-snapshot";
@@ -33,6 +35,14 @@ import {
   CardTitle,
 } from "./ui/card";
 import { ScrollArea } from "./ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
 import { Spinner } from "./ui/spinner";
 import { WorktreeActionsMenu } from "./worktree-actions-menu";
 
@@ -258,11 +268,77 @@ function terminalContent({
   );
 }
 
+function WorktreeConfigurationSource({
+  disabled,
+  onSelect,
+  worktree,
+}: {
+  disabled: boolean;
+  onSelect: (source: WorktreeConfigSource) => void;
+  worktree: WorktreeSnapshot;
+}) {
+  const { configuration } = worktree;
+  const fallback = configuration.preference !== configuration.source;
+  return (
+    <section className="worktree-configuration-section">
+      <div className="section-kicker">Configuration</div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h3>Configuration source</h3>
+          <code className="block truncate text-muted-foreground text-xs">
+            {configuration.path}
+          </code>
+        </div>
+        <Select
+          disabled={disabled}
+          onValueChange={(value) => {
+            const source = WorktreeConfigSourceSchema.safeParse(value);
+            if (source.success && source.data !== configuration.preference) {
+              onSelect(source.data);
+            }
+          }}
+          value={configuration.preference}
+        >
+          <SelectTrigger
+            aria-label="Configuration source"
+            className="min-w-36"
+            size="sm"
+          >
+            <SelectValue>
+              {configuration.preference === "checkout"
+                ? "This worktree"
+                : "Project default"}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent align="end">
+            <SelectGroup>
+              <SelectItem value="project-default">Project default</SelectItem>
+              <SelectItem value="checkout">This worktree</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </div>
+      {fallback ? (
+        <p className="mt-2 text-status-partial-foreground text-xs">
+          Using Project default because the selected worktree configuration is
+          unavailable.
+        </p>
+      ) : null}
+      {configuration.error ? (
+        <p className="mt-1 break-words text-destructive text-xs">
+          {configuration.error}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 export function DetailsPanel({
   actionBlocked,
   actionPending,
   appGroup,
   clearPending,
+  configSourcePending,
   codexDiscoveryUnavailable = false,
   codexLoading = false,
   codexTasks = [],
@@ -276,6 +352,7 @@ export function DetailsPanel({
   onDelete,
   onInspect,
   onRetryLogs,
+  onSelectConfigSource,
   onSelectAppGroupInstance,
   onToggleApps,
   worktreeActionPending,
@@ -285,6 +362,7 @@ export function DetailsPanel({
   actionPending: boolean;
   appGroup: AppGroupSnapshot;
   clearPending: boolean;
+  configSourcePending: boolean;
   codexDiscoveryUnavailable?: boolean;
   codexLoading?: boolean;
   codexTasks?: CodexTaskSnapshot[];
@@ -298,6 +376,7 @@ export function DetailsPanel({
   onDelete: () => void;
   onInspect: () => void;
   onRetryLogs: () => void;
+  onSelectConfigSource: (source: WorktreeConfigSource) => void;
   onSelectAppGroupInstance: (instanceId: string) => void;
   onToggleApps: () => void;
   worktreeActionPending: boolean;
@@ -350,6 +429,11 @@ export function DetailsPanel({
           <XIcon />
         </Button>
       </header>
+      <WorktreeConfigurationSource
+        disabled={configSourcePending || worktree.configuration.changeBlocked}
+        onSelect={onSelectConfigSource}
+        worktree={worktree}
+      />
       <section className="apps-section">
         <div className="section-kicker">App group</div>
         <div className="app-group-detail-heading">

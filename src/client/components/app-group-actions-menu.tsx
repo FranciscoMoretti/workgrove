@@ -38,6 +38,7 @@ export function appGroupCommandMenuItems({
 }): CommandMenuItem[] {
   const running = appGroupIsRunning(group);
   const retryable =
+    group.cleanupOnly !== true &&
     running &&
     (group.health !== "running" ||
       group.apps.some((app) => app.routeState === "unavailable"));

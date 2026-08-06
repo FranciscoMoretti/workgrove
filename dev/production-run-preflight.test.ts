@@ -34,6 +34,7 @@ function recordProductionRun(
     join(productionControlDirectory, "state.json")
   );
   const instance = state.instance({
+    configFingerprint: "production",
     groupId: "Chat",
     mode: "per-worktree",
     repoLabel: "chat-js",

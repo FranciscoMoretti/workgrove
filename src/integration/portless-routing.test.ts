@@ -4,10 +4,12 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 
+import { repositoryCommandFingerprint } from "../config/repository-trust";
 import { FileBranchBaseStateStore } from "../runtime/local-state";
 import {
   assert,
   endpoint,
+  integrationConfig,
   PortlessIntegrationFixture,
   processIsLive,
   waitUntil,
@@ -372,6 +374,7 @@ test("rejects and preserves a foreign Friendly URL route", async () => {
     assert(main, "Main worktree disappeared");
     const state = new FileBranchBaseStateStore(fixture.statePath);
     const instance = state.instance({
+      configFingerprint: repositoryCommandFingerprint(integrationConfig),
       groupId: "development",
       mode: "per-worktree",
       repoLabel: "repo",

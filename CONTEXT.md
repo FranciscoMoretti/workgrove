@@ -4,6 +4,26 @@ BranchBase coordinates development worktrees and the app groups they expose.
 
 ## Language
 
+**Project**:
+A locally tracked Git repository together with the worktrees BranchBase discovers from it.
+
+**Primary worktree**:
+The first worktree reported by Git for a Project. Its checked-in configuration is the Project default.
+_Avoid_: Base repository, Non-worktree
+
+**Project default configuration**:
+The `.branchbase.json` loaded from a Project's Primary worktree and inherited by worktrees unless they explicitly select their own configuration.
+_Avoid_: Base configuration
+
+**Worktree configuration preference**:
+The user-local choice for a worktree to inherit the Project default configuration or read `.branchbase.json` from that worktree.
+
+**Effective configuration**:
+The valid configuration BranchBase uses to inspect and operate one worktree. If a preferred worktree configuration is missing or invalid, the Project default is effective, the checkout preference remains selected, and the fallback remains visible.
+
+**Configuration contract**:
+The command and app-group topology fingerprint of an Effective configuration. Selectable app-group instances may be shared only by worktrees with the same Configuration contract, preventing one worktree from operating a shared run with incompatible commands or apps.
+
 **Setup**:
 A finite repository command that prepares a worktree for development. It is separate from the app group's lifecycle.
 

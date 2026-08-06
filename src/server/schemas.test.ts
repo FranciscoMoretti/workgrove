@@ -6,7 +6,7 @@ import { WorkspaceSnapshotSchema } from "../controller/workspace-snapshot";
 describe("workspace snapshot transport schema", () => {
   it("preserves slot-free App groups and endpoint lifecycle state", () => {
     const snapshot = WorkspaceSnapshotSchema.parse({
-      config: {
+      projectDefaultConfig: {
         version: 1,
         setup: { argv: ["bun", "install"] },
         appGroups: {
@@ -18,15 +18,16 @@ describe("workspace snapshot transport schema", () => {
           },
         },
       },
-      configPath: "/repo/.branchbase.json",
-      configRevision: "revision",
       globalProcesses: [],
       globalRunningCount: 1,
       mainWorktreePath: "/repo",
-      primaryAppGroup: "product",
+      projectDefaultConfigPath: "/repo/.branchbase.json",
+      projectDefaultConfigRevision: "revision",
+      projectDefaultPrimaryAppGroup: "product",
       repoName: "repo",
       repoPath: "/repo",
       trustCommands: [],
+      trustFingerprint: "default-fingerprint",
       trustRequired: true,
       trusted: true,
       updatedAt: "2026-07-14T00:00:00.000Z",
@@ -65,11 +66,23 @@ describe("workspace snapshot transport schema", () => {
           appLabel: "Product Apps",
           apps: [],
           branch: "main",
+          configuration: {
+            changeBlocked: true,
+            error: null,
+            path: "/repo/.branchbase.json",
+            preference: "project-default",
+            revision: "revision",
+            source: "project-default",
+            trustCommands: [],
+            trustFingerprint: "default-fingerprint",
+            trusted: true,
+          },
           health: "running",
           id: "worktree",
           isMain: true,
           name: "repo",
           path: "/repo",
+          primaryAppGroup: "product",
           processRunning: true,
           setupState: "idle",
         },
