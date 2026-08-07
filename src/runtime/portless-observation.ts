@@ -3,6 +3,15 @@ export type PortlessRouteObservation =
   | "unavailable"
   | "unregistered";
 
+export const PORTLESS_PROXY_PROBE_HOSTNAME = "branchbase-probe.localhost";
+
+/** True once Portless owns the hostname; backend health is readiness, not routing. */
+export function isPortlessRoutePublished(
+  observation: PortlessRouteObservation
+): boolean {
+  return observation === "routed" || observation === "unavailable";
+}
+
 export async function observePortlessRoute(
   url: string
 ): Promise<PortlessRouteObservation> {
@@ -22,4 +31,28 @@ export async function observePortlessRoute(
   } catch {
     return "unavailable";
   }
+}
+
+export async function isPortlessProxyResponding(
+  probeUrl: string
+): Promise<boolean> {
+  return (await observePortlessRoute(probeUrl)) !== "unavailable";
+}
+
+/**
+ * Publication requires either a routed response, or an unavailable target whose
+ * proxy still answers an independent probe (backend flap, not dead proxy).
+ */
+export async function isPublishedPortlessRoute(
+  routeUrl: string,
+  proxyProbeUrl: string
+): Promise<boolean> {
+  const observation = await observePortlessRoute(routeUrl);
+  if (observation === "routed") {
+    return true;
+  }
+  if (observation === "unregistered") {
+    return false;
+  }
+  return isPortlessProxyResponding(proxyProbeUrl);
 }

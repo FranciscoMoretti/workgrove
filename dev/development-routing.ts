@@ -9,7 +9,11 @@ import type {
   LocalRouteState,
   LocalRoutingEngine,
 } from "../src/runtime/local-routing";
-import { observePortlessRoute } from "../src/runtime/portless-observation";
+import {
+  isPublishedPortlessRoute,
+  observePortlessRoute,
+  PORTLESS_PROXY_PROBE_HOSTNAME,
+} from "../src/runtime/portless-observation";
 
 const require = createRequire(import.meta.url);
 const OBSERVATION_TIMEOUT_MS = 5000;
@@ -128,7 +132,11 @@ export class DevelopmentRouting implements LocalRoutingEngine {
     }
     await this.waitUntil(
       async () =>
-        (await observePortlessRoute(this.url(route.hostname))) === "routed",
+        this.isLive() &&
+        (await isPublishedPortlessRoute(
+          this.url(route.hostname),
+          this.url(PORTLESS_PROXY_PROBE_HOSTNAME)
+        )),
       `Portless did not activate ${route.hostname}`
     );
     this.verifiedRoutes.add(routeKey(route.hostname, route.port));
@@ -268,7 +276,11 @@ export class DevelopmentRouting implements LocalRoutingEngine {
     await Promise.all(
       routes.map(async (route) => {
         if (
-          (await observePortlessRoute(this.url(route.hostname))) === "routed"
+          this.isLive() &&
+          (await isPublishedPortlessRoute(
+            this.url(route.hostname),
+            this.url(PORTLESS_PROXY_PROBE_HOSTNAME)
+          ))
         ) {
           this.verifiedRoutes.add(routeKey(route.hostname, route.port));
         }
@@ -281,10 +293,13 @@ export class DevelopmentRouting implements LocalRoutingEngine {
     if (this.routeVerifications.has(key)) {
       return;
     }
-    const verification = observePortlessRoute(this.url(hostname))
-      .then((response) => {
+    const verification = isPublishedPortlessRoute(
+      this.url(hostname),
+      this.url(PORTLESS_PROXY_PROBE_HOSTNAME)
+    )
+      .then((published) => {
         const current = routeInStore(this.store, hostname);
-        if (response === "routed" && current?.port === port && this.isLive()) {
+        if (published && current?.port === port && this.isLive()) {
           this.verifiedRoutes.add(key);
         } else {
           this.verifiedRoutes.delete(key);

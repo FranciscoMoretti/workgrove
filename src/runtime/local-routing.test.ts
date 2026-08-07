@@ -83,6 +83,62 @@ function close(server: Server): Promise<void> {
   return new Promise((resolve) => server.close(() => resolve()));
 }
 
+it("activates a Portless route when the backing app resets connections", async () => {
+  const temporary = mkdtempSync(join(tmpdir(), "branchbase-portless-flap-"));
+  const stateDirectory = join(temporary, "portless");
+  const backend = createHttpServer((request) => {
+    request.socket.destroy();
+  });
+  const proxyReservation = createServer();
+  const backendPort = await new Promise<number>((resolve, reject) => {
+    backend.once("error", reject);
+    backend.listen(0, "127.0.0.1", () => {
+      const address = backend.address();
+      if (!address || typeof address === "string") {
+        reject(new Error("Backend did not expose a TCP port"));
+        return;
+      }
+      resolve(address.port);
+    });
+  });
+  const proxyPort = await listen(proxyReservation, 0);
+  await close(proxyReservation);
+  const routing = new PortlessRoutingEngine({
+    port: proxyPort,
+    stateDirectory,
+  });
+
+  try {
+    await routing.prepare();
+    await routing.activate({
+      hostname: "flaky.branchbase.localhost",
+      port: backendPort,
+    });
+    expect(
+      routing.observe({
+        hostname: "flaky.branchbase.localhost",
+        port: backendPort,
+      })
+    ).toBe("active");
+  } finally {
+    spawnSync(
+      packageFile("node", "bin", "node"),
+      [packageFile("portless", "dist", "cli.js"), "proxy", "stop"],
+      {
+        env: {
+          ...process.env,
+          PORTLESS_HTTPS: "0",
+          PORTLESS_PORT: String(proxyPort),
+          PORTLESS_STATE_DIR: stateDirectory,
+          PORTLESS_SYNC_HOSTS: "0",
+        },
+      }
+    );
+    await new Promise<void>((resolve) => backend.close(() => resolve()));
+    rmSync(temporary, { force: true, recursive: true });
+  }
+}, 15_000);
+
 it("reloads consecutive Portless route updates", async () => {
   const temporary = mkdtempSync(join(tmpdir(), "branchbase-portless-watch-"));
   const stateDirectory = join(temporary, "portless");
