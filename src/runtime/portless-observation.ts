@@ -3,6 +3,13 @@ export type PortlessRouteObservation =
   | "unavailable"
   | "unregistered";
 
+/** True once Portless owns the hostname; backend health is readiness, not routing. */
+export function isPortlessRoutePublished(
+  observation: PortlessRouteObservation
+): boolean {
+  return observation !== "unregistered";
+}
+
 export async function observePortlessRoute(
   url: string
 ): Promise<PortlessRouteObservation> {

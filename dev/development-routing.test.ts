@@ -128,19 +128,19 @@ function waitForExit(child: ChildProcess): Promise<void> {
   return new Promise((resolve) => child.once("exit", () => resolve()));
 }
 
-async function waitForRouteState(
-  routing: DevelopmentRouting,
-  route: { hostname: string; port: number },
-  expected: ReturnType<DevelopmentRouting["observe"]>
+async function waitForProxyStatus(
+  port: number,
+  hostname: string,
+  expected: number
 ): Promise<void> {
   const deadline = Date.now() + 5000;
   do {
-    if (routing.observe(route) === expected) {
+    if ((await proxyResponse(port, hostname)).status === expected) {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 25));
   } while (Date.now() < deadline);
-  throw new Error(`Route did not become ${expected}`);
+  throw new Error(`Proxy did not return status ${expected}`);
 }
 
 async function reopenAfterParentExit(
@@ -216,7 +216,7 @@ it("routes through the embedded development proxy", async () => {
   }
 });
 
-it("observes a route before reporting activation", async () => {
+it("publishes a route before the backing app accepts traffic", async () => {
   const temporary = mkdtempSync(join(tmpdir(), "branchbase-routing-observe-"));
   const proxyReservation = await reserveBackingPort();
   const backendReservation = await reserveBackingPort(
@@ -236,10 +236,14 @@ it("observes a route before reporting activation", async () => {
       port: proxyReservation.port,
       stateDirectory: temporary,
     });
-    const activation = routing.activate(route);
-    await waitForRouteState(routing, route, "unavailable");
+    await routing.activate(route);
+    expect(routing.observe(route)).toBe("active");
+    expect(
+      (await proxyResponse(proxyReservation.port, route.hostname)).status
+    ).toBe(502);
+
     backend = await listenBackend(route.port);
-    await activation;
+    await waitForProxyStatus(proxyReservation.port, route.hostname, 200);
     expect(routing.observe(route)).toBe("active");
   } finally {
     await routing?.close();
@@ -288,7 +292,7 @@ it("restores persistent aliases when the embedded proxy reopens", async () => {
   }
 });
 
-it("re-observes a persisted route after its backend recovers", async () => {
+it("keeps a published route active while its backend recovers", async () => {
   const temporary = mkdtempSync(join(tmpdir(), "branchbase-routing-recovery-"));
   const reservation = await reserveBackingPort();
   const port = reservation.port;
@@ -315,14 +319,21 @@ it("re-observes a persisted route after its backend recovers", async () => {
       port,
       stateDirectory: temporary,
     });
-    expect(reopened.observe(route)).toBe("unavailable");
+    expect(reopened.observe(route)).toBe("active");
+    expect((await proxyResponse(port, route.hostname)).status).toBe(502);
+
     backend = await listenBackend(route.port);
-    await waitForRouteState(reopened, route, "active");
+    await waitForProxyStatus(port, route.hostname, 200);
+    expect(reopened.observe(route)).toBe("active");
+
     await backend.close();
     backend = undefined;
-    await waitForRouteState(reopened, route, "unavailable");
+    expect(reopened.observe(route)).toBe("active");
+    expect((await proxyResponse(port, route.hostname)).status).toBe(502);
+
     backend = await listenBackend(route.port);
-    await waitForRouteState(reopened, route, "active");
+    await waitForProxyStatus(port, route.hostname, 200);
+    expect(reopened.observe(route)).toBe("active");
   } finally {
     await reopened?.close();
     await first?.close();

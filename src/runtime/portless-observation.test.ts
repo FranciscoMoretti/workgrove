@@ -1,7 +1,16 @@
 import { expect, it } from "bun:test";
 import { createServer } from "node:http";
 
-import { observePortlessRoute } from "./portless-observation";
+import {
+  isPortlessRoutePublished,
+  observePortlessRoute,
+} from "./portless-observation";
+
+it("treats unavailable as published once Portless owns the hostname", () => {
+  expect(isPortlessRoutePublished("routed")).toBe(true);
+  expect(isPortlessRoutePublished("unavailable")).toBe(true);
+  expect(isPortlessRoutePublished("unregistered")).toBe(false);
+});
 
 it("classifies the observable Portless route contract", async () => {
   const server = createServer((request, response) => {

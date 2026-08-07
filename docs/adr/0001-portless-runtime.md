@@ -91,7 +91,7 @@ Start follows this order:
 4. Launch the repository-wide trusted command.
 5. Verify each app's listener and configured readiness condition.
 6. Activate an exact Friendly URL route only for a ready app.
-7. Observe that the exact hostname routes to the expected Backing endpoint.
+7. Observe that Portless has published the exact hostname for the expected Backing endpoint.
 8. Expose Open and Copy URL actions for that app.
 
 Start and Open are separate actions. Knowing a Friendly URL before launch does not make it clickable before readiness and route activation are observed.
@@ -123,7 +123,9 @@ After BranchBase itself restarts, it may re-adopt a surviving managed process af
 
 The default readiness condition is an owned TCP listener on the allocated Backing port. A repository may configure an HTTP readiness path and accepted status codes per app. TCP remains the default because valid development applications may return authentication, redirect, or not-found responses at `/`.
 
-Readiness proves the application is accepting traffic. Route activation separately proves that the exact Friendly URL reaches the expected Backing endpoint. A route is `active` only after this observation; successful completion of a Portless CLI command alone is insufficient.
+Readiness proves the application is accepting traffic on its Backing endpoint. Route activation separately proves that Portless owns the exact Friendly URL and has loaded the alias for the expected Backing endpoint. A route is `active` only after that publication is observed; successful completion of a Portless CLI command alone is insufficient.
+
+Publication observation must not require a healthy upstream HTTP response. A registered alias whose backing app resets connections, times out, or returns `502` still counts as published. Upstream health remains a readiness concern. An unregistered Portless hostname does not.
 
 ## Environment
 

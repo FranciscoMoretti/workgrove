@@ -5,7 +5,10 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import { processIsLive } from "../host/process-inspection";
-import { observePortlessRoute } from "./portless-observation";
+import {
+  isPortlessRoutePublished,
+  observePortlessRoute,
+} from "./portless-observation";
 
 export interface LocalRoute {
   hostname: string;
@@ -80,12 +83,18 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
     if (!current) {
       this.run(["alias", this.routeName(route.hostname), String(route.port)]);
     }
-    await this.waitUntil(
-      async () =>
-        this.route(route.hostname)?.port === route.port &&
-        (await observePortlessRoute(this.url(route.hostname))) === "routed",
-      `Portless did not activate ${route.hostname}`
-    );
+    await this.waitUntil(async () => {
+      if (this.route(route.hostname)?.port !== route.port) {
+        return false;
+      }
+      const pid = this.proxyPid();
+      if (pid === null || !processIsLive(pid)) {
+        return false;
+      }
+      return isPortlessRoutePublished(
+        await observePortlessRoute(this.url(route.hostname))
+      );
+    }, `Portless did not activate ${route.hostname}`);
   }
 
   async prepare(): Promise<void> {

@@ -9,7 +9,10 @@ import type {
   LocalRouteState,
   LocalRoutingEngine,
 } from "../src/runtime/local-routing";
-import { observePortlessRoute } from "../src/runtime/portless-observation";
+import {
+  isPortlessRoutePublished,
+  observePortlessRoute,
+} from "../src/runtime/portless-observation";
 
 const require = createRequire(import.meta.url);
 const OBSERVATION_TIMEOUT_MS = 5000;
@@ -128,7 +131,10 @@ export class DevelopmentRouting implements LocalRoutingEngine {
     }
     await this.waitUntil(
       async () =>
-        (await observePortlessRoute(this.url(route.hostname))) === "routed",
+        this.isLive() &&
+        isPortlessRoutePublished(
+          await observePortlessRoute(this.url(route.hostname))
+        ),
       `Portless did not activate ${route.hostname}`
     );
     this.verifiedRoutes.add(routeKey(route.hostname, route.port));
@@ -268,7 +274,10 @@ export class DevelopmentRouting implements LocalRoutingEngine {
     await Promise.all(
       routes.map(async (route) => {
         if (
-          (await observePortlessRoute(this.url(route.hostname))) === "routed"
+          this.isLive() &&
+          isPortlessRoutePublished(
+            await observePortlessRoute(this.url(route.hostname))
+          )
         ) {
           this.verifiedRoutes.add(routeKey(route.hostname, route.port));
         }
@@ -284,7 +293,11 @@ export class DevelopmentRouting implements LocalRoutingEngine {
     const verification = observePortlessRoute(this.url(hostname))
       .then((response) => {
         const current = routeInStore(this.store, hostname);
-        if (response === "routed" && current?.port === port && this.isLive()) {
+        if (
+          isPortlessRoutePublished(response) &&
+          current?.port === port &&
+          this.isLive()
+        ) {
           this.verifiedRoutes.add(key);
         } else {
           this.verifiedRoutes.delete(key);
