@@ -125,7 +125,7 @@ The default readiness condition is an owned TCP listener on the allocated Backin
 
 Readiness proves the application is accepting traffic on its Backing endpoint. Route activation separately proves that Portless owns the exact Friendly URL and has loaded the alias for the expected Backing endpoint. A route is `active` only after that publication is observed; successful completion of a Portless CLI command alone is insufficient.
 
-Publication observation must not require a healthy upstream HTTP response. A registered alias whose backing app resets connections, times out, or returns `502` still counts as published. Upstream health remains a readiness concern. An unregistered Portless hostname does not.
+Publication observation must not require a healthy upstream HTTP response. A registered alias whose backing app resets connections, times out, or returns `502` still counts as published once an independent Portless proxy probe confirms the proxy itself is answering. Upstream health remains a readiness concern. An unregistered Portless hostname does not.
 
 ## Environment
 

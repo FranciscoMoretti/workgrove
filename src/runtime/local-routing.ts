@@ -6,8 +6,10 @@ import { dirname, join } from "node:path";
 import { z } from "zod";
 import { processIsLive } from "../host/process-inspection";
 import {
-  isPortlessRoutePublished,
+  isPortlessProxyResponding,
+  isPublishedPortlessRoute,
   observePortlessRoute,
+  PORTLESS_PROXY_PROBE_HOSTNAME,
 } from "./portless-observation";
 
 export interface LocalRoute {
@@ -91,8 +93,9 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
       if (pid === null || !processIsLive(pid)) {
         return false;
       }
-      return isPortlessRoutePublished(
-        await observePortlessRoute(this.url(route.hostname))
+      return await isPublishedPortlessRoute(
+        this.url(route.hostname),
+        this.url(PORTLESS_PROXY_PROBE_HOSTNAME)
       );
     }, `Portless did not activate ${route.hostname}`);
   }
@@ -145,8 +148,7 @@ export class PortlessRoutingEngine implements LocalRoutingEngine {
     this.run(["proxy", "start", "--port", String(this.port), "--no-tls"]);
     await this.waitUntil(
       async () =>
-        (await observePortlessRoute(this.url("branchbase-probe.localhost"))) !==
-        "unavailable",
+        isPortlessProxyResponding(this.url(PORTLESS_PROXY_PROBE_HOSTNAME)),
       `Portless proxy did not start on port ${this.port}`
     );
   }

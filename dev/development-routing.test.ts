@@ -44,7 +44,8 @@ function listenBackend(port = 0): Promise<{
 function proxyResponse(
   port: number,
   hostname: string,
-  proxyHost = "127.0.0.1"
+  proxyHost = "127.0.0.1",
+  timeoutMs = 1000
 ): Promise<{ body: string; status: number }> {
   return new Promise((resolve, reject) => {
     const proxyRequest = request(
@@ -65,6 +66,11 @@ function proxyResponse(
       }
     );
     proxyRequest.once("error", reject);
+    proxyRequest.setTimeout(timeoutMs, () =>
+      proxyRequest.destroy(
+        new Error(`Proxy request timed out after ${timeoutMs} ms`)
+      )
+    );
     proxyRequest.end();
   });
 }
@@ -135,8 +141,12 @@ async function waitForProxyStatus(
 ): Promise<void> {
   const deadline = Date.now() + 5000;
   do {
-    if ((await proxyResponse(port, hostname)).status === expected) {
-      return;
+    try {
+      if ((await proxyResponse(port, hostname)).status === expected) {
+        return;
+      }
+    } catch {
+      // Timed-out or refused requests keep polling until the deadline.
     }
     await new Promise((resolve) => setTimeout(resolve, 25));
   } while (Date.now() < deadline);
